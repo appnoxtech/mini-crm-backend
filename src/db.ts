@@ -1,6 +1,7 @@
-import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
+import Database, { Database as DatabaseType } from "better-sqlite3";
+
 
 export type LeadStage = "OPEN" | "WON" | "LOST";
 
@@ -19,7 +20,7 @@ export interface Lead {
 const dbFile = path.resolve(process.cwd(), "data.db");
 
 // Create database connection
-export const db = new Database(dbFile);
+export const db: DatabaseType = new Database(dbFile);
 
 // Pragmas for reliability and performance
 db.pragma("journal_mode = WAL");
