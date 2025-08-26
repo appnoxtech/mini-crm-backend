@@ -8,7 +8,11 @@ const middleware_1 = require("./middleware");
 const authRoutes_1 = __importDefault(require("./authRoutes"));
 const leadsRoutes_1 = __importDefault(require("./leadsRoutes"));
 const app = (0, express_1.default)();
-const PORT = process.env.PORT || 3001;
+import dotenv from 'dotenv';
+dotenv.config(); // load .env first
+
+const PORT = process.env.PORT || 3000;
+
 // Middleware
 app.use(express_1.default.json());
 app.use(middleware_1.corsMiddleware);
