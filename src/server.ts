@@ -12,6 +12,7 @@ app.use(express.json());
 app.use(corsMiddleware);
 
 // Health check endpoint
+
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
