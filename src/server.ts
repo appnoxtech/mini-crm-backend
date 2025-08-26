@@ -1,22 +1,41 @@
-import express from "express";
-import cors from "cors";
-import dotenv from "dotenv";
-import router from "./routes";
-
-dotenv.config();
+import express from 'express';
+import { corsMiddleware } from './middleware';
+import authRoutes from './authRoutes';
+import leadsRoutes from './leadsRoutes';
+import db from './db';
 
 const app = express();
+const PORT = process.env.PORT || 3001;
 
-app.use(cors());
+// Middleware
 app.use(express.json());
+app.use(corsMiddleware);
 
-app.use(router);
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
-const port = Number(process.env.PORT) || 3000;
+// Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/leads', leadsRoutes);
 
-app.listen(port, () => {
-  // eslint-disable-next-line no-console
-  console.log(`Server listening on ${port}`);
+// Error handling middleware
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Server error:', err);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({ error: 'Route not found' });
+});
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Health check: http://localhost:${PORT}/health`);
+  console.log(`Auth API: http://localhost:${PORT}/api/auth`);
+  console.log(`Leads API: http://localhost:${PORT}/api/leads`);
 });
 
 
