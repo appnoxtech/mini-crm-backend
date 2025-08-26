@@ -17,7 +17,7 @@ app.use(corsMiddleware);
 
 // Health check endpoint
 
-app.get('/health', (req, res) => {
+app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
@@ -38,7 +38,7 @@ app.use('*', (req, res) => {
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/health`);
+  console.log(`Health check: http://localhost:${PORT}/api/health`);
   console.log(`Auth API: http://localhost:${PORT}/api/auth`);
   console.log(`Leads API: http://localhost:${PORT}/api/leads`);
 });
