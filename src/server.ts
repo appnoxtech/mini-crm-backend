@@ -4,8 +4,12 @@ import authRoutes from './authRoutes';
 import leadsRoutes from './leadsRoutes';
 import db from './db';
 
+import dotenv from 'dotenv';
+dotenv.config(); // Load .env first
+
+
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = parseInt(process.env.PORT || "3000", 10);
 
 // Middleware
 app.use(express.json());
@@ -31,7 +35,7 @@ app.use('*', (req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
   console.log(`Auth API: http://localhost:${PORT}/api/auth`);
