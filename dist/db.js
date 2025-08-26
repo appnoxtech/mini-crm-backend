@@ -6,7 +6,25 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const better_sqlite3_1 = __importDefault(require("better-sqlite3"));
 const auth_1 = require("./auth");
 const db = new better_sqlite3_1.default('data.db');
-// Initialize database tables
+// Enable foreign keys
+db.pragma('foreign_keys = ON');
+// Initialize auth tables first
+(0, auth_1.initializeAuth)(db);
+// Check if leads table exists and has userId column
+const tableInfo = db.prepare("PRAGMA table_info(leads)").all();
+const hasUserIdColumn = tableInfo.some((col) => col.name === 'userId');
+if (!hasUserIdColumn) {
+    // If leads table exists but doesn't have userId, we need to migrate
+    const leadsExist = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='leads'").get();
+    if (leadsExist) {
+        // Backup existing data
+        const existingLeads = db.prepare('SELECT * FROM leads').all();
+        // Drop the old table
+        db.exec('DROP TABLE IF EXISTS leads');
+        db.exec('DROP TABLE IF EXISTS lead_history');
+    }
+}
+// Initialize database tables with new schema
 db.exec(`
   CREATE TABLE IF NOT EXISTS leads (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,7 +55,5 @@ db.exec('CREATE INDEX IF NOT EXISTS idx_leads_userId ON leads(userId)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(stage)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_leads_createdAt ON leads(createdAt)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_lead_history_leadId ON lead_history(leadId)');
-// Initialize auth tables
-(0, auth_1.initializeAuth)(db);
 exports.default = db;
 //# sourceMappingURL=db.js.map
