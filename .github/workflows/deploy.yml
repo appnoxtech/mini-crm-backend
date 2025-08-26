@@ -1,0 +1,39 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build project
+        run: npm run build
+
+      - name: Deploy to server via SSH
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: 13.62.105.106
+          username: root
+          key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKS0FnXAsEtvQzb4UvBciurbbwU0q50oSso6Mch7BIyj govind.appnox@gmail.com
+          script: |
+            cd /var/www/app/mini-crm-backend
+            git pull origin main
+            npm install --production
+            npm run build
+            sudo systemctl restart mini-crm
+            sudo systemctl restart nginx
