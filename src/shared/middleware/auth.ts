@@ -1,24 +1,21 @@
 import { Request, Response, NextFunction } from 'express';
-import { verifyToken, AuthUser } from './auth';
-
-export interface AuthenticatedRequest extends Request {
-  user?: AuthUser;
-}
+import { AuthenticatedRequest } from '../types';
+import { verifyToken } from '../../modules/auth/services/authService';
 
 export function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
+  const authHeader = (req.headers as any).authorization;
   
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'No token provided' });
   }
-
+  
   const token = authHeader.substring(7); // Remove 'Bearer ' prefix
   const user = verifyToken(token);
-
+  
   if (!user) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
-
+  
   req.user = user;
   next();
 }
