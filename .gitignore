@@ -24,6 +24,7 @@ data.db-wal
 # Build outputs
 build/
 *.tsbuildinfo
+dist/
 
 # Logs
 logs
