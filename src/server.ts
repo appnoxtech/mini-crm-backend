@@ -104,7 +104,6 @@ const authController = new AuthController(authService, userModel);
 const leadController = new LeadController(leadService);
 const emailController = new EmailController(emailService, oauthService, emailQueueService, notificationService);
 
-
 // Middleware
 app.use(express.json());
 app.use(corsMiddleware);
