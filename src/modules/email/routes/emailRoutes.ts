@@ -24,6 +24,10 @@ export function createEmailRoutes(emailController: EmailController): Router {
   // Protected routes (require authentication)
   (router as any).use(authMiddleware);
 
+   // Thread summary routes
+  router.post('/threads/:threadId/summarize', (req, res) => emailController.summarizeThread(req, res));
+  router.get('/threads/:threadId/summary', (req, res) => emailController.getThreadSummary(req, res));
+
   // Email sending
   router.post('/send', (req: any, res) => emailController.sendEmail(req, res));
   router.post('/send-test', (req: any, res) => emailController.sendTestEmail(req, res));
