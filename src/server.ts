@@ -4,6 +4,8 @@ import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import Database from 'better-sqlite3';
 import { corsMiddleware } from './shared/middleware/auth';
+import { startThreadSummaryJob } from './cron/summarizeThreads';
+
 
 // Load environment variables
 dotenv.config();
@@ -142,4 +144,6 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('Socket.IO initialized for real-time notifications');
 });
 
+const DB_PATH = './data.db';
+startThreadSummaryJob(DB_PATH);
 
