@@ -5,6 +5,9 @@ import { Server as SocketIOServer } from 'socket.io';
 import Database from 'better-sqlite3';
 import { corsMiddleware } from './shared/middleware/auth';
 import { startThreadSummaryJob } from './cron/summarizeThreads';
+import { startEmailSyncJob } from './cron/emailSync';
+import { startTokenRefreshJob } from './cron/tokenRefresh';
+import { startRunPodJobProcessor } from './cron/runpodJobProcessor';
 
 
 // Load environment variables
@@ -42,6 +45,11 @@ import { EmailController } from './modules/email/controllers/emailController';
 import { createAuthRoutes } from './modules/auth/routes/authRoutes';
 import { createLeadRoutes } from './modules/leads/routes/leadRoutes';
 import { createEmailRoutes } from './modules/email/routes/emailRoutes';
+import { createSummarizationRoutes } from './modules/email/routes/summarizationRoutes';
+
+// Import summarization services
+import { SummarizationController } from './modules/email/controllers/summarizationController';
+import { startSummarizationScheduler } from './modules/email/services/summarizationSchedulerService';
 
 const app = express();
 const server = createServer(app);
@@ -51,7 +59,8 @@ const io = new SocketIOServer(server, {
     methods: ["GET", "POST"]
   }
 });
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = Number(process.env.PORT) || 4000;
+const DB_PATH = './data.db';
 
 // Initialize database
 const db = new Database('data.db');
@@ -105,6 +114,7 @@ configService.initializeSystem().then(result => {
 const authController = new AuthController(authService, userModel);
 const leadController = new LeadController(leadService);
 const emailController = new EmailController(emailService, oauthService, emailQueueService, notificationService);
+const summarizationController = new SummarizationController(emailModel, DB_PATH);
 
 // Middleware
 app.use(express.json());
@@ -121,6 +131,7 @@ app.use((req, res, next) => {
 app.use('/api/auth', createAuthRoutes(authController));
 app.use('/api/leads', createLeadRoutes(leadController));
 app.use('/api/emails', createEmailRoutes(emailController));
+app.use('/api/summarization', createSummarizationRoutes(summarizationController));
 // app.use('/api/emails/enhanced', createEnhancedEmailRoutes(enhancedEmailController));
 
 // Health check endpoint
@@ -139,11 +150,44 @@ app.use('*', (req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
+// Start the server
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   console.log('Socket.IO initialized for real-time notifications');
 });
 
-const DB_PATH = './data.db';
+// Start cron jobs
 startThreadSummaryJob(DB_PATH);
+
+// Start email sync cron job (syncs every 5 minutes)
+startEmailSyncJob(DB_PATH, notificationService);
+console.log('Email sync cron job started');
+
+// Start token refresh cron job (refreshes every 6 hours to prevent expiration)
+startTokenRefreshJob(DB_PATH);
+console.log('Token refresh cron job started');
+
+// Start RunPod async job processor (NO REDIS REQUIRED!)
+// This uses RunPod's built-in async queue for cost-efficient serverless processing
+try {
+  startRunPodJobProcessor(DB_PATH);
+  console.log('📧 RunPod async job processor started (no Redis needed!)');
+} catch (error) {
+  console.warn('⚠️ RunPod job processor failed to start:', error);
+}
+
+// Optional: Also try to start Redis-based queue if available
+try {
+  const summarizationScheduler = startSummarizationScheduler(DB_PATH);
+  console.log('📧 Redis-based summarization scheduler also started');
+
+  // Graceful shutdown handler
+  process.on('SIGTERM', () => {
+    console.log('SIGTERM received, shutting down gracefully...');
+    summarizationScheduler.stop();
+    process.exit(0);
+  });
+} catch (error) {
+  console.log('ℹ️  Redis not available - using RunPod async mode only (this is fine!)');
+}
 
