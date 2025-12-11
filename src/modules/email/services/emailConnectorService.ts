@@ -20,7 +20,7 @@ export class EmailConnectorService {
       process.env.GOOGLE_CLIENT_SECRET,
       process.env.GOOGLE_REDIRECT_URI
     );
-    
+
     const creds: any = {};
     if (account.accessToken) {
       // Decrypt token if it's encrypted
@@ -56,7 +56,7 @@ export class EmailConnectorService {
         pass: account.imapConfig.password
       }
     });
-    
+
     await client.connect();
     return client;
   }
@@ -64,31 +64,41 @@ export class EmailConnectorService {
   async fetchGmailEmails(account: EmailAccount, lastSyncTime?: Date, maxResults: number = 50): Promise<any[]> {
     try {
       await this.connectGmail(account);
-      let query = 'in:inbox OR in:sent OR in:spam OR in:trash OR in:drafts OR in:all';
-      
+
+      // Build query with proper boolean logic
+      // Note: Gmail search uses AND by default between terms, OR must be explicit
+      // The after: filter applies to ALL results, so we need proper grouping
+      let query: string;
+
       if (lastSyncTime) {
         const timestamp = Math.floor(lastSyncTime.getTime() / 1000);
-        query += ` after:${timestamp}`;
+        // Use after: with is:anywhere to get all emails after the timestamp
+        // This is more reliable than trying to OR multiple folders with a date filter
+        query = `after:${timestamp}`;
+      } else {
+        // On initial sync, get emails from the last 30 days to avoid overwhelming the system
+        const thirtyDaysAgo = Math.floor((Date.now() - 30 * 24 * 60 * 60 * 1000) / 1000);
+        query = `after:${thirtyDaysAgo}`;
       }
-      
-      console.log(`Fetching Gmail emails with query: ${query}`);
-      
-      const response = await this.gmailClient.users.messages.list({ 
-        userId: 'me', 
-        q: query, 
-        maxResults 
+
+      console.log(`Fetching Gmail emails with query: ${query}, maxResults: ${maxResults}`);
+
+      const response = await this.gmailClient.users.messages.list({
+        userId: 'me',
+        q: query,
+        maxResults
       });
-      
+
       const messages: any[] = [];
       const messageIds = response.data.messages || [];
-      
+
       // Batch fetch messages for better performance
       for (const message of messageIds) {
         try {
-          const fullMessage = await this.gmailClient.users.messages.get({ 
-            userId: 'me', 
-            id: message.id, 
-            format: 'full' 
+          const fullMessage = await this.gmailClient.users.messages.get({
+            userId: 'me',
+            id: message.id,
+            format: 'full'
           });
           messages.push({
             ...fullMessage.data,
@@ -100,11 +110,18 @@ export class EmailConnectorService {
           // Continue with other messages
         }
       }
-      
+
       console.log(`Successfully fetched ${messages.length} Gmail messages`);
       return messages;
     } catch (error: any) {
       console.error('Failed to fetch Gmail emails:', error);
+
+      // Check for invalid_grant error (expired or revoked tokens)
+      if (error.message?.includes('invalid_grant') ||
+        error.response?.data?.error === 'invalid_grant') {
+        throw new Error('Gmail authentication has expired. Please re-connect your Gmail account in settings.');
+      }
+
       throw new Error(`Gmail email fetch failed: ${error.message}`);
     }
   }
@@ -113,25 +130,25 @@ export class EmailConnectorService {
     try {
       await this.connectOutlook(account);
       let filter = '';
-      
+
       if (lastSyncTime) {
         filter = `receivedDateTime ge ${lastSyncTime.toISOString()}`;
       }
-      
+
       console.log(`Fetching Outlook emails with filter: ${filter || 'none'}`);
-      
+
       let query = this.outlookClient.api('/me/messages').top(maxResults);
       if (filter) {
         query = query.filter(filter);
       }
-      
+
       const response = await query.get();
       const messages = response.value.map((message: any) => ({
         ...message,
         provider: 'outlook',
         accountId: account.id
       }));
-      
+
       console.log(`Successfully fetched ${messages.length} Outlook messages`);
       return messages;
     } catch (error: any) {
@@ -143,18 +160,18 @@ export class EmailConnectorService {
   async fetchIMAPEmails(account: EmailAccount, lastSyncTime?: Date): Promise<any[]> {
     const client = await this.connectIMAP(account);
     await client.mailboxOpen('INBOX');
-    
+
     const searchCriteria: any = lastSyncTime ? { since: lastSyncTime } : { all: true };
     const messages: any[] = [];
-    
-    for await (const message of client.fetch(searchCriteria, { 
-      envelope: true, 
-      bodyStructure: true, 
-      source: true 
+
+    for await (const message of client.fetch(searchCriteria, {
+      envelope: true,
+      bodyStructure: true,
+      source: true
     })) {
       messages.push(message);
     }
-    
+
     await client.logout();
     return messages;
   }
@@ -168,7 +185,7 @@ export class EmailConnectorService {
           const { OAuthService } = require('./oauthService');
           this.oauthService = new OAuthService();
         }
-        
+
         const refreshResult = await this.oauthService.refreshTokenIfNeeded(account);
         if (refreshResult) {
           console.log('OAuth tokens validated successfully');
@@ -191,19 +208,19 @@ export class EmailConnectorService {
           process.env.GOOGLE_CLIENT_ID,
           process.env.GOOGLE_CLIENT_SECRET
         );
-        
+
         const decryptedAccessToken = this.decryptTokenIfNeeded(account.accessToken || '');
         const decryptedRefreshToken = this.decryptTokenIfNeeded(account.refreshToken || '');
-        
+
         auth.setCredentials({
           access_token: decryptedAccessToken,
           refresh_token: decryptedRefreshToken
         });
-        
+
         // Make a simple API call to verify the token
         const gmail = google.gmail({ version: 'v1', auth });
         await gmail.users.getProfile({ userId: 'me' });
-        
+
         console.log('OAuth tokens verified successfully via API call');
         return true;
       } catch (error) {
@@ -244,14 +261,14 @@ export class EmailConnectorService {
       }
     } catch (error: any) {
       // If token validation fails, provide specific guidance
-      if (error.message.includes('Token has been expired or revoked') || 
-          error.message.includes('invalid_grant') ||
-          error.message.includes('re-authorize')) {
+      if (error.message.includes('Token has been expired or revoked') ||
+        error.message.includes('invalid_grant') ||
+        error.message.includes('re-authorize')) {
         throw new Error(`Your ${account.provider} account needs to be re-authenticated. Please go to the email setup page and reconnect your account. The previous authorization has expired or been revoked.`);
       }
       throw error;
     }
-    
+
     if (!emailData.subject || !emailData.body) {
       throw new Error('Subject and body are required');
     }
@@ -271,7 +288,7 @@ export class EmailConnectorService {
     }
 
     console.log(`Attempting to send email via ${account.smtpConfig.host}:${account.smtpConfig.port}`);
-    
+
     const transporter = nodemailer.createTransport({
       host: account.smtpConfig.host,
       port: account.smtpConfig.port,
@@ -302,9 +319,9 @@ export class EmailConnectorService {
       subject: emailData.subject,
       text: emailData.body,
       html: emailData.htmlBody,
-      attachments: emailData.attachments?.map(att => ({ 
-        filename: att.filename, 
-        path: att.url 
+      attachments: emailData.attachments?.map(att => ({
+        filename: att.filename,
+        path: att.url
       }))
     };
 
@@ -339,7 +356,7 @@ export class EmailConnectorService {
       // Debug token information
       const decryptedRefreshToken = this.decryptTokenIfNeeded(account.refreshToken || '');
       const decryptedAccessToken = this.decryptTokenIfNeeded(account.accessToken || '');
-      
+
       console.log('Token debug info:', {
         hasRefreshToken: !!account.refreshToken,
         hasAccessToken: !!account.accessToken,
@@ -379,9 +396,9 @@ export class EmailConnectorService {
         subject: emailData.subject,
         text: emailData.body,
         html: emailData.htmlBody,
-        attachments: emailData.attachments?.map(att => ({ 
-          filename: att.filename, 
-          path: att.url 
+        attachments: emailData.attachments?.map(att => ({
+          filename: att.filename,
+          path: att.url
         }))
       };
 
@@ -390,13 +407,13 @@ export class EmailConnectorService {
       return result.messageId as string;
     } catch (error: any) {
       console.error('Failed to send Gmail SMTP email:', error);
-      
+
       // Check if it's a token-related error
-      if (error.message.includes('invalid_request') || 
-          error.message.includes('invalid_grant') || 
-          error.message.includes('token') ||
-          error.code === 'EAUTH') {
-        
+      if (error.message.includes('invalid_request') ||
+        error.message.includes('invalid_grant') ||
+        error.message.includes('token') ||
+        error.code === 'EAUTH') {
+
         // Try to refresh tokens before giving up
         try {
           console.log('Attempting to refresh OAuth tokens...');
@@ -404,11 +421,11 @@ export class EmailConnectorService {
             const { OAuthService } = require('./oauthService');
             this.oauthService = new OAuthService();
           }
-          
+
           const refreshResult = await this.oauthService.refreshTokenIfNeeded(account);
           if (refreshResult) {
             console.log('Tokens refreshed successfully, retrying email send...');
-            
+
             // Update account with new tokens
             const { EmailService } = require('./emailService');
             const { EmailModel } = require('../models/emailModel');
@@ -417,21 +434,21 @@ export class EmailConnectorService {
             const db = new Database('data.db');
             const emailModel = new EmailModel(db);
             const emailService = new EmailService(emailModel, this);
-            
+
             await emailService.updateEmailAccount(account.id, {
               accessToken: refreshResult.accessToken,
               refreshToken: refreshResult.refreshToken || account.refreshToken,
               updatedAt: new Date()
             });
-            
+
             // Retry with new tokens - create a new transporter with fresh tokens
             console.log('Retrying with refreshed tokens...');
-            const updatedAccount = { 
-              ...account, 
+            const updatedAccount = {
+              ...account,
               accessToken: refreshResult.accessToken,
               refreshToken: refreshResult.refreshToken || account.refreshToken
             };
-            
+
             // Create a new transporter with the refreshed tokens
             const refreshedTransporter = nodemailer.createTransport({
               service: 'gmail',
@@ -463,9 +480,9 @@ export class EmailConnectorService {
               subject: emailData.subject,
               text: emailData.body,
               html: emailData.htmlBody,
-              attachments: emailData.attachments?.map(att => ({ 
-                filename: att.filename, 
-                path: att.url 
+              attachments: emailData.attachments?.map(att => ({
+                filename: att.filename,
+                path: att.url
               }))
             };
 
@@ -478,10 +495,10 @@ export class EmailConnectorService {
           // If refresh fails, the user needs to re-authenticate
           throw new Error('OAuth tokens are invalid or expired. Please re-authenticate your Gmail account by going to the email setup page.');
         }
-        
+
         throw new Error('OAuth tokens are invalid or expired. Please re-authenticate your Gmail account.');
       }
-      
+
       // Fallback to API method
       return await this.sendGmailEmailViaAPI(account, emailData);
     }
@@ -521,9 +538,9 @@ export class EmailConnectorService {
         subject: emailData.subject,
         text: emailData.body,
         html: emailData.htmlBody,
-        attachments: emailData.attachments?.map(att => ({ 
-          filename: att.filename, 
-          path: att.url 
+        attachments: emailData.attachments?.map(att => ({
+          filename: att.filename,
+          path: att.url
         }))
       };
 
@@ -547,7 +564,7 @@ export class EmailConnectorService {
     attachments?: EmailAttachment[];
   }): Promise<string> {
     await this.connectGmail(account);
-    
+
     // Create RFC 2822 formatted email message
     const emailLines = [
       `From: ${account.email}`,
@@ -576,13 +593,13 @@ export class EmailConnectorService {
       return response.data.id;
     } catch (error: any) {
       console.error('Failed to send Gmail email:', error);
-      
+
       // Check if it's a token-related error
-      if (error.message.includes('invalid_request') || 
-          error.message.includes('invalid_grant') || 
-          error.message.includes('token') ||
-          error.code === 401) {
-        
+      if (error.message.includes('invalid_request') ||
+        error.message.includes('invalid_grant') ||
+        error.message.includes('token') ||
+        error.code === 401) {
+
         // Try to refresh tokens before giving up
         try {
           console.log('Attempting to refresh OAuth tokens for Gmail API...');
@@ -590,11 +607,11 @@ export class EmailConnectorService {
             const { OAuthService } = require('./oauthService');
             this.oauthService = new OAuthService();
           }
-          
+
           const refreshResult = await this.oauthService.refreshTokenIfNeeded(account);
           if (refreshResult) {
             console.log('Tokens refreshed successfully, retrying Gmail API send...');
-            
+
             // Update account with new tokens
             const { EmailService } = require('./emailService');
             const { EmailModel } = require('../models/emailModel');
@@ -603,13 +620,13 @@ export class EmailConnectorService {
             const db = new Database('data.db');
             const emailModel = new EmailModel(db);
             const emailService = new EmailService(emailModel, this);
-            
+
             await emailService.updateEmailAccount(account.id, {
               accessToken: refreshResult.accessToken,
               refreshToken: refreshResult.refreshToken || account.refreshToken,
               updatedAt: new Date()
             });
-            
+
             // Retry with new tokens
             const updatedAccount = { ...account, accessToken: refreshResult.accessToken };
             return await this.sendGmailEmailViaAPI(updatedAccount, emailData);
@@ -617,10 +634,10 @@ export class EmailConnectorService {
         } catch (refreshError: any) {
           console.error('Token refresh failed for Gmail API:', refreshError);
         }
-        
+
         throw new Error('OAuth tokens are invalid or expired. Please re-authenticate your Gmail account.');
       }
-      
+
       throw new Error(`Gmail email sending failed: ${error.message}`);
     }
   }
@@ -635,7 +652,7 @@ export class EmailConnectorService {
     attachments?: EmailAttachment[];
   }): Promise<string> {
     await this.connectOutlook(account);
-    
+
     const message = {
       subject: emailData.subject,
       body: {
@@ -664,7 +681,7 @@ export class EmailConnectorService {
   // Helper method to decrypt tokens if they are encrypted
   private decryptTokenIfNeeded(token: string): string {
     if (!token) return token;
-    
+
     // Check if token is encrypted (contains colon separator)
     if (token.includes(':') && token.length > 50) {
       try {
@@ -672,7 +689,7 @@ export class EmailConnectorService {
         if (this.oauthService && typeof this.oauthService.decryptToken === 'function') {
           return this.oauthService.decryptToken(token);
         }
-        
+
         // If OAuth service is not available, try to create one
         if (!this.oauthService) {
           try {
@@ -683,7 +700,7 @@ export class EmailConnectorService {
             console.warn('Could not import OAuthService for token decryption:', importError);
           }
         }
-        
+
         // If all else fails, return as is
         return token;
       } catch (error) {
@@ -691,7 +708,7 @@ export class EmailConnectorService {
         return token;
       }
     }
-    
+
     // Token is not encrypted, return as is
     return token;
   }

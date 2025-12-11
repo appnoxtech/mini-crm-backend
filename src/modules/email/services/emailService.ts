@@ -112,9 +112,11 @@ export class EmailService {
       );
 
       if (provider === "gmail") {
+        // Fetch up to 100 emails for better sync coverage
         rawEmails = await this.connectorService.fetchGmailEmails(
           account,
-          account.lastSyncAt
+          account.lastSyncAt,
+          100 // Increased from default 50 for better sync coverage
         );
       } else if (provider === "outlook") {
         rawEmails = await this.connectorService.fetchOutlookEmails(
@@ -523,7 +525,7 @@ export class EmailService {
 
   // In EmailService
   async getAllEmails(options: { limit?: number } = {}) {
-    return this.emailModel.getAllEmails({ limit:1000 });
+    return this.emailModel.getAllEmails({ limit: 1000 });
   }
 
   // Get a specific email by ID
