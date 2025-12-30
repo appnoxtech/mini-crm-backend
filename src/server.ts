@@ -177,17 +177,17 @@ try {
 }
 
 // Optional: Also try to start Redis-based queue if available
-try {
-  const summarizationScheduler = startSummarizationScheduler(DB_PATH);
-  console.log('📧 Redis-based summarization scheduler also started');
+// try {
+//   const summarizationScheduler = startSummarizationScheduler(DB_PATH);
+//   console.log('📧 Redis-based summarization scheduler also started');
 
-  // Graceful shutdown handler
-  process.on('SIGTERM', () => {
-    console.log('SIGTERM received, shutting down gracefully...');
-    summarizationScheduler.stop();
-    process.exit(0);
-  });
-} catch (error) {
-  console.log('ℹ️  Redis not available - using RunPod async mode only (this is fine!)');
-}
+//   // Graceful shutdown handler
+//   process.on('SIGTERM', () => {
+//     console.log('SIGTERM received, shutting down gracefully...');
+//     summarizationScheduler.stop();
+//     process.exit(0);
+//   });
+// } catch (error) {
+//   console.log('ℹ️  Redis not available - using RunPod async mode only (this is fine!)');
+// }
 
