@@ -5,6 +5,12 @@ export { EmailConnectorService } from './services/emailConnectorService';
 export { EmailController } from './controllers/emailController';
 export { createEmailRoutes } from './routes/emailRoutes';
 
+// Draft module exports
+export { DraftModel } from './models/draftModel';
+export { DraftService } from './services/draftService';
+export { DraftController } from './controllers/draftController';
+export { createDraftRoutes } from './routes/draftRoutes';
+
 
 // Enhanced email functionality exports
 export { MailSystemConfigService } from './services/mailSystemConfig';
@@ -15,13 +21,21 @@ export { EmailTrackingService } from './services/emailTrackingService';
 export { ErrorHandlingService } from './services/errorHandlingService';
 export { BulkEmailService } from './services/bulkEmailService';
 
-export type { 
-  Email, 
-  EmailAccount, 
-  EmailAttachment, 
-  Contact, 
-  Deal 
+export type {
+  Email,
+  EmailAccount,
+  EmailAttachment,
+  Contact,
+  Deal
 } from './models/types';
+
+// Draft types
+export type {
+  EmailDraft,
+  CreateDraftInput,
+  UpdateDraftInput,
+  ListDraftsOptions,
+} from './models/draftTypes';
 
 
 // Enhanced types exports
