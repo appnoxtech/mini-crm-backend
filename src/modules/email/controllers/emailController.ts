@@ -32,7 +32,7 @@ export class EmailController {
       const threadId = req.params.threadId;
       const emailModel: EmailModel = this.emailService.getEmailModel();
 
-      const { emails } = await this.emailService.getAllEmails({ limit: 1000});
+      const { emails } = await this.emailService.getAllEmails({ limit: 1000 });
       // console.log(emails);
       const threadEmails = emails.filter((e) => e.threadId === threadId);
       if (!threadEmails.length)
@@ -55,7 +55,7 @@ export class EmailController {
   async getThreadSummary(req: Request, res: Response) {
     try {
       const threadId = req.params.threadId;
-     const emailModel: EmailModel = this.emailService.getEmailModel();
+      const emailModel: EmailModel = this.emailService.getEmailModel();
 
       const summaryData = await emailModel.getThreadSummary(threadId!);
       if (!summaryData)
@@ -210,59 +210,6 @@ export class EmailController {
     }
   }
 
-  // Debug endpoint to check current token status
-  async debugTokenStatus(
-    req: AuthenticatedRequest,
-    res: Response
-  ): Promise<void> {
-    try {
-      if (!req.user) {
-        res.status(401).json({ error: "User not authenticated" });
-        return;
-      }
-
-      const emailAccount = await this.emailService.getEmailAccountByUserId(
-        req.user.id.toString()
-      );
-      if (!emailAccount) {
-        res.status(404).json({ error: "No email account found" });
-        return;
-      }
-
-      // Decrypt tokens for debugging (don't expose full tokens in production)
-      const decryptedAccessToken = this.oauthService.decryptToken(
-        emailAccount.accessToken || ""
-      );
-      const decryptedRefreshToken = this.oauthService.decryptToken(
-        emailAccount.refreshToken || ""
-      );
-
-      res.json({
-        account: {
-          id: emailAccount.id,
-          email: emailAccount.email,
-          provider: emailAccount.provider,
-          isActive: emailAccount.isActive,
-          createdAt: emailAccount.createdAt,
-          updatedAt: emailAccount.updatedAt,
-        },
-        tokens: {
-          hasAccessToken: !!emailAccount.accessToken,
-          hasRefreshToken: !!emailAccount.refreshToken,
-          accessTokenLength: decryptedAccessToken?.length || 0,
-          refreshTokenLength: decryptedRefreshToken?.length || 0,
-          accessTokenStart: decryptedAccessToken?.substring(0, 20) + "...",
-          refreshTokenStart: decryptedRefreshToken?.substring(0, 20) + "...",
-        },
-      });
-    } catch (error: any) {
-      console.error("Debug token status failed:", error);
-      res
-        .status(500)
-        .json({ error: "Failed to get token status", details: error.message });
-    }
-  }
-
   // New endpoint to validate email account tokens
   async validateEmailAccount(
     req: AuthenticatedRequest,
@@ -334,60 +281,7 @@ export class EmailController {
     }
   }
 
-  async sendTestEmail(req: AuthenticatedRequest, res: Response): Promise<void> {
-    try {
-      if (!req.user) {
-        res.status(401).json({ error: "User not authenticated" });
-        return;
-      }
 
-      const { to, subject, body, htmlBody } = (req.body as any) || {};
-
-      if (!to || !subject || !body) {
-        res.status(400).json({
-          error: "Missing required fields: to, subject, body",
-        });
-        return;
-      }
-
-      // Get user's email account from database
-      const emailAccount = await this.emailService.getEmailAccountByUserId(
-        req.user.id.toString()
-      );
-      if (!emailAccount) {
-        res.status(400).json({
-          error: "No email account configured",
-          details: "Please connect your email account first",
-        });
-        return;
-      }
-
-      console.log("Testing direct email send with:", {
-        accountId: emailAccount.id,
-        to,
-        subject,
-      });
-
-      const messageId = await this.emailService.sendEmail(emailAccount.id, {
-        to: Array.isArray(to) ? to : [to],
-        subject,
-        body,
-        htmlBody,
-      });
-
-      res.json({
-        success: true,
-        message: "Test email sent successfully",
-        messageId,
-      });
-    } catch (error: any) {
-      console.error("Test email send failed:", error);
-      res.status(500).json({
-        error: "Failed to send test email",
-        details: error.message,
-      });
-    }
-  }
 
   async getEmailsForContact(
     req: AuthenticatedRequest,
@@ -786,122 +680,9 @@ export class EmailController {
     }
   }
 
-  // Test email account connection
-  async testEmailAccount(
-    req: AuthenticatedRequest,
-    res: Response
-  ): Promise<void> {
-    try {
-      if (!req.user) {
-        res.status(401).json({ error: "User not authenticated" });
-        return;
-      }
 
-      const { email, provider, smtpConfig } = req.body as any;
 
-      if (!email || !provider || !smtpConfig) {
-        res
-          .status(400)
-          .json({
-            error: "Missing required fields: email, provider, smtpConfig",
-          });
-        return;
-      }
 
-      // Test the connection by sending a test email
-      const testAccount: EmailAccount = {
-        id: "test-account",
-        userId: req.user.id.toString(),
-        email,
-        provider,
-        smtpConfig,
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      try {
-        await this.emailService.sendEmail(testAccount.id, {
-          to: [email], // Send test email to the account itself
-          subject: "CRM Email Connection Test",
-          body: "This is a test email to verify your email account connection is working properly.",
-        });
-
-        res.json({
-          success: true,
-          message: "Email account connection test successful",
-        });
-      } catch (sendError: any) {
-        res.status(400).json({
-          success: false,
-          error: "Email account connection test failed",
-          details: sendError.message,
-        });
-      }
-    } catch (error: any) {
-      console.error("Error testing email account:", error);
-      res.status(500).json({ error: "Failed to test email account" });
-    }
-  }
-
-  // New endpoint to test email account connection
-  async testEmailConnection(
-    req: AuthenticatedRequest,
-    res: Response
-  ): Promise<void> {
-    try {
-      if (!req.user) {
-        res.status(401).json({ error: "User not authenticated" });
-        return;
-      }
-
-      // Get user's email account from database
-      const emailAccount = await this.emailService.getEmailAccountByUserId(
-        req.user.id.toString()
-      );
-      if (!emailAccount) {
-        res.status(404).json({
-          error: "No email account found",
-          details: "Please connect your email account first",
-        });
-        return;
-      }
-
-      // Basic account validation
-      const accountInfo = {
-        id: emailAccount.id,
-        email: emailAccount.email,
-        provider: emailAccount.provider,
-        isActive: emailAccount.isActive,
-        hasAccessToken: !!emailAccount.accessToken,
-        hasRefreshToken: !!emailAccount.refreshToken,
-        hasSmtpConfig: !!emailAccount.smtpConfig,
-        lastSyncAt: emailAccount.lastSyncAt,
-        createdAt: emailAccount.createdAt,
-        updatedAt: emailAccount.updatedAt,
-      };
-
-      // Check OAuth configuration
-      const hasOAuthConfig =
-        (emailAccount.provider === "gmail" && process.env.GOOGLE_CLIENT_ID) ||
-        (emailAccount.provider === "outlook" &&
-          process.env.MICROSOFT_CLIENT_ID);
-
-      res.json({
-        success: true,
-        message: "Email account connection test completed",
-        account: accountInfo,
-        oauthConfigured: hasOAuthConfig,
-        recommendations: [],
-      });
-    } catch (error: any) {
-      console.error("Email connection test failed:", error);
-      res.status(500).json({
-        error: "Failed to test email connection",
-        details: error.message,
-      });
-    }
-  }
 
   // Email sync management endpoints
   async triggerEmailSync(
@@ -1030,60 +811,6 @@ export class EmailController {
     }
   }
 
-  // Test endpoint to manually trigger WebSocket notification
-  async testWebSocketNotification(
-    req: AuthenticatedRequest,
-    res: Response
-  ): Promise<void> {
-    try {
-      if (!req.user) {
-        res.status(401).json({ error: "User not authenticated" });
-        return;
-      }
-
-      if (this.notificationService) {
-        const testEmail = {
-          id: "test-email-" + Date.now(),
-          messageId: "test-message-id",
-          accountId: "test-account",
-          from: "test@example.com",
-          to: ["user@example.com"],
-          subject: "Test WebSocket Notification",
-          body: "This is a test email to verify WebSocket notifications are working",
-          isRead: false,
-          isIncoming: true,
-          sentAt: new Date(),
-          receivedAt: new Date(),
-          contactIds: [],
-          dealIds: [],
-          accountEntityIds: [],
-          opens: 0,
-          clicks: 0,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-
-        this.notificationService.notifyNewEmail(
-          req.user.id.toString(),
-          testEmail
-        );
-
-        res.json({
-          success: true,
-          message: "Test WebSocket notification sent",
-          userId: req.user.id.toString(),
-        });
-      } else {
-        res.status(500).json({ error: "Notification service not available" });
-      }
-    } catch (error: any) {
-      console.error("Error sending test notification:", error);
-      res.status(500).json({
-        error: "Failed to send test notification",
-        details: error.message,
-      });
-    }
-  }
 
   // Get emails for the user's inbox
   async getEmails(req: AuthenticatedRequest, res: Response): Promise<void> {
