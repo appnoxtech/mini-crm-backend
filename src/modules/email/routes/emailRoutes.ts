@@ -24,13 +24,12 @@ export function createEmailRoutes(emailController: EmailController): Router {
   // Protected routes (require authentication)
   (router as any).use(authMiddleware);
 
-   // Thread summary routes
+  // Thread summary routes
   router.post('/threads/:threadId/summarize', (req, res) => emailController.summarizeThread(req, res));
   router.get('/threads/:threadId/summary', (req, res) => emailController.getThreadSummary(req, res));
 
   // Email sending
   router.post('/send', (req: any, res) => emailController.sendEmail(req, res));
-  router.post('/send-test', (req: any, res) => emailController.sendTestEmail(req, res));
 
   // Email retrieval for CRM entities
   router.get('/contacts/:contactId/emails', (req: any, res) => emailController.getEmailsForContact(req, res));
@@ -40,16 +39,12 @@ export function createEmailRoutes(emailController: EmailController): Router {
   router.get('/accounts', (req: any, res) => emailController.getEmailAccounts(req, res));
   router.post('/accounts', (req: any, res) => emailController.connectEmailAccount(req, res));
   router.put('/accounts/:accountId', (req: any, res) => emailController.updateEmailAccount(req, res));
-  router.post('/accounts/test', (req: any, res) => emailController.testEmailAccount(req, res));
   router.get('/accounts/validate', (req: any, res) => emailController.validateEmailAccount(req, res));
-  router.get('/accounts/debug-tokens', (req: any, res) => emailController.debugTokenStatus(req, res));
-  router.get('/accounts/test-connection', (req: any, res) => emailController.testEmailConnection(req, res));
 
   // Email sync management
   router.post('/accounts/:accountId/sync', (req: any, res) => emailController.triggerEmailSync(req, res));
   router.get('/queue/status', (req: any, res) => emailController.getQueueStatus(req, res));
   router.get('/notifications/stats', (req: any, res) => emailController.getNotificationStats(req, res));
-  router.post('/test-websocket-notification', (req: any, res) => emailController.testWebSocketNotification(req, res));
 
   // Email retrieval and management
   router.get('/list', (req: any, res) => emailController.getEmails(req, res));
