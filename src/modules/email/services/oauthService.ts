@@ -11,6 +11,13 @@ export class OAuthService {
   constructor() {
     // Initialize encryption key for token security
     this.encryptionKey = process.env.TOKEN_ENCRYPTION_KEY || 'default-key-change-in-production';
+
+    // DEBUG: Log Env Vars to PM2 Logs
+    console.log('--- OAuthService Config Check ---');
+    console.log('GOOGLE_CLIENT_ID:', process.env.GOOGLE_CLIENT_ID ? 'Present' : 'MISSING');
+    console.log('GOOGLE_CLIENT_SECRET:', process.env.GOOGLE_CLIENT_SECRET ? 'Present' : 'MISSING');
+    console.log('GOOGLE_REDIRECT_URI:', process.env.GOOGLE_REDIRECT_URI || 'MISSING');
+
     // Check if Google OAuth credentials are configured
     if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET || !process.env.GOOGLE_REDIRECT_URI) {
       console.warn('Google OAuth credentials not configured. Gmail OAuth will be disabled.');
@@ -47,7 +54,7 @@ export class OAuthService {
       if (!process.env.GOOGLE_CLIENT_ID) missingVars.push('GOOGLE_CLIENT_ID');
       if (!process.env.GOOGLE_CLIENT_SECRET) missingVars.push('GOOGLE_CLIENT_SECRET');
       if (!process.env.GOOGLE_REDIRECT_URI) missingVars.push('GOOGLE_REDIRECT_URI');
-      
+
       throw new Error(`Google OAuth is not configured. Missing environment variables: ${missingVars.join(', ')}. Please create a .env file with these variables. See README.md for setup instructions.`);
     }
 
@@ -77,12 +84,12 @@ export class OAuthService {
 
     try {
       const { tokens } = await this.googleOAuth2Client.getToken(code);
-      
+
       // Get user info
       this.googleOAuth2Client.setCredentials(tokens);
       const gmail = google.gmail({ version: 'v1', auth: this.googleOAuth2Client });
       const profile = await gmail.users.getProfile({ userId: 'me' });
-      
+
       return {
         accessToken: tokens.access_token!,
         refreshToken: tokens.refresh_token!,
@@ -101,7 +108,7 @@ export class OAuthService {
       const missingVars = [];
       if (!process.env.MICROSOFT_CLIENT_ID) missingVars.push('MICROSOFT_CLIENT_ID');
       if (!process.env.MICROSOFT_CLIENT_SECRET) missingVars.push('MICROSOFT_CLIENT_SECRET');
-      
+
       throw new Error(`Microsoft OAuth is not configured. Missing environment variables: ${missingVars.join(', ')}. Please create a .env file with these variables. See README.md for setup instructions.`);
     }
 
@@ -175,21 +182,21 @@ export class OAuthService {
     try {
       this.googleOAuth2Client.setCredentials({ refresh_token: refreshToken });
       const { credentials } = await this.googleOAuth2Client.refreshAccessToken();
-      
+
       return {
         accessToken: credentials.access_token!,
         refreshToken: credentials.refresh_token
       };
     } catch (error: any) {
       console.error('Google token refresh error:', error);
-      
+
       // Check for specific error types
       if (error.response?.data?.error === 'invalid_grant') {
         throw new Error('Token has been expired or revoked. User needs to re-authorize their Gmail account.');
       } else if (error.message?.includes('invalid_grant')) {
         throw new Error('Token has been expired or revoked. User needs to re-authorize their Gmail account.');
       }
-      
+
       throw new Error('Failed to refresh Google token');
     }
   }
@@ -250,7 +257,7 @@ export class OAuthService {
   // Token encryption for security
   public encryptToken(token: string): string {
     if (!token) return token;
-    
+
     try {
       const iv = crypto.randomBytes(16);
       const key = crypto.scryptSync(this.encryptionKey, 'salt', 32);
@@ -265,11 +272,11 @@ export class OAuthService {
 
   decryptToken(encryptedToken: string): string {
     if (!encryptedToken || !encryptedToken.includes(':')) return encryptedToken;
-    
+
     try {
       const parts = encryptedToken.split(':');
       if (parts.length !== 2 || !parts[0] || !parts[1]) return encryptedToken;
-      
+
       const iv = Buffer.from(parts[0], 'hex');
       const encrypted = Buffer.from(parts[1], 'hex');
       const key = crypto.scryptSync(this.encryptionKey, 'salt', 32);
@@ -290,23 +297,23 @@ export class OAuthService {
 
     try {
       const decryptedRefreshToken = this.decryptToken(account.refreshToken);
-      
+
       if (account.provider === 'gmail') {
         return await this.refreshGoogleToken(decryptedRefreshToken);
       } else if (account.provider === 'outlook') {
         return await this.refreshMicrosoftToken(decryptedRefreshToken);
       }
-      
+
       return null;
     } catch (error: any) {
       console.error(`Failed to refresh tokens for ${account.provider} account:`, error);
-      
+
       // If refresh fails, provide specific error message
-      if (error.message.includes('Token has been expired or revoked') || 
-          error.message.includes('invalid_grant')) {
+      if (error.message.includes('Token has been expired or revoked') ||
+        error.message.includes('invalid_grant')) {
         throw new Error(`Your ${account.provider} account authorization has expired or been revoked. Please re-authenticate your account by going to the email setup page.`);
       }
-      
+
       throw new Error(`Token refresh failed. User needs to re-authorize their ${account.provider} account.`);
     }
   }
@@ -318,18 +325,18 @@ export class OAuthService {
     }
 
     const decryptedAccessToken = this.decryptToken(account.accessToken);
-    
+
     // Always try to refresh the token to ensure it's valid
     // This is more reliable than trying to validate the token first
     try {
       console.log(`Validating and refreshing tokens for ${account.provider} account: ${account.email}`);
-      
+
       const refreshResult = await this.refreshTokenIfNeeded(account);
       if (refreshResult) {
         console.log(`Successfully refreshed tokens for ${account.provider} account`);
         return refreshResult.accessToken;
       }
-      
+
       // If no refresh was needed, return the current token
       return decryptedAccessToken;
     } catch (error: any) {
@@ -349,7 +356,7 @@ export class OAuthService {
       details,
       ip: 'unknown' // In production, you'd get this from the request
     };
-    
+
     console.log('OAuth Activity:', JSON.stringify(logEntry));
     // In production, you'd store this in a secure audit log
   }

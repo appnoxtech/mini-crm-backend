@@ -134,6 +134,11 @@ export class RunPodAsyncService {
             const errorText = await response.text();
             console.error(`❌ RunPod API Error: ${response.status} ${response.statusText}`);
             console.error(`❌ Response body: ${errorText}`);
+
+            if (response.status === 401) {
+                throw new Error(`RunPod API Unauthorized (401). Check your RUNPOD_API_KEY and ensure RUNPOD_ENDPOINT_ID (${config.RUNPOD_ENDPOINT_ID}) is correct.`);
+            }
+
             throw new Error(`RunPod API error: ${response.status}`);
         }
 
