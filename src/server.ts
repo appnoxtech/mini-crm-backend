@@ -132,10 +132,9 @@ app.use('/api/auth', createAuthRoutes(authController));
 app.use('/api/leads', createLeadRoutes(leadController));
 app.use('/api/emails', createEmailRoutes(emailController));
 app.use('/api/summarization', createSummarizationRoutes(summarizationController));
-// app.use('/api/emails/enhanced', createEnhancedEmailRoutes(enhancedEmailController));
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
