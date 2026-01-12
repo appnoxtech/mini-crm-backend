@@ -8,7 +8,7 @@ import { startThreadSummaryJob } from './cron/summarizeThreads';
 import { startEmailSyncJob } from './cron/emailSync';
 import { startTokenRefreshJob } from './cron/tokenRefresh';
 import { startRunPodJobProcessor } from './cron/runpodJobProcessor';
-
+import os from 'os';
 
 // Load environment variables
 dotenv.config();
@@ -149,31 +149,56 @@ app.use('*', (req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
+
+
+function getLocalIP(): string {
+  const interfaces = os.networkInterfaces();
+
+  for (const name in interfaces) {
+    const nets = interfaces[name];
+    if (!nets) continue;
+
+    for (const net of nets) {
+      if (net.family === 'IPv4' && !net.internal) {
+        return net.address;
+      }
+    }
+  }
+
+  return 'localhost';
+}
+
+
+const localIP = getLocalIP();
+
 // Start the server
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`➡ Local:   http://localhost:${PORT}`);
+  console.log(`➡ Network: http://${localIP}:${PORT}`);
   console.log('Socket.IO initialized for real-time notifications');
 });
 
 // Start cron jobs
-startThreadSummaryJob(DB_PATH);
+
+//startThreadSummaryJob(DB_PATH);
 
 // Start email sync cron job (syncs every 5 minutes)
-startEmailSyncJob(DB_PATH, notificationService);
-console.log('Email sync cron job started');
+//startEmailSyncJob(DB_PATH, notificationService);
+//console.log('Email sync cron job started');
 
 // Start token refresh cron job (refreshes every 6 hours to prevent expiration)
-startTokenRefreshJob(DB_PATH);
-console.log('Token refresh cron job started');
+//startTokenRefreshJob(DB_PATH);
+//console.log('Token refresh cron job started');
 
 // Start RunPod async job processor (NO REDIS REQUIRED!)
 // This uses RunPod's built-in async queue for cost-efficient serverless processing
-try {
-  startRunPodJobProcessor(DB_PATH);
-  console.log('📧 RunPod async job processor started (no Redis needed!)');
-} catch (error) {
-  console.warn('⚠️ RunPod job processor failed to start:', error);
-}
+//try {
+//  startRunPodJobProcessor(DB_PATH);
+//  console.log('📧 RunPod async job processor started (no Redis needed!)');
+//} catch (error) {
+//  console.warn('⚠️ RunPod job processor failed to start:', error);
+//}
 
 // Optional: Also try to start Redis-based queue if available
 // try {
