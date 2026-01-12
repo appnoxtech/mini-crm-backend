@@ -20,7 +20,8 @@ export interface AuthUser {
   id: number;
   email: string;
   name: string;
-  createdAt: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface AuthenticatedRequest extends Request {

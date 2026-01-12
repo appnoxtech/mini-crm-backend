@@ -6,11 +6,11 @@ export function createLeadRoutes(leadController: LeadController): Router {
   const router = Router();
 
   // Apply auth middleware to all leads routes
-  (router as any).use(authMiddleware);
+  router.use(authMiddleware);
 
   // Lead CRUD operations
-  router.get('/', (req: any, res) => leadController.getLeads(req, res));
-  router.post('/', (req: any, res) => leadController.createLead(req, res));
+  router.get('/get', (req: any, res) => leadController.getLeads(req, res));
+  router.post('/create', (req: any, res) => leadController.createLead(req, res));
   router.delete('/:id', (req: any, res) => leadController.deleteLead(req, res));
 
   // Lead stage management
