@@ -40,7 +40,7 @@ export class AuthController {
 
       return ResponseHandler.created(res, user, 'User Registered Successfully');
     } catch (error: any) {
-      return ResponseHandler.error(res, 'Registration failed', 500);
+      return ResponseHandler.internalError(res, 'Registration failed');
     }
   }
 
@@ -113,7 +113,7 @@ export class AuthController {
 
     } catch (error) {
       console.error('Login error:', error);
-      return ResponseHandler.error(res, 'Login Failed');
+      return ResponseHandler.internalError(res, 'Login Failed');
     }
   }
 
@@ -143,8 +143,7 @@ export class AuthController {
     try {
 
       if (!req.user) {
-        res.status(401).json({ error: 'User not authenticated' });
-        return;
+        return ResponseHandler.forbidden(res, 'User not authenticated');
       }
 
       const { name, email } = req.body as any;
@@ -152,16 +151,14 @@ export class AuthController {
 
       if (name !== undefined) {
         if (!name.trim()) {
-          res.status(400).json({ error: 'Name cannot be empty' });
-          return;
+          return ResponseHandler.validationError(res, 'Name cannot be empty');
         }
         updates.name = name.trim();
       }
 
       if (email !== undefined) {
         if (!email.includes('@')) {
-          res.status(400).json({ error: 'Please enter a valid email address' });
-          return;
+          return ResponseHandler.validationError(res, 'Please enter a valid email address');
         }
         updates.email = email.toLowerCase();
       }
@@ -173,21 +170,14 @@ export class AuthController {
 
       const updatedUser = await this.authService.updateUser(req.user.id, updates);
       if (!updatedUser) {
-        res.status(404).json({ error: 'User not found' });
-        return;
+        return ResponseHandler.validationError(res, 'User not found');
       }
 
-      res.json({
-        user: {
-          id: updatedUser.id,
-          email: updatedUser.email,
-          name: updatedUser.name,
-          createdAt: updatedUser.createdAt
-        }
-      });
+      return ResponseHandler.success(res, updatedUser, "Profile Update Successfully", 200);
+
     } catch (error) {
       console.error('Profile update error:', error);
-      res.status(500).json({ error: 'Failed to update profile' });
+      return ResponseHandler.internalError(res, 'Failed to update profile');
     }
   }
 
@@ -204,14 +194,13 @@ export class AuthController {
       const success = await this.authService.changePassword(req.user.id, currentPassword, newPassword);
 
       if (!success) {
-        res.status(401).json({ error: 'Current password is incorrect' });
-        return;
+        return ResponseHandler.error(res, 'Current password is incorrect', 401);
       }
+      return ResponseHandler.success(res, 'Password updated successfully');
 
-      res.json({ message: 'Password updated successfully' });
     } catch (error) {
       console.error('Password change error:', error);
-      res.status(500).json({ error: 'Failed to change password' });
+      return ResponseHandler.internalError(res, 'Failed to change password');
     }
   }
 }
