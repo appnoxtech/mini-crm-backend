@@ -17,6 +17,11 @@ dotenv.config();
 import { UserModel } from './modules/auth/models/User';
 import { LeadModel } from './modules/leads/models/Lead';
 import { EmailModel } from './modules/email/models/emailModel';
+import { PipelineModel } from './modules/pipelines/models/Pipeline';
+import { PipelineStageModel } from './modules/pipelines/models/PipelineStage';
+import { DealModel } from './modules/pipelines/models/Deal';
+import { DealHistoryModel } from './modules/pipelines/models/DealHistory';
+import { DealActivityModel } from './modules/pipelines/models/DealActivity';
 
 // Import services
 import { AuthService } from './modules/auth/services/authService';
@@ -26,6 +31,10 @@ import { EmailConnectorService } from './modules/email/services/emailConnectorSe
 import { OAuthService } from './modules/email/services/oauthService';
 import { EmailQueueService } from './modules/email/services/emailQueueService';
 import { RealTimeNotificationService } from './modules/email/services/realTimeNotificationService';
+import { PipelineService } from './modules/pipelines/services/pipelineService';
+import { PipelineStageService } from './modules/pipelines/services/pipelineStageService';
+import { DealService } from './modules/pipelines/services/dealService';
+import { DealActivityService } from './modules/pipelines/services/dealActivityService';
 
 // Import enhanced email services
 import { MailSystemConfigService } from './modules/email/services/mailSystemConfig';
@@ -40,16 +49,23 @@ import { BulkEmailService } from './modules/email/services/bulkEmailService';
 import { AuthController } from './modules/auth/controllers/authController';
 import { LeadController } from './modules/leads/controllers/leadController';
 import { EmailController } from './modules/email/controllers/emailController';
+import { PipelineController } from './modules/pipelines/controllers/pipelineController';
+import { DealController } from './modules/pipelines/controllers/dealController';
+import { ActivityController } from './modules/pipelines/controllers/activityController';
 
 // Import routes
 import { createAuthRoutes } from './modules/auth/routes/authRoutes';
 import { createLeadRoutes } from './modules/leads/routes/leadRoutes';
 import { createEmailRoutes } from './modules/email/routes/emailRoutes';
 import { createSummarizationRoutes } from './modules/email/routes/summarizationRoutes';
+import { createPipelineRoutes } from './modules/pipelines/routes/pipelineRoutes';
+import { createDealRoutes } from './modules/pipelines/routes/dealRoutes';
+import { createActivityRoutes } from './modules/pipelines/routes/activityRoutes';
 
 // Import summarization services
 import { SummarizationController } from './modules/email/controllers/summarizationController';
 import { startSummarizationScheduler } from './modules/email/services/summarizationSchedulerService';
+
 
 const app = express();
 const server = createServer(app);
@@ -70,11 +86,21 @@ db.pragma('foreign_keys = ON');
 const userModel = new UserModel(db);
 const leadModel = new LeadModel(db);
 const emailModel = new EmailModel(db);
+const pipelineModel = new PipelineModel(db);
+const pipelineStageModel = new PipelineStageModel(db);
+const dealModel = new DealModel(db);
+const dealHistoryModel = new DealHistoryModel(db);
+const dealActivityModel = new DealActivityModel(db);
 
 // Initialize database tables
 userModel.initialize();
 leadModel.initialize();
 emailModel.initialize();
+pipelineModel.initialize();
+pipelineStageModel.initialize();
+dealModel.initialize();
+dealHistoryModel.initialize();
+dealActivityModel.initialize();
 
 // Initialize services
 const authService = new AuthService(userModel);
@@ -84,6 +110,10 @@ const emailConnectorService = new EmailConnectorService(oauthService);
 const notificationService = new RealTimeNotificationService();
 const emailService = new EmailService(emailModel, emailConnectorService, notificationService);
 const emailQueueService = new EmailQueueService(emailService, emailModel);
+const pipelineService = new PipelineService(pipelineModel, pipelineStageModel);
+const pipelineStageService = new PipelineStageService(pipelineStageModel, pipelineModel);
+const dealService = new DealService(dealModel, dealHistoryModel, pipelineModel, pipelineStageModel);
+const dealActivityService = new DealActivityService(dealActivityModel, dealModel);
 
 // Initialize enhanced email services
 const configService = new MailSystemConfigService();
@@ -115,6 +145,9 @@ const authController = new AuthController(authService, userModel);
 const leadController = new LeadController(leadService);
 const emailController = new EmailController(emailService, oauthService, emailQueueService, notificationService);
 const summarizationController = new SummarizationController(emailModel, DB_PATH);
+const pipelineController = new PipelineController(pipelineService, pipelineStageService);
+const dealController = new DealController(dealService);
+const activityController = new ActivityController(dealActivityService);
 
 // Middleware
 app.use(express.json());
@@ -135,6 +168,12 @@ app.use('/api/auth', createAuthRoutes(authController));
 app.use('/api/leads', createLeadRoutes(leadController));
 app.use('/api/emails', createEmailRoutes(emailController));
 app.use('/api/summarization', createSummarizationRoutes(summarizationController));
+
+// Pipeline module routes
+app.use('/api/pipelines', createPipelineRoutes(pipelineController));
+app.use('/api/deals', createDealRoutes(dealController));
+app.use('/api/deals', createActivityRoutes(activityController)); // Deal-specific activities
+app.use('/api/activities', createActivityRoutes(activityController)); // User-level activities
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -182,26 +221,27 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('Socket.IO initialized for real-time notifications');
 });
 
+
 // Start cron jobs
 
-//startThreadSummaryJob(DB_PATH);
+startThreadSummaryJob(DB_PATH);
 
 // Start email sync cron job (syncs every 5 minutes)
-//startEmailSyncJob(DB_PATH, notificationService);
-//console.log('Email sync cron job started');
+startEmailSyncJob(DB_PATH, notificationService);
+console.log('Email sync cron job started');
 
 // Start token refresh cron job (refreshes every 6 hours to prevent expiration)
-//startTokenRefreshJob(DB_PATH);
-//console.log('Token refresh cron job started');
+startTokenRefreshJob(DB_PATH);
+console.log('Token refresh cron job started');
 
 // Start RunPod async job processor (NO REDIS REQUIRED!)
 // This uses RunPod's built-in async queue for cost-efficient serverless processing
-//try {
-//  startRunPodJobProcessor(DB_PATH);
-//  console.log('📧 RunPod async job processor started (no Redis needed!)');
-//} catch (error) {
-//  console.warn('⚠️ RunPod job processor failed to start:', error);
-//}
+try {
+  startRunPodJobProcessor(DB_PATH);
+  console.log('📧 RunPod async job processor started (no Redis needed!)');
+} catch (error) {
+  console.warn('⚠️ RunPod job processor failed to start:', error);
+}
 
 // Optional: Also try to start Redis-based queue if available
 // try {

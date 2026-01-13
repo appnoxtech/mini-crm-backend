@@ -6,7 +6,7 @@ export function createEmailRoutes(emailController: EmailController): Router {
   const router = Router();
 
   // Public tracking endpoints (no auth required)
-  router.get('/track/open/:trackingId', (req, res) => emailController.handleEmailOpen(req, res));
+  router.post('/track/open/:trackingId', (req, res) => emailController.handleEmailOpen(req, res));
   router.get('/track/click/:trackingId', (req, res) => emailController.handleLinkClick(req, res));
 
   // OAuth authorization endpoints (no auth required)
@@ -22,7 +22,7 @@ export function createEmailRoutes(emailController: EmailController): Router {
   router.get('/oauth/outlook/callback', (req, res) => emailController.oauthOutlookCallback(req, res));
 
   // Protected routes (require authentication)
-  (router as any).use(authMiddleware);
+  router.use(authMiddleware);
 
   // Thread summary routes
   router.post('/threads/:threadId/summarize', (req, res) => emailController.summarizeThread(req, res));
