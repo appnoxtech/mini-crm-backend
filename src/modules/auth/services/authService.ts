@@ -77,6 +77,19 @@ export class AuthService {
       return null;
     }
   }
+  
+async getProfile(id: number): Promise<AuthUser | null> {
+  const user = this.userModel.findById(id);
+  if (!user) return null;
+
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    updatedAt: user.updatedAt
+  };
+}
+
 
   async updateUser(id: number, updates: Partial<{ name: string; email: string }>): Promise<AuthUser | null> {
     return this.userModel.updateUser(id, updates);
