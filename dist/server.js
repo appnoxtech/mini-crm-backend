@@ -9,6 +9,10 @@ const http_1 = require("http");
 const socket_io_1 = require("socket.io");
 const better_sqlite3_1 = __importDefault(require("better-sqlite3"));
 const auth_1 = require("./shared/middleware/auth");
+const summarizeThreads_1 = require("./cron/summarizeThreads");
+const emailSync_1 = require("./cron/emailSync");
+const tokenRefresh_1 = require("./cron/tokenRefresh");
+const runpodJobProcessor_1 = require("./cron/runpodJobProcessor");
 // Load environment variables
 dotenv_1.default.config();
 // Import models
@@ -39,6 +43,9 @@ const emailController_1 = require("./modules/email/controllers/emailController")
 const authRoutes_1 = require("./modules/auth/routes/authRoutes");
 const leadRoutes_1 = require("./modules/leads/routes/leadRoutes");
 const emailRoutes_1 = require("./modules/email/routes/emailRoutes");
+const summarizationRoutes_1 = require("./modules/email/routes/summarizationRoutes");
+// Import summarization services
+const summarizationController_1 = require("./modules/email/controllers/summarizationController");
 const app = (0, express_1.default)();
 const server = (0, http_1.createServer)(app);
 const io = new socket_io_1.Server(server, {
@@ -47,7 +54,8 @@ const io = new socket_io_1.Server(server, {
         methods: ["GET", "POST"]
     }
 });
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = Number(process.env.PORT) || 4000;
+const DB_PATH = './data.db';
 // Initialize database
 const db = new better_sqlite3_1.default('data.db');
 db.pragma('foreign_keys = ON');
@@ -87,6 +95,7 @@ configService.initializeSystem().then(result => {
 const authController = new authController_1.AuthController(authService, userModel);
 const leadController = new leadController_1.LeadController(leadService);
 const emailController = new emailController_1.EmailController(emailService, oauthService, emailQueueService, notificationService);
+const summarizationController = new summarizationController_1.SummarizationController(emailModel, DB_PATH);
 // Middleware
 app.use(express_1.default.json());
 app.use(auth_1.corsMiddleware);
@@ -102,9 +111,10 @@ app.use((req, res, next) => {
 app.use('/api/auth', (0, authRoutes_1.createAuthRoutes)(authController));
 app.use('/api/leads', (0, leadRoutes_1.createLeadRoutes)(leadController));
 app.use('/api/emails', (0, emailRoutes_1.createEmailRoutes)(emailController));
+app.use('/api/summarization', (0, summarizationRoutes_1.createSummarizationRoutes)(summarizationController));
 // app.use('/api/emails/enhanced', createEnhancedEmailRoutes(enhancedEmailController));
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 // Error handling middleware
@@ -116,8 +126,39 @@ app.use((err, req, res, next) => {
 app.use('*', (req, res) => {
     res.status(404).json({ error: 'Route not found' });
 });
+// Start the server
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
     console.log('Socket.IO initialized for real-time notifications');
 });
+// Start cron jobs
+(0, summarizeThreads_1.startThreadSummaryJob)(DB_PATH);
+// Start email sync cron job (syncs every 5 minutes)
+(0, emailSync_1.startEmailSyncJob)(DB_PATH, notificationService);
+console.log('Email sync cron job started');
+// Start token refresh cron job (refreshes every 6 hours to prevent expiration)
+(0, tokenRefresh_1.startTokenRefreshJob)(DB_PATH);
+console.log('Token refresh cron job started');
+// Start RunPod async job processor (NO REDIS REQUIRED!)
+// This uses RunPod's built-in async queue for cost-efficient serverless processing
+try {
+    (0, runpodJobProcessor_1.startRunPodJobProcessor)(DB_PATH);
+    console.log('📧 RunPod async job processor started (no Redis needed!)');
+}
+catch (error) {
+    console.warn('⚠️ RunPod job processor failed to start:', error);
+}
+// Optional: Also try to start Redis-based queue if available
+// try {
+//   const summarizationScheduler = startSummarizationScheduler(DB_PATH);
+//   console.log('📧 Redis-based summarization scheduler also started');
+//   // Graceful shutdown handler
+//   process.on('SIGTERM', () => {
+//     console.log('SIGTERM received, shutting down gracefully...');
+//     summarizationScheduler.stop();
+//     process.exit(0);
+//   });
+// } catch (error) {
+//   console.log('ℹ️  Redis not available - using RunPod async mode only (this is fine!)');
+// }
 //# sourceMappingURL=server.js.map
