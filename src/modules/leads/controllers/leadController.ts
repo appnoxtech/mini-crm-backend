@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { LeadService } from '../services/leadService';
 import { AuthenticatedRequest } from '../../../shared/types';
+import { ResponseHandler } from '../../../shared/responses/responses';
 
 export class LeadController {
   private leadService: LeadService;
@@ -12,12 +13,11 @@ export class LeadController {
   async getLeads(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       if (!req.user) {
-        res.status(401).json({ error: 'User not authenticated' });
-        return;
+        return ResponseHandler.validationError(res, 'User not authenticated');
       }
 
       const { stage, q, limit = 100, offset = 0 } = (req as any).query;
-      
+
       const result = await this.leadService.getLeads(req.user.id, {
         stage: stage as string,
         search: q as string,
@@ -25,21 +25,19 @@ export class LeadController {
         offset: Number(offset)
       });
 
-      res.json({
-        items: result.leads,
-        count: result.count
-      });
+      return ResponseHandler.success(res, result);
+
+
     } catch (error) {
       console.error('Error fetching leads:', error);
-      res.status(500).json({ error: 'Failed to fetch leads' });
+      return ResponseHandler.internalError(res, 'Failed to fetch leads');
     }
   }
 
   async createLead(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       if (!req.user) {
-        res.status(401).json({ error: 'User not authenticated' });
-        return;
+        return ResponseHandler.validationError(res, 'User not authenticated');
       }
 
       const { name, company, value, notes } = req.body as any;
@@ -51,42 +49,42 @@ export class LeadController {
         notes
       });
 
-      res.status(201).json(lead);
+      return ResponseHandler.created(res, lead, "Lead Created Successfully!");
+
     } catch (error) {
       console.error('Error creating lead:', error);
-      res.status(500).json({ error: 'Failed to create lead' });
+      return ResponseHandler.internalError(res, 'Failed to create lead');
     }
   }
 
   async updateLeadStage(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       if (!req.user) {
-        res.status(401).json({ error: 'User not authenticated' });
-        return;
+        return ResponseHandler.validationError(res, 'User not authenticated');
       }
 
       const { id } = (req as any).params;
       const { stage } = req.body as any;
 
       const lead = await this.leadService.updateLeadStage(Number(id), req.user.id, stage);
-      
+
       if (!lead) {
         res.status(404).json({ error: 'Lead not found' });
         return;
       }
 
-      res.json(lead);
+      return ResponseHandler.success(res, lead, "Lead stage Update Successfully");
+
     } catch (error) {
       console.error('Error updating lead stage:', error);
-      res.status(500).json({ error: 'Failed to update lead stage' });
+      return ResponseHandler.internalError(res, 'Failed to update lead stage');
     }
   }
 
   async addActivity(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       if (!req.user) {
-        res.status(401).json({ error: 'User not authenticated' });
-        return;
+        return ResponseHandler.validationError(res, 'User not authenticated');
       }
 
       const { id } = (req as any).params;
@@ -94,67 +92,67 @@ export class LeadController {
 
       await this.leadService.addActivity(Number(id), req.user.id, type, text);
 
-      res.json({ message: 'Activity added successfully' });
+      return ResponseHandler.success(res, [], 'Activity added successfully');
+
     } catch (error) {
       console.error('Error adding activity:', error);
-      res.status(500).json({ error: 'Failed to add activity' });
+      return ResponseHandler.internalError(res, 'Failed to add activity');
     }
   }
 
   async getLeadHistory(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       if (!req.user) {
-        res.status(401).json({ error: 'User not authenticated' });
-        return;
+        return ResponseHandler.validationError(res, 'User not authenticated');
       }
 
       const { id } = (req as any).params;
 
       const history = await this.leadService.getLeadHistory(Number(id), req.user.id);
 
-      res.json(history);
+      return ResponseHandler.success(res, history, 'Successfully Fetched lead history');
+
     } catch (error) {
       console.error('Error fetching lead history:', error);
-      res.status(500).json({ error: 'Failed to fetch lead history' });
+      return ResponseHandler.internalError(res, 'Failed to fetch lead history');
     }
   }
 
   async deleteLead(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       if (!req.user) {
-        res.status(401).json({ error: 'User not authenticated' });
-        return;
+        return ResponseHandler.validationError(res, 'User not authenticated');
       }
 
       const { id } = (req as any).params;
 
       const success = await this.leadService.deleteLead(Number(id), req.user.id);
-      
+
       if (!success) {
         res.status(404).json({ error: 'Lead not found' });
         return;
       }
+      return ResponseHandler.success(res, 'Lead is Deleted Successfully');
 
-      res.status(204).send();
     } catch (error) {
       console.error('Error deleting lead:', error);
-      res.status(500).json({ error: 'Failed to delete lead' });
+      return ResponseHandler.internalError(res, 'Failed to delete lead');
     }
   }
 
   async getStats(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       if (!req.user) {
-        res.status(401).json({ error: 'User not authenticated' });
-        return;
+        return ResponseHandler.validationError(res, 'User not authenticated');
       }
 
       const stats = await this.leadService.getStats(req.user.id);
 
-      res.json(stats);
+      return ResponseHandler.success(res, stats);
+
     } catch (error) {
       console.error('Error fetching stats:', error);
-      res.status(500).json({ error: 'Failed to fetch stats' });
+      return ResponseHandler.internalError(res, 'Failed to fetch stats');
     }
   }
 }

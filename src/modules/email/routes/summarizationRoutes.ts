@@ -6,7 +6,7 @@ export function createSummarizationRoutes(summarizationController: Summarization
     const router = Router();
 
     // All routes require authentication
-    (router as any).use(authMiddleware);
+    router.use(authMiddleware);
 
     // ========== THREAD SUMMARIZATION ROUTES ==========
 

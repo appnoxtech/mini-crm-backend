@@ -11,6 +11,7 @@ import {
 import { RunPodAsyncService, getRunPodAsyncService } from '../services/runpodAsyncService';
 import { EmailModel } from '../models/emailModel';
 import { summarizeThreadWithVLLM } from '../../../shared/utils/summarizer';
+import { ResponseHandler } from '../../../shared/responses/responses';
 
 export class SummarizationController {
     private queueService: SummarizationQueueService;
@@ -33,8 +34,7 @@ export class SummarizationController {
             const { threadId } = req.params;
 
             if (!threadId) {
-                res.status(400).json({ error: 'Thread ID is required' });
-                return;
+                return ResponseHandler.validationError(res, 'Thread ID is required');
             }
 
             // Check if thread already has a summary (from either service)
@@ -48,44 +48,41 @@ export class SummarizationController {
                 const normalizedStatus = this.normalizeStatus(existingSummary.status);
 
                 if (normalizedStatus === 'processing' || normalizedStatus === 'pending') {
-                    res.json({
-                        success: true,
-                        message: 'Summarization already in progress',
+
+                    const data = {
                         jobId: existingSummary.runpodJobId || existingSummary.jobId,
                         threadId,
                         status: normalizedStatus
-                    });
-                    return;
+                    }
+
+                    return ResponseHandler.success(res, data, 'Summarization already in progress');
                 }
 
                 if (normalizedStatus === 'completed') {
-                    res.json({
-                        success: true,
-                        message: 'Thread already summarized',
+                    const data = {
                         threadId,
                         status: 'completed'
-                    });
-                    return;
+                    }
+
+                    return ResponseHandler.success(res, data, 'Thread already summarized');
+
                 }
             }
 
             // Submit to RunPod async (no Redis required!)
             const result = await this.runpodService.submitForSummarization(threadId);
 
-            res.json({
-                success: true,
-                message: 'Summarization queued with RunPod',
+            const data = {
                 jobId: result.jobId,
                 threadId,
                 status: 'pending'
-            });
+            }
+
+            return ResponseHandler.success(res, data, 'Summarization queued with RunPod');
 
         } catch (error: any) {
             console.error('Error queuing summarization:', error);
-            res.status(500).json({
-                error: 'Failed to queue summarization',
-                details: error.message
-            });
+            return ResponseHandler.success(res, 'Failed to queue summarization');
         }
     }
 
@@ -97,8 +94,7 @@ export class SummarizationController {
             const { threadId } = req.params;
 
             if (!threadId) {
-                res.status(400).json({ error: 'Thread ID is required' });
-                return;
+                return ResponseHandler.validationError(res, [], 'Thread ID is required');
             }
 
             // Get all emails and filter by threadId
@@ -106,8 +102,7 @@ export class SummarizationController {
             const threadEmails = emails.filter(e => e.threadId === threadId);
 
             if (threadEmails.length === 0) {
-                res.status(404).json({ error: 'Thread not found' });
-                return;
+                return ResponseHandler.error(res, 'Thread not found');
             }
 
             // Format thread text for summarization
@@ -121,18 +116,16 @@ export class SummarizationController {
             // Save the summary
             await this.emailModel.saveThreadSummary(threadId, summary);
 
-            res.json({
-                success: true,
+            const data = {
                 threadId,
                 summary
-            });
+            }
+
+            return ResponseHandler.success(res, data);
 
         } catch (error: any) {
             console.error('Error in sync summarization:', error);
-            res.status(500).json({
-                error: 'Failed to summarize thread',
-                details: error.message
-            });
+            return ResponseHandler.internalError(res, 'Failed to summarize thread');
         }
     }
 
@@ -145,8 +138,8 @@ export class SummarizationController {
             const { threadId } = req.params;
 
             if (!threadId) {
-                res.status(400).json({ error: 'Thread ID is required' });
-                return;
+                return ResponseHandler.validationError(res, 'Thread ID is required');
+
             }
 
             // Try to get summary from Redis queue service first
@@ -158,13 +151,9 @@ export class SummarizationController {
             }
 
             // If still not found, return 404
+
             if (!summary) {
-                res.status(404).json({
-                    error: 'No summary available',
-                    threadId,
-                    suggestion: 'Use POST /api/summarization/threads/:threadId/queue to generate a summary'
-                });
-                return;
+                return ResponseHandler.error(res, 'No summary available', 404);
             }
 
             // Normalize status codes (RunPod uses 'IN_QUEUE', 'COMPLETED' vs Redis uses 'pending', 'completed')
@@ -192,8 +181,8 @@ export class SummarizationController {
                 }
             }
 
-            res.json({
-                success: true,
+
+            const data = {
                 thread: {
                     id: threadId,
                     summarized: isCompleted
@@ -211,14 +200,13 @@ export class SummarizationController {
                 status: normalizedStatus,
                 jobStatus,
                 runpodJobId: summary.runpodJobId
-            });
+            }
+
+            return ResponseHandler.success(res, data);
 
         } catch (error: any) {
             console.error('Error fetching summary:', error);
-            res.status(500).json({
-                error: 'Failed to fetch summary',
-                details: error.message
-            });
+            return ResponseHandler.internalError(res, 'Failed to fetch summary');
         }
     }
 
@@ -246,8 +234,7 @@ export class SummarizationController {
     async bulkSummarize(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
             if (!req.user) {
-                res.status(401).json({ error: 'User not authenticated' });
-                return;
+                return ResponseHandler.unauthorized(res, 'User not authenticated');
             }
 
             const { limit = 50 } = req.body;
@@ -257,12 +244,8 @@ export class SummarizationController {
             const threads = this.queueService.getThreadsNeedingSummary(limit);
 
             if (threads.length === 0) {
-                res.json({
-                    success: true,
-                    message: 'No threads need summarization',
-                    queued: 0
-                });
-                return;
+                const queued = 0;
+                return ResponseHandler.success(res, queued, 'No threads need summarization');
             }
 
             // Queue all threads
@@ -281,19 +264,17 @@ export class SummarizationController {
                 }
             }
 
-            res.json({
-                success: true,
-                message: `Queued ${jobs.length} threads for summarization`,
+            const data = {
                 queued: jobs.length,
                 jobIds: jobs.filter(id => id)
-            });
+            }
+
+
+            return ResponseHandler.success(res, data, `Queued ${jobs.length} threads for summarization`);
 
         } catch (error: any) {
             console.error('Error in bulk summarization:', error);
-            res.status(500).json({
-                error: 'Failed to queue bulk summarization',
-                details: error.message
-            });
+            return ResponseHandler.internalError(res, 'Failed to queue bulk summarization');
         }
     }
 
@@ -305,29 +286,27 @@ export class SummarizationController {
             const { jobId } = req.params;
 
             if (!jobId) {
-                res.status(400).json({ error: 'Job ID is required' });
-                return;
+                return ResponseHandler.validationError(res, 'Job ID is required');
+
             }
 
             const status = await this.queueService.getJobStatus(jobId);
 
             if (!status) {
-                res.status(404).json({ error: 'Job not found' });
-                return;
+                return ResponseHandler.notFound(res, 'Job not found');
+
             }
 
-            res.json({
-                success: true,
+            const data = {
                 jobId,
                 ...status
-            });
+            }
+
+            return ResponseHandler.success(res, data);
 
         } catch (error: any) {
             console.error('Error fetching job status:', error);
-            res.status(500).json({
-                error: 'Failed to fetch job status',
-                details: error.message
-            });
+            return ResponseHandler.internalError(res, 'Failed to fetch job status');
         }
     }
 
@@ -340,19 +319,17 @@ export class SummarizationController {
             const dbStats = this.queueService.getDatabaseStats();
             const schedulerStatus = this.schedulerService.getStatus();
 
-            res.json({
-                success: true,
+            const data = {
                 queue: queueStats,
                 database: dbStats,
                 scheduler: schedulerStatus
-            });
+            }
+
+            return ResponseHandler.success(res, data);
 
         } catch (error: any) {
             console.error('Error fetching stats:', error);
-            res.status(500).json({
-                error: 'Failed to fetch stats',
-                details: error.message
-            });
+            return ResponseHandler.internalError(res, 'Failed to fetch stats');
         }
     }
 
@@ -363,18 +340,10 @@ export class SummarizationController {
         try {
             const result = await this.schedulerService.triggerNow();
 
-            res.json({
-                success: true,
-                message: 'Scheduler triggered',
-                ...result
-            });
-
+            return ResponseHandler.success(res, result);
         } catch (error: any) {
             console.error('Error triggering scheduler:', error);
-            res.status(500).json({
-                error: 'Failed to trigger scheduler',
-                details: error.message
-            });
+            return ResponseHandler.internalError(res, 'Failed to trigger scheduler');
         }
     }
 
@@ -388,18 +357,16 @@ export class SummarizationController {
                 parseInt(limit as string)
             );
 
-            res.json({
-                success: true,
+            const data = {
                 count: threads.length,
                 threads
-            });
+            }
+
+            return ResponseHandler.success(res, data);
 
         } catch (error: any) {
             console.error('Error fetching pending threads:', error);
-            res.status(500).json({
-                error: 'Failed to fetch pending threads',
-                details: error.message
-            });
+            return ResponseHandler.internalError(res, 'Failed to fetch pending threads');
         }
     }
 }
