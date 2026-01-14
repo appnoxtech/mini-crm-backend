@@ -70,7 +70,8 @@ export class PipelineController {
                 return ResponseHandler.notFound(res, 'Pipeline not found');
             }
 
-            return ResponseHandler.success(res, pipeline, 'Pipeline fetched successfully');
+            const updatedPipeline = await this.pipelineService.getPipelineById(Number(id), req.user.id);
+            return ResponseHandler.success(res, updatedPipeline, 'Pipeline fetched successfully');
         } catch (error: any) {
             console.error('Error fetching pipeline:', error);
             return ResponseHandler.internalError(res, 'Failed to fetch pipeline');
