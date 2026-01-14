@@ -1,25 +1,18 @@
 import Database from "better-sqlite3";
 import { BaseEntity } from "../../../shared/types";
 
-/**
- * 
- * {
-    "item": "string",
-    "price": 0,
-    "quantity": 1,
-    "tax": 0,
-    "amount": 0
-}
- */
 
 export interface Product extends BaseEntity {
     dealId: number,
     userId: number,
-    item: string,
+    title: string,
     price: number,
     quantity: number,
-    tax: number,
-    amount: number,
+    discount?: number,
+    billingDate?: string,
+    description?: string,
+    tax?: number,
+    amount?: number,
 }
 
 export class ProductModel {
@@ -35,26 +28,29 @@ export class ProductModel {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             dealId INTEGER NOT NULL,
             userId INTEGER NOT NULL,
-            item TEXT NOT NULL,
+            title TEXT NOT NULL,
             price REAL NOT NULL,
             quantity REAL NOT NULL,
             tax REAL NOT NULL,
             amount REAL NOT NULL,
+            discount REAL,
+            billingDate TEXT,
+            description TEXT,
             createdAt TEXT NOT NULL,
             updatedAt TEXT NOT NULL,
             FOREIGN KEY (dealId) REFERENCES deals(id) ON DELETE CASCADE
             )
             `);
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_product_dealId ON product(dealId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_product_item ON product(item)');
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_product_title ON product(title)');
 
     }
 
     create(data: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>): Product {
         const now = new Date().toISOString();
         const stmt = this.db.prepare(`
-            INSERT INTO product (dealId, userId, item, price, quantity, tax, amount, createdAt, updatedAt)
-            VALUES ($dealId, $userId, $item, $price, $quantity, $tax, $amount, $createdAt, $updatedAt)
+            INSERT INTO product (dealId, userId, title, price, quantity,tax, amount, discount, billingDate, description, createdAt, updatedAt)
+            VALUES ($dealId, $userId, $title, $price, $quantity, $tax, $amount, $discount, $billingDate, $description, $createdAt, $updatedAt)
         `);
 
         const insertData = {
@@ -85,11 +81,14 @@ export class ProductModel {
             UPDATE product
             SET 
                 userId = $userId,
-                item = $item,
+                title = $title,
                 price = $price,
                 quantity = $quantity,
                 tax = $tax,
                 amount = $amount,
+                discount = $discount,
+                billingDate = $billingDate,
+                description = $description,
                 updatedAt = $updatedAt
             WHERE id = $id
         `);
