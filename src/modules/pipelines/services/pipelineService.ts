@@ -122,6 +122,14 @@ export class PipelineService {
         isActive?: boolean;
         dealRotting?: boolean;
         rottenDays?: number;
+        stagesData?: Array<{
+            stageId?: number | null;
+            name: string;
+            orderIndex: number;
+            probability?: number;
+            rottenDays?: number;
+        }>;
+        deletedStagesIds?: Array<{ stageId: number, moveDealsToStageId: number }>;
     }): Promise<Pipeline | null> {
         // Validation
         if (data.name !== undefined) {
@@ -137,7 +145,65 @@ export class PipelineService {
             throw new Error('Rotten days must be between 1 and 365');
         }
 
-        return this.pipelineModel.update(id, userId, data);
+        // Update pipeline basic info
+        const pipeline = this.pipelineModel.update(id, userId, {
+            name: data.name,
+            description: data.description,
+            isDefault: data.isDefault,
+            isActive: data.isActive,
+            dealRotting: data.dealRotting,
+            rottenDays: data.rottenDays
+        });
+
+        if (!pipeline) {
+            return null;
+        }
+
+        // Handle deleted stages first
+        if (data.deletedStagesIds && data.deletedStagesIds.length > 0) {
+            for (const stageToDelete of data.deletedStagesIds) {
+                const moveDealsToStageId = stageToDelete.moveDealsToStageId;
+                const stageId = stageToDelete.stageId;
+
+                const stage = this.stageModel.findById(Number(stageId));
+                if (stage && stage.pipelineId === id) {
+                    this.stageModel.delete(Number(stageId), Number(moveDealsToStageId));
+                }
+            }
+        }
+
+        // Handle stages data (add/update)
+        if (data.stagesData && data.stagesData.length > 0) {
+            // Separate existing stages from new ones
+            const existingStages = data.stagesData.filter(s => s.stageId);
+            const newStages = data.stagesData.filter(s => !s.stageId);
+
+            // Bulk update existing stages (handles orderIndex conflicts automatically)
+            if (existingStages.length > 0) {
+                const stagesToUpdate = existingStages.map(s => ({
+                    stageId: Number(s.stageId),
+                    name: s.name,
+                    orderIndex: s.orderIndex,
+                    probability: s.probability,
+                    rottenDays: s.rottenDays
+                }));
+
+                this.stageModel.bulkUpdate(id, stagesToUpdate);
+            }
+
+            // Create new stages
+            for (const stageInfo of newStages) {
+                this.stageModel.create({
+                    pipelineId: id,
+                    name: stageInfo.name,
+                    orderIndex: stageInfo.orderIndex,
+                    probability: stageInfo.probability || 0,
+                    rottenDays: stageInfo.rottenDays
+                });
+            }
+        }
+
+        return pipeline;
     }
 
     async deletePipeline(id: number, userId: number): Promise<{ success: boolean; dealsAffected: number }> {
