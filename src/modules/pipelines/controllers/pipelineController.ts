@@ -84,7 +84,10 @@ export class PipelineController {
             }
 
             const { id } = req.params;
-            const { name, description, isDefault, isActive, dealRotting, rottenDays } = req.body;
+            const {
+                name, description, isDefault, isActive, dealRotting, rottenDays,
+                stagesData, deletedStagesIds
+            } = req.body;
 
             const pipeline = await this.pipelineService.updatePipeline(Number(id), req.user.id, {
                 name,
@@ -92,7 +95,9 @@ export class PipelineController {
                 isDefault,
                 isActive,
                 dealRotting,
-                rottenDays
+                rottenDays,
+                stagesData,
+                deletedStagesIds
             });
 
             if (!pipeline) {
@@ -221,7 +226,7 @@ export class PipelineController {
             const { pipelineId, stageId } = req.params;
             const { moveDealsToStageId } = req.query;
 
-            
+
             console.log("moveDealsToStageId ----> ", moveDealsToStageId);
             console.log("pipelineId ----> ", pipelineId);
             console.log("stageId ----> ", stageId);
