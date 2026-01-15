@@ -67,6 +67,41 @@ export class PipelineStageModel {
         return stmt.all(pipelineId) as PipelineStage[];
     }
 
+    bulkUpdate(pipelineId: number, stagesData: Array<{
+        stageId: number;
+        name: string;
+        orderIndex: number;
+        probability?: number;
+        rottenDays?: number;
+    }>): void {
+        const now = new Date().toISOString();
+
+        // Step 1: Set all to negative temporary orderIndex values to avoid conflicts
+        const tempStmt = this.db.prepare('UPDATE pipeline_stages SET orderIndex = ? WHERE id = ? AND pipelineId = ?');
+        stagesData.forEach((stageData, index) => {
+            tempStmt.run(-(index + 1), stageData.stageId, pipelineId);
+        });
+
+        // Step 2: Update all fields with actual positive orderIndex values
+        const updateStmt = this.db.prepare(`
+        UPDATE pipeline_stages 
+        SET name = ?, orderIndex = ?, probability = ?, rottenDays = ?, updatedAt = ?
+        WHERE id = ? AND pipelineId = ?
+    `);
+
+        stagesData.forEach((stageData) => {
+            updateStmt.run(
+                stageData.name,
+                stageData.orderIndex,
+                stageData.probability ?? 0,
+                stageData.rottenDays ?? null,
+                now,
+                stageData.stageId,
+                pipelineId
+            );
+        });
+    }
+
     update(id: number, data: Partial<Omit<PipelineStage, 'id' | 'pipelineId' | 'createdAt' | 'updatedAt'>>): PipelineStage | null {
         const stage = this.findById(id);
         if (!stage) {

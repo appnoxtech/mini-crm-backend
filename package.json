@@ -5,7 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
-    "dev": "nodemon --watch 'src/**/*.ts' --exec 'ts-node' src/server.ts",
+    "dev": "nodemon --watch src --ext ts --exec \"npx ts-node src/server.ts\"",
     "start": "node dist/server.js",
     "clean": "rm -rf dist"
   },

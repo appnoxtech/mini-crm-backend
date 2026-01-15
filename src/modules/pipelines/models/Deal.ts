@@ -9,8 +9,10 @@ export interface Deal extends BaseEntity {
     stageId: number;
     personName?: string;
     organizationName?: string;
-    email?: string;
-    phone?: string;
+
+    email?: { value: string; type: string }[];
+    phone?: { value: string; type: string }[];
+
     description?: string;
     expectedCloseDate?: string;
     actualCloseDate?: string;
@@ -96,8 +98,8 @@ export class DealModel {
             data.stageId,
             data.personName || null,
             data.organizationName || null,
-            data.email || null,
-            data.phone || null,
+            data.email ? JSON.stringify(data.email) : null,
+            data.phone ? JSON.stringify(data.phone) : null,
             data.description || null,
             data.expectedCloseDate || null,
             data.actualCloseDate || null,
@@ -271,5 +273,19 @@ export class DealModel {
                 ...r,
                 isRotten: Boolean(r.isRotten)
             }));
+    }
+
+    searchDeals(userId: number, search: string): Deal[] {
+        const query = `
+      SELECT * FROM deals
+      WHERE userId = ? AND (title LIKE ? OR personName LIKE ? OR organizationName LIKE ?)
+    `;
+        const params = [userId, `%${search}%`, `%${search}%`, `%${search}%`];
+
+        const results = this.db.prepare(query).all(...params) as any[];
+        return results.map(r => ({
+            ...r,
+            isRotten: Boolean(r.isRotten)
+        }));
     }
 }
