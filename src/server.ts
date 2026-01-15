@@ -124,6 +124,7 @@ dealActivityModel.initialize();
 organisationModel.initialize();
 personModel.initialize();
 lavelModel.initialize();
+productModel.initialize();
 
 // db.exec(`DROP TABLE IF EXISTS deals`);
 
