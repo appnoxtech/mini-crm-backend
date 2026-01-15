@@ -205,7 +205,12 @@ export class OrganizationModel {
         const countResult = this.db.prepare(countQuery).get(...countParams) as { count: number };
 
         return {
-            organizations,
+            organizations: organizations.map((org: any) => ({
+                ...org,
+                emails: typeof org.emails === 'string' ? JSON.parse(org.emails) : org.emails,
+                phones: typeof org.phones === 'string' ? JSON.parse(org.phones) : org.phones,
+                address: typeof org.address === 'string' ? JSON.parse(org.address) : org.address
+            })),
             count: countResult.count
         };
     }

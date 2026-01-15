@@ -66,6 +66,7 @@ export class PersonModel {
         lastName TEXT NOT NULL,
         emails TEXT NOT NULL,
         phones TEXT NOT NULL DEFAULT '[]',
+        organizationId INTEGER,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL,
         deletedAt TEXT
@@ -210,16 +211,6 @@ export class PersonModel {
         };
     }
 
-    async searchPersons(options: {
-        search?: string;
-        organizationId?: number;
-        limit?: number;
-        offset?: number;
-        includeDeleted?: boolean;
-    } = {}): Promise<{ persons: Person[]; count: number }> {
-        return this.findAll(options);
-    }
-
     findByorganizationId(organizationId: number, includeDeleted: boolean = false): Person[] {
         let query = 'SELECT * FROM persons WHERE organizationId = ?';
         if (!includeDeleted) {
@@ -262,6 +253,7 @@ export class PersonModel {
 
         params.push(id);
 
+        // update the comming data with the existing data
         const stmt = this.db.prepare(`
       UPDATE persons SET ${updates.join(', ')} WHERE id = ?
     `);
