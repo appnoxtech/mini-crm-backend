@@ -1,32 +1,82 @@
-import { Person, PersonModel, CreatePersonData, UpdatePersonData } from '../models/Person';
-import { OrganisationModel } from '../../organisations/models/Organisation';
+import { PersonModel, CreatePersonData, UpdatePersonData, Person } from '../models/Person';
+import { OrganizationModel } from '../../organisations/models/Organisation';
 
 export class PersonService {
     constructor(
         private personModel: PersonModel,
-        private organisationModel?: OrganisationModel
+        private organizationModel?: OrganizationModel
     ) { }
 
-    async create(data: CreatePersonData): Promise<Person> {
-        // Validate organisation exists if provided
-        if (data.organisationId && this.organisationModel) {
-            const org = this.organisationModel.findById(data.organisationId);
+    async createPerson(data: CreatePersonData): Promise<Person> {
+        // Validate organization exists if provided
+        if (data.organizationId && this.organizationModel) {
+            const org = this.organizationModel.findById(data.organizationId);
             if (!org) {
-                throw new Error('Organisation not found');
+                throw new Error('Organization not found');
+            }
+        }
+
+        // Validate at least one email
+        if (!data.emails || data.emails.length === 0) {
+            throw new Error('At least one email is required');
+        }
+
+        // Validate email format
+        for (const email of data.emails) {
+            if (!email.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.email)) {
+                throw new Error('Invalid email format');
             }
         }
 
         return this.personModel.create(data);
     }
 
-    async getById(id: number): Promise<Person | null> {
-        const person = this.personModel.findById(id);
-        return person || null;
+    async searchPersons(options: {
+        search?: string;
+        organizationId?: number;
+        limit?: number;
+        offset?: number;
+        includeDeleted?: boolean;
+    } = {}): Promise<{ persons: Person[]; count: number }> {
+        return this.personModel.searchPersons(options);
     }
 
-    async getAll(options: {
+    async getPersonsByOrganization(organizationId: number): Promise<Person[]> {
+        return this.personModel.findByorganizationId(organizationId);
+    }
+
+    async updatePerson(id: number, data: UpdatePersonData): Promise<Person | null> {
+        // Validate organization exists if provided
+        if (data.organizationId && this.organizationModel) {
+            const org = this.organizationModel.findById(data.organizationId);
+            if (!org) {
+                throw new Error('Organization not found');
+            }
+        }
+
+        // Validate emails if provided
+        if (data.emails) {
+            if (data.emails.length === 0) {
+                throw new Error('At least one email is required');
+            }
+
+            for (const email of data.emails) {
+                if (!email.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.email)) {
+                    throw new Error('Invalid email format');
+                }
+            }
+        }
+
+        return this.personModel.update(id, data);
+    }
+
+    async getPersonById(id: number, includeDeleted = false): Promise<Person | undefined> {
+        return this.personModel.findById(id, includeDeleted);
+    }
+
+    async getAllPersons(options: {
         search?: string;
-        organisationId?: number;
+        organizationId?: number;
         limit?: number;
         offset?: number;
         includeDeleted?: boolean;
@@ -34,27 +84,15 @@ export class PersonService {
         return this.personModel.findAll(options);
     }
 
-    async getByOrganisationId(organisationId: number): Promise<Person[]> {
-        return this.personModel.findByOrganisationId(organisationId);
-    }
-
-    async update(id: number, data: UpdatePersonData): Promise<Person | null> {
-        // Validate organisation exists if provided
-        if (data.organisationId && this.organisationModel) {
-            const org = this.organisationModel.findById(data.organisationId);
-            if (!org) {
-                throw new Error('Organisation not found');
-            }
-        }
-
-        return this.personModel.update(id, data);
-    }
-
-    async delete(id: number): Promise<boolean> {
+    async deletePerson(id: number): Promise<boolean> {
         return this.personModel.softDelete(id);
     }
 
-    async restore(id: number): Promise<Person | null> {
+    async restorePerson(id: number): Promise<Person | null> {
         return this.personModel.restore(id);
+    }
+
+    async permanentlyDeletePerson(id: number): Promise<boolean> {
+        return this.personModel.hardDelete(id);
     }
 }

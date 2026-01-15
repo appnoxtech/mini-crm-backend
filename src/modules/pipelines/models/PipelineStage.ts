@@ -9,6 +9,14 @@ export interface PipelineStage extends BaseEntity {
     probability: number;
 }
 
+export type searchResult = {
+    name: string;
+    id: number;
+    description?: string;
+    isDefault: boolean;
+    isActive: boolean;
+}
+
 export class PipelineStageModel {
     private db: Database.Database;
 
@@ -55,6 +63,17 @@ export class PipelineStageModel {
         );
 
         return this.findById(result.lastInsertRowid as number)!;
+    }
+
+    searchByStageName(name: string): searchResult[] {
+        const stmt = this.db.prepare('SELECT * FROM pipeline_stages WHERE name LIKE ?');
+        const results = stmt.all(name) as any[];
+        return results.map(r => ({
+            ...r,
+            isDefault: Boolean(r.isDefault),
+            isActive: Boolean(r.isActive),
+            dealRotting: Boolean(r.dealRotting)
+        }));
     }
 
     findById(id: number): PipelineStage | undefined {
