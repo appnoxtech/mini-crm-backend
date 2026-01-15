@@ -105,6 +105,7 @@ const dealHistoryModel = new DealHistoryModel(db);
 const dealActivityModel = new DealActivityModel(db);
 const organisationModel = new OrganisationModel(db);
 const personModel = new PersonModel(db);
+const productModel = new ProductModel(db);
 
 // Initialize database tables
 userModel.initialize();
