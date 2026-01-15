@@ -24,6 +24,7 @@ import { DealHistoryModel } from './modules/pipelines/models/DealHistory';
 import { DealActivityModel } from './modules/pipelines/models/DealActivity';
 import { OrganisationModel } from './modules/management/organisations/models/Organisation';
 import { PersonModel } from './modules/management/persons/models/Person';
+import { ProductModel } from './modules/pipelines/models/Product';
 
 // Import services
 import { AuthService } from './modules/auth/services/authService';
@@ -36,6 +37,7 @@ import { RealTimeNotificationService } from './modules/email/services/realTimeNo
 import { PipelineService } from './modules/pipelines/services/pipelineService';
 import { PipelineStageService } from './modules/pipelines/services/pipelineStageService';
 import { DealService } from './modules/pipelines/services/dealService';
+import { ProductService } from './modules/pipelines/services/productService';
 import { DealActivityService } from './modules/pipelines/services/dealActivityService';
 import { OrganisationService } from './modules/management/organisations/services/OrganisationService';
 import { PersonService } from './modules/management/persons/services/PersonService';
@@ -55,6 +57,7 @@ import { LeadController } from './modules/leads/controllers/leadController';
 import { EmailController } from './modules/email/controllers/emailController';
 import { PipelineController } from './modules/pipelines/controllers/pipelineController';
 import { DealController } from './modules/pipelines/controllers/dealController';
+import { ProductController } from './modules/pipelines/controllers/productController';
 import { ActivityController } from './modules/pipelines/controllers/activityController';
 import { OrganisationController } from './modules/management/organisations/controllers/OrganisationController';
 import { PersonController } from './modules/management/persons/controllers/PersonController';
@@ -66,6 +69,7 @@ import { createEmailRoutes } from './modules/email/routes/emailRoutes';
 import { createSummarizationRoutes } from './modules/email/routes/summarizationRoutes';
 import { createPipelineRoutes } from './modules/pipelines/routes/pipelineRoutes';
 import { createDealRoutes } from './modules/pipelines/routes/dealRoutes';
+import { createProductRoutes } from './modules/pipelines/routes/productRoutes';
 import { createActivityRoutes } from './modules/pipelines/routes/activityRoutes';
 import { createOrganisationRoutes } from './modules/management/organisations/routes/organisationRoutes';
 import { createPersonRoutes } from './modules/management/persons/routes/personRoutes';
@@ -124,7 +128,8 @@ const emailService = new EmailService(emailModel, emailConnectorService, notific
 const emailQueueService = new EmailQueueService(emailService, emailModel);
 const pipelineService = new PipelineService(pipelineModel, pipelineStageModel);
 const pipelineStageService = new PipelineStageService(pipelineStageModel, pipelineModel);
-const dealService = new DealService(dealModel, dealHistoryModel, pipelineModel, pipelineStageModel);
+const dealService = new DealService(dealModel, dealHistoryModel, pipelineModel, pipelineStageModel, productModel);
+const productService = new ProductService(productModel);
 const dealActivityService = new DealActivityService(dealActivityModel, dealModel);
 const organisationService = new OrganisationService(organisationModel);
 const personService = new PersonService(personModel, organisationModel);
@@ -161,6 +166,7 @@ const emailController = new EmailController(emailService, oauthService, emailQue
 const summarizationController = new SummarizationController(emailModel, DB_PATH);
 const pipelineController = new PipelineController(pipelineService, pipelineStageService);
 const dealController = new DealController(dealService);
+const productController = new ProductController(productService);
 const activityController = new ActivityController(dealActivityService);
 const organisationController = new OrganisationController(organisationService);
 const personController = new PersonController(personService);
@@ -188,6 +194,7 @@ app.use('/api/summarization', createSummarizationRoutes(summarizationController)
 // Pipeline module routes
 app.use('/api/pipelines', createPipelineRoutes(pipelineController));
 app.use('/api/deals', createDealRoutes(dealController));
+app.use('/api/products', createProductRoutes(productController));
 app.use('/api/deals', createActivityRoutes(activityController)); // Deal-specific activities
 app.use('/api/activities', createActivityRoutes(activityController)); // User-level activities
 

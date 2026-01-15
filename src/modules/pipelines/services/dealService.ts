@@ -1,34 +1,53 @@
 import { Deal, DealModel } from '../models/Deal';
+import { Product, ProductModel } from '../models/Product';
 import { DealHistoryModel } from '../models/DealHistory';
 import { PipelineModel } from '../models/Pipeline';
 import { PipelineStageModel } from '../models/PipelineStage';
+
+type ContactField = {
+    value: string;
+    type: string; // "Work" | "Personal" | "Home" | etc
+};
+
 
 export class DealService {
     constructor(
         private dealModel: DealModel,
         private historyModel: DealHistoryModel,
         private pipelineModel: PipelineModel,
-        private stageModel: PipelineStageModel
+        private stageModel: PipelineStageModel,
+        protected productModel: ProductModel
     ) { }
 
-    async createDeal(userId: number, data: {
-        title: string;
-        pipelineId: number;
-        stageId: number;
-        value?: number;
-        currency?: string;
-        personName?: string;
-        organizationName?: string;
-        email?: string;
-        phone?: string;
-        description?: string;
-        expectedCloseDate?: string;
-        probability?: number;
-        assignedTo?: number;
-        source?: string;
-        labels?: string[];
-        customFields?: Record<string, any>;
-    }): Promise<Deal> {
+    async createDeal(userId: number,
+        data: {
+            title: string;
+            pipelineId: number;
+            stageId: number;
+            value?: number;
+            currency?: string;
+            personName?: string;
+            organizationName?: string;
+            emails?: ContactField[];
+            phones?: ContactField[];
+            description?: string;
+            expectedCloseDate?: string;
+            probability?: number;
+            assignedTo?: number;
+            source?: string;
+            labels?: string[];
+            products?: {
+                item: string;
+                price: number;
+                quantity: number;
+                tax: number;
+                amount: number;
+                discount?: number;
+                billingDate?: string;
+                description?: string;
+            }[];
+            customFields?: Record<string, any>;
+        }): Promise<{ deal: Deal; products: Product[] }> {
         // Validation
         if (!data.title || !data.title.trim()) {
             throw new Error('Deal title is required');
@@ -44,7 +63,7 @@ export class DealService {
 
         // Verify pipeline exists and belongs to user
         const pipeline = this.pipelineModel.findById(data.pipelineId);
-        if (!pipeline || pipeline.userId !== userId) {
+        if (!pipeline) {
             throw new Error('Pipeline not found');
         }
 
@@ -58,12 +77,6 @@ export class DealService {
             throw new Error('Stage does not belong to the specified pipeline');
         }
 
-        // Validate email format if provided
-        if (data.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
-            throw new Error('Invalid email format');
-        }
-
-        const now = new Date().toISOString();
 
         const deal = this.dealModel.create({
             title: data.title.trim(),
@@ -73,20 +86,42 @@ export class DealService {
             stageId: data.stageId,
             personName: data.personName?.trim(),
             organizationName: data.organizationName?.trim(),
-            email: data.email?.trim(),
-            phone: data.phone?.trim(),
+            email: data.emails,
+            phone: data.phones,
             description: data.description?.trim(),
             expectedCloseDate: data.expectedCloseDate,
             probability: data.probability || stage.probability,
             userId,
             assignedTo: data.assignedTo,
             status: 'open',
-            lastActivityAt: now,
+            lastActivityAt: new Date().toISOString(),
             isRotten: false,
             source: data.source,
             labels: data.labels ? JSON.stringify(data.labels) : undefined,
             customFields: data.customFields ? JSON.stringify(data.customFields) : undefined
         });
+
+
+        // create Product 
+        let products: Product[] = [];
+
+        if (data.products?.length) {
+            for (const p of data.products) {
+                const product = this.productModel.create({
+                    dealId: deal.id,
+                    userId,
+                    title: p.item,
+                    price: p.price,
+                    quantity: p.quantity,
+                    tax: p.tax,
+                    amount: p.amount,
+                    discount: p.discount,
+                    billingDate: p.billingDate,
+                    description: p.description
+                });
+                products.push(product);
+            }
+        }
 
         // Create history entry
         this.historyModel.create({
@@ -95,11 +130,20 @@ export class DealService {
             eventType: 'created',
             toStageId: data.stageId,
             description: `Deal created in stage: ${stage.name}`,
-            createdAt: now
+            createdAt: new Date().toISOString()
         });
+        const response = {
+            deal,
+            products
+        }
 
-        return deal;
+        return response;
     }
+
+    async searchDeals(userId: number, search: string): Promise<Deal[]> {
+        return this.dealModel.searchDeals(userId, search);
+    }
+
 
     async getDeals(userId: number, filters: {
         pipelineId?: number;
