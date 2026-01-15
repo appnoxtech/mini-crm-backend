@@ -12,15 +12,9 @@ export class PersonController {
                 return ResponseHandler.validationError(res, 'User not authenticated');
             }
 
-            const { q, organisationId, limit = 100, offset = 0, includeDeleted } = req.query as any;
+            const { searchQuery } = req.query as any;
 
-            const result = await this.personService.searchPersons({
-                search: q as string,
-                organizationId: organisationId ? Number(organisationId) : undefined,
-                limit: Number(limit),
-                offset: Number(offset),
-                includeDeleted: includeDeleted === 'true'
-            });
+            const result = await this.personService.searchPersons(searchQuery as string);
 
             return ResponseHandler.success(res, result);
         } catch (error) {
@@ -105,13 +99,16 @@ export class PersonController {
             }
 
             const { id } = req.params;
-            const { firstName, lastName, emails, phones, organisationId } = req.body;
+            const { firstName, lastName, emails, phones, organizationId } = req.body;
+
+            console.log("Req body", req.body);
 
             const person = await this.personService.updatePerson(Number(id), {
                 firstName,
                 lastName,
                 emails,
                 phones,
+                organizationId: organizationId || undefined
             });
 
             if (!person) {

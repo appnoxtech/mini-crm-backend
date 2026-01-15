@@ -319,14 +319,17 @@ export class DealModel {
     searchDeals(search: string): Deal[] {
         const query = `
       SELECT * FROM deals
-      WHERE (title LIKE ? OR personName LIKE ? OR organizationName LIKE ?)
+      WHERE (title LIKE ? OR description LIKE ? OR source LIKE ?)
     `;
         const params = [`%${search}%`, `%${search}%`, `%${search}%`];
 
         const results = this.db.prepare(query).all(...params) as any[];
         return results.map(r => ({
             ...r,
-            isRotten: Boolean(r.isRotten)
+            isRotten: Boolean(r.isRotten),
+            email: r.email ? JSON.parse(r.email) : null,
+            phone: r.phone ? JSON.parse(r.phone) : null,
+            lavelIds: r.lavelIds ? JSON.parse(r.lavelIds) : null,
         }));
     }
 }
