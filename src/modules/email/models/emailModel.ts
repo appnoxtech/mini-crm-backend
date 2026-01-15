@@ -86,7 +86,6 @@ export class EmailModel {
       console.log("Added labelIds column to emails table");
     } catch (error) {
       // Column already exists, ignore error
-      console.log("labelIds column already exists in emails table");
     }
   }
 

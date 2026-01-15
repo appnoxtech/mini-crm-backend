@@ -11,6 +11,14 @@ export interface Pipeline extends BaseEntity {
     rottenDays: number;
 }
 
+type searchResult = {
+    name: string;
+    id: number;
+    description?: string;
+    isDefault: boolean;
+    isActive: boolean;
+}
+
 export class PipelineModel {
     private db: Database.Database;
 
@@ -78,6 +86,17 @@ export class PipelineModel {
             isActive: Boolean(result.isActive),
             dealRotting: Boolean(result.dealRotting)
         };
+    }
+
+    searchByPipelineName(name: string): searchResult[] {
+        const stmt = this.db.prepare('SELECT * FROM pipelines WHERE name LIKE ?');
+        const results = stmt.all(name) as any[];
+        return results.map(r => ({
+            ...r,
+            isDefault: Boolean(r.isDefault),
+            isActive: Boolean(r.isActive),
+            dealRotting: Boolean(r.dealRotting)
+        }));
     }
 
     findByUserId(userId: number, includeInactive: boolean = false): Pipeline[] {

@@ -19,7 +19,7 @@ export interface Person extends BaseEntity {
     lastName: string;
     emails: PersonEmail[];
     phones: PersonPhone[];
-    organisationId?: number;
+    organizationId?: number;
     deletedAt?: string;
 }
 
@@ -29,7 +29,7 @@ export interface PersonRow {
     lastName: string;
     emails: string; // JSON string in DB
     phones: string; // JSON string in DB
-    organisationId: number | null;
+    organizationId: number | null;
     createdAt: string;
     updatedAt: string;
     deletedAt: string | null;
@@ -40,7 +40,7 @@ export interface CreatePersonData {
     lastName: string;
     emails: PersonEmail[];
     phones?: PersonPhone[];
-    organisationId?: number;
+    organizationId?: number;
 }
 
 export interface UpdatePersonData {
@@ -48,7 +48,7 @@ export interface UpdatePersonData {
     lastName?: string;
     emails?: PersonEmail[];
     phones?: PersonPhone[];
-    organisationId?: number | null;
+    organizationId?: number | null;
 }
 
 export class PersonModel {
@@ -66,18 +66,30 @@ export class PersonModel {
         lastName TEXT NOT NULL,
         emails TEXT NOT NULL,
         phones TEXT NOT NULL DEFAULT '[]',
-        organisationId INTEGER,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL,
-        deletedAt TEXT,
-        FOREIGN KEY (organisationId) REFERENCES organisations(id) ON DELETE SET NULL
+        deletedAt TEXT
       )
     `);
+
+        // Add missing columns if they don't exist (for existing databases)
+        const columnsToAdd = [
+            { name: 'organizationId', definition: 'INTEGER' }
+        ];
+
+        for (const column of columnsToAdd) {
+            try {
+                this.db.exec(`ALTER TABLE persons ADD COLUMN ${column.name} ${column.definition}`);
+                console.log(`Added ${column.name} column to persons table`);
+            } catch (error) {
+                // Column already exists, ignore error
+            }
+        }
 
         // Create indexes
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_firstName ON persons(firstName)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_lastName ON persons(lastName)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_organisationId ON persons(organisationId)');
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_organizationId ON persons(organizationId)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_deletedAt ON persons(deletedAt)');
     }
 
@@ -88,7 +100,7 @@ export class PersonModel {
             lastName: row.lastName,
             emails: JSON.parse(row.emails),
             phones: JSON.parse(row.phones),
-            organisationId: row.organisationId || undefined,
+            organizationId: row.organizationId || undefined,
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,
             deletedAt: row.deletedAt || undefined
@@ -98,7 +110,7 @@ export class PersonModel {
     create(data: CreatePersonData): Person {
         const now = new Date().toISOString();
         const stmt = this.db.prepare(`
-      INSERT INTO persons (firstName, lastName, emails, phones, organisationId, createdAt, updatedAt)
+      INSERT INTO persons (firstName, lastName, emails, phones, organizationId, createdAt, updatedAt)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
@@ -107,7 +119,7 @@ export class PersonModel {
             data.lastName,
             JSON.stringify(data.emails),
             JSON.stringify(data.phones || []),
-            data.organisationId || null,
+            data.organizationId || null,
             now,
             now
         );
@@ -116,6 +128,14 @@ export class PersonModel {
         if (!person) throw new Error('Failed to create person');
 
         return person;
+    }
+
+    searchByPersonName(search: string): Person[] {
+        const stmt = this.db.prepare(`
+      SELECT * FROM persons WHERE firstName LIKE ? OR lastName LIKE ? OR emails LIKE ? OR phones LIKE ?
+    `);
+        const rows = stmt.all(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`) as PersonRow[];
+        return rows.map(row => this.rowToPerson(row));
     }
 
     findById(id: number, includeDeleted: boolean = false): Person | undefined {
@@ -130,7 +150,7 @@ export class PersonModel {
 
     findAll(options: {
         search?: string;
-        organisationId?: number;
+        organizationId?: number;
         limit?: number;
         offset?: number;
         includeDeleted?: boolean;
@@ -142,9 +162,9 @@ export class PersonModel {
             query += ' AND deletedAt IS NULL';
         }
 
-        if (options.organisationId) {
-            query += ' AND organisationId = ?';
-            params.push(options.organisationId);
+        if (options.organizationId) {
+            query += ' AND organizationId = ?';
+            params.push(options.organizationId);
         }
 
         if (options.search) {
@@ -171,9 +191,9 @@ export class PersonModel {
             countQuery += ' AND deletedAt IS NULL';
         }
 
-        if (options.organisationId) {
-            countQuery += ' AND organisationId = ?';
-            countParams.push(options.organisationId);
+        if (options.organizationId) {
+            countQuery += ' AND organizationId = ?';
+            countParams.push(options.organizationId);
         }
 
         if (options.search) {
@@ -190,14 +210,24 @@ export class PersonModel {
         };
     }
 
-    findByOrganisationId(organisationId: number, includeDeleted: boolean = false): Person[] {
-        let query = 'SELECT * FROM persons WHERE organisationId = ?';
+    async searchPersons(options: {
+        search?: string;
+        organizationId?: number;
+        limit?: number;
+        offset?: number;
+        includeDeleted?: boolean;
+    } = {}): Promise<{ persons: Person[]; count: number }> {
+        return this.findAll(options);
+    }
+
+    findByorganizationId(organizationId: number, includeDeleted: boolean = false): Person[] {
+        let query = 'SELECT * FROM persons WHERE organizationId = ?';
         if (!includeDeleted) {
             query += ' AND deletedAt IS NULL';
         }
         query += ' ORDER BY lastName, firstName';
 
-        const rows = this.db.prepare(query).all(organisationId) as PersonRow[];
+        const rows = this.db.prepare(query).all(organizationId) as PersonRow[];
         return rows.map(row => this.rowToPerson(row));
     }
 
@@ -225,9 +255,9 @@ export class PersonModel {
             updates.push('phones = ?');
             params.push(JSON.stringify(data.phones));
         }
-        if (data.organisationId !== undefined) {
-            updates.push('organisationId = ?');
-            params.push(data.organisationId);
+        if (data.organizationId !== undefined) {
+            updates.push('organizationId = ?');
+            params.push(data.organizationId);
         }
 
         params.push(id);

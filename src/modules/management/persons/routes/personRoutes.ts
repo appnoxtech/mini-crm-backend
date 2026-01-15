@@ -12,6 +12,9 @@ export function createPersonRoutes(personController: PersonController): Router {
 
     // CRUD operations
     router.get('/', (req: any, res) => personController.getAll(req, res));
+
+    router.get('/search', (req: any, res) => personController.searchPersons(req, res));
+
     router.get('/:id', (req: any, res) => personController.getById(req, res));
     router.post('/', validate(createPersonSchema), (req: any, res) => personController.create(req, res));
     router.put('/:id', validate(updatePersonSchema), (req: any, res) => personController.update(req, res));

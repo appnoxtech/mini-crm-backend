@@ -7,9 +7,8 @@ export interface Deal extends BaseEntity {
     currency: string;
     pipelineId: number;
     stageId: number;
-    personName?: string;
-    organizationName?: string;
-
+    personId?: number;
+    organizationId?: number;
     email?: { value: string; type: string }[];
     phone?: { value: string; type: string }[];
 
@@ -23,6 +22,7 @@ export interface Deal extends BaseEntity {
     lostReason?: string;
     lastActivityAt?: string;
     isRotten: boolean;
+    lavelIds?: number[];
     source?: string;
     labels?: string;
     customFields?: string;
@@ -37,58 +37,80 @@ export class DealModel {
 
     initialize(): void {
         this.db.exec(`
-      CREATE TABLE IF NOT EXISTS deals (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
-        value REAL DEFAULT 0,
-        currency TEXT DEFAULT 'USD',
-        pipelineId INTEGER NOT NULL,
-        stageId INTEGER NOT NULL,
-        personName TEXT,
-        organizationName TEXT,
-        email TEXT,
-        phone TEXT,
-        description TEXT,
-        expectedCloseDate TEXT,
-        actualCloseDate TEXT,
-        probability INTEGER DEFAULT 0,
-        userId INTEGER NOT NULL,
-        assignedTo INTEGER,
-        status TEXT DEFAULT 'open',
-        lostReason TEXT,
-        lastActivityAt TEXT,
-        isRotten BOOLEAN DEFAULT 0,
-        source TEXT,
-        labels TEXT,
-        customFields TEXT,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL,
-        FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
-        FOREIGN KEY (pipelineId) REFERENCES pipelines(id) ON DELETE RESTRICT,
-        FOREIGN KEY (stageId) REFERENCES pipeline_stages(id) ON DELETE RESTRICT,
-        FOREIGN KEY (assignedTo) REFERENCES users(id) ON DELETE SET NULL
-      )
-    `);
+  CREATE TABLE IF NOT EXISTS deals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    value REAL DEFAULT 0,
+    currency TEXT DEFAULT 'USD',
+    pipelineId INTEGER NOT NULL,
+    stageId INTEGER NOT NULL,
+    email TEXT,
+    phone TEXT,
+    description TEXT,
+    expectedCloseDate TEXT,
+    actualCloseDate TEXT,
+    probability INTEGER DEFAULT 0,
+    userId INTEGER NOT NULL,
+    assignedTo INTEGER,
+    status TEXT DEFAULT 'open',
+    lostReason TEXT,
+    lastActivityAt TEXT,
+    isRotten BOOLEAN DEFAULT 0,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+
+    FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (pipelineId) REFERENCES pipelines(id) ON DELETE RESTRICT,
+    FOREIGN KEY (stageId) REFERENCES pipeline_stages(id) ON DELETE RESTRICT,
+    FOREIGN KEY (assignedTo) REFERENCES users(id) ON DELETE SET NULL
+  )
+`);
+
+        // Add missing columns if they don't exist (for existing databases)
+        const columnsToAdd = [
+            { name: 'personId', definition: 'INTEGER' },
+            { name: 'organizationId', definition: 'INTEGER' },
+            { name: 'source', definition: 'TEXT' },
+            { name: 'lavelIds', definition: 'TEXT' },
+            { name: 'customFields', definition: 'TEXT' }
+        ];
+
+        for (const column of columnsToAdd) {
+            try {
+                this.db.exec(`ALTER TABLE deals ADD COLUMN ${column.name} ${column.definition}`);
+                console.log(`Added ${column.name} column to deals table`);
+            } catch (error) {
+                // Column already exists, ignore error
+            }
+        }
+
+        // Add foreign key constraints if columns were just added
+        // Note: SQLite doesn't support adding foreign keys to existing tables,
+        // so we handle this gracefully
 
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_userId ON deals(userId)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_pipelineId ON deals(pipelineId)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_stageId ON deals(stageId)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_status ON deals(status)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_expectedCloseDate ON deals(expectedCloseDate)');
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_personId ON deals(personId)');
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_organizationId ON deals(organizationId)');
     }
 
     create(data: Omit<Deal, 'id' | 'createdAt' | 'updatedAt'>): Deal {
         const now = new Date().toISOString();
 
         const stmt = this.db.prepare(`
-      INSERT INTO deals (
-        title, value, currency, pipelineId, stageId, personName, organizationName,
-        email, phone, description, expectedCloseDate, actualCloseDate, probability,
-        userId, assignedTo, status, lostReason, lastActivityAt, isRotten, source,
-        labels, customFields, createdAt, updatedAt
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+  INSERT INTO deals (
+    title, value, currency, pipelineId, stageId,
+    personId, organizationId,
+    email, phone, description, expectedCloseDate, actualCloseDate, probability,
+    userId, assignedTo, status, lostReason, lastActivityAt, isRotten, source,
+    lavelIds, customFields, createdAt, updatedAt
+  )
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`);
+
 
         const result = stmt.run(
             data.title,
@@ -96,8 +118,8 @@ export class DealModel {
             data.currency,
             data.pipelineId,
             data.stageId,
-            data.personName || null,
-            data.organizationName || null,
+            data.personId || null,
+            data.organizationId || null,
             data.email ? JSON.stringify(data.email) : null,
             data.phone ? JSON.stringify(data.phone) : null,
             data.description || null,
@@ -111,7 +133,7 @@ export class DealModel {
             data.lastActivityAt || now,
             data.isRotten ? 1 : 0,
             data.source || null,
-            data.labels || null,
+            data.lavelIds ? JSON.stringify(data.lavelIds) : null,
             data.customFields || null,
             now,
             now
@@ -127,7 +149,10 @@ export class DealModel {
 
         return {
             ...result,
-            isRotten: Boolean(result.isRotten)
+            isRotten: Boolean(result.isRotten),
+            email: result.email ? JSON.parse(result.email) : null,
+            phone: result.phone ? JSON.parse(result.phone) : null,
+            lavelIds: result.lavelIds ? JSON.parse(result.lavelIds) : null,
         };
     }
 
@@ -181,7 +206,10 @@ export class DealModel {
         return {
             deals: results.map(r => ({
                 ...r,
-                isRotten: Boolean(r.isRotten)
+                isRotten: Boolean(r.isRotten),
+                email: r.email ? JSON.parse(r.email) : null,
+                phone: r.phone ? JSON.parse(r.phone) : null,
+                lavelIds: r.lavelIds ? JSON.parse(r.lavelIds) : null,
             })),
             total: countResult.count
         };
@@ -202,7 +230,20 @@ export class DealModel {
             if (key === 'isRotten') {
                 updates.push(`${key} = ?`);
                 values.push(value ? 1 : 0);
-            } else {
+            }
+            else if (key === 'lavelIds' && Array.isArray(value)) {
+                updates.push(`${key} = ?`);
+                values.push(JSON.stringify(value));
+            }
+            else if (key === 'email' && typeof value === 'object') {
+                updates.push(`${key} = ?`);
+                values.push(JSON.stringify(value));
+            }
+            else if (key === 'phone' && typeof value === 'object') {
+                updates.push(`${key} = ?`);
+                values.push(JSON.stringify(value));
+            }
+            else {
                 updates.push(`${key} = ?`);
                 values.push(value === undefined ? null : value);
             }
@@ -275,12 +316,12 @@ export class DealModel {
             }));
     }
 
-    searchDeals(userId: number, search: string): Deal[] {
+    searchDeals(search: string): Deal[] {
         const query = `
       SELECT * FROM deals
-      WHERE userId = ? AND (title LIKE ? OR personName LIKE ? OR organizationName LIKE ?)
+      WHERE (title LIKE ? OR personName LIKE ? OR organizationName LIKE ?)
     `;
-        const params = [userId, `%${search}%`, `%${search}%`, `%${search}%`];
+        const params = [`%${search}%`, `%${search}%`, `%${search}%`];
 
         const results = this.db.prepare(query).all(...params) as any[];
         return results.map(r => ({

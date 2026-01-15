@@ -1,10 +1,10 @@
 import { Response } from 'express';
-import { OrganisationService } from '../services/OrganisationService';
+import { OrganizationService } from '../services/OrganizationService';
 import { AuthenticatedRequest } from '../../../../shared/types';
 import { ResponseHandler } from '../../../../shared/responses/responses';
 
 export class OrganisationController {
-    constructor(private organisationService: OrganisationService) { }
+    constructor(private organisationService: OrganizationService) { }
 
     async getAll(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
