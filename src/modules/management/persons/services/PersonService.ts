@@ -31,14 +31,8 @@ export class PersonService {
         return this.personModel.create(data);
     }
 
-    async searchPersons(options: {
-        search?: string;
-        organizationId?: number;
-        limit?: number;
-        offset?: number;
-        includeDeleted?: boolean;
-    } = {}): Promise<{ persons: Person[]; count: number }> {
-        return this.personModel.searchPersons(options);
+    async searchPersons(search?: string): Promise<Person[]> {
+        return this.personModel.searchByPersonName(search || '');
     }
 
     async getPersonsByOrganization(organizationId: number): Promise<Person[]> {
@@ -46,15 +40,16 @@ export class PersonService {
     }
 
     async updatePerson(id: number, data: UpdatePersonData): Promise<Person | null> {
-        // Validate organization exists if provided
-        if (data.organizationId && this.organizationModel) {
-            const org = this.organizationModel.findById(data.organizationId);
+        console.log(data);
+
+        if (data.organizationId !== undefined && this.organizationModel) {
+            const organizationId = Number(data.organizationId);
+            const org = this.organizationModel.findById(organizationId, false);
             if (!org) {
                 throw new Error('Organization not found');
             }
         }
 
-        // Validate emails if provided
         if (data.emails) {
             if (data.emails.length === 0) {
                 throw new Error('At least one email is required');
@@ -69,6 +64,7 @@ export class PersonService {
 
         return this.personModel.update(id, data);
     }
+
 
     async getPersonById(id: number, includeDeleted = false): Promise<Person | undefined> {
         return this.personModel.findById(id, includeDeleted);

@@ -23,7 +23,7 @@ export const createPersonSchema = z.object({
     lastName: z.string().min(1, 'Last name is required').max(100, 'Last name is too long'),
     emails: z.array(emailSchema).min(1, 'At least one email is required'),
     phones: z.array(phoneSchema).optional().default([]),
-    organisationId: z.number().int().positive().optional()
+    organizationId: z.number().int().positive().optional()
 });
 
 export const updatePersonSchema = z.object({
@@ -31,7 +31,7 @@ export const updatePersonSchema = z.object({
     lastName: z.string().min(1, 'Last name is required').max(100, 'Last name is too long').optional(),
     emails: z.array(emailSchema).min(1, 'At least one email is required').optional(),
     phones: z.array(phoneSchema).optional(),
-    organisationId: z.number().int().positive().nullable().optional()
+    organizationId: z.number().int().positive().optional()
 });
 
 export type CreatePersonInput = z.infer<typeof createPersonSchema>;
