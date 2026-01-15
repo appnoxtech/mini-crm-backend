@@ -1,13 +1,24 @@
 import { Deal, DealModel } from '../models/Deal';
 import { Product, ProductModel } from '../models/Product';
 import { DealHistoryModel } from '../models/DealHistory';
-import { PipelineModel } from '../models/Pipeline';
-import { PipelineStageModel } from '../models/PipelineStage';
+import { Pipeline, PipelineModel } from '../models/Pipeline';
+import { PipelineStageModel, searchResult } from '../models/PipelineStage';
+import { Person, PersonModel } from '../../management/persons/models/Person';
+import { Organization, OrganizationModel, searchOrgResult } from '../../management/organisations/models/Organisation';
+
 
 type ContactField = {
     value: string;
     type: string; // "Work" | "Personal" | "Home" | etc
 };
+
+interface organizationData extends Organization {
+    organizationId?: number;
+}
+
+interface personData extends Person {
+    personId?: number;
+}
 
 
 export class DealService {
@@ -16,7 +27,9 @@ export class DealService {
         private historyModel: DealHistoryModel,
         private pipelineModel: PipelineModel,
         private stageModel: PipelineStageModel,
-        protected productModel: ProductModel
+        private productModel: ProductModel,
+        private organizationModel: OrganizationModel,
+        private personModel: PersonModel
     ) { }
 
     async createDeal(userId: number,
@@ -26,8 +39,8 @@ export class DealService {
             stageId: number;
             value?: number;
             currency?: string;
-            personName?: string;
-            organizationName?: string;
+            person?: personData;
+            organization?: organizationData;
             emails?: ContactField[];
             phones?: ContactField[];
             description?: string;
@@ -35,7 +48,7 @@ export class DealService {
             probability?: number;
             assignedTo?: number;
             source?: string;
-            labels?: string[];
+            lavelIds?: number[];
             products?: {
                 item: string;
                 price: number;
@@ -71,10 +84,66 @@ export class DealService {
             throw new Error('Cannot add deals to inactive pipeline');
         }
 
+        const organizationData = data.organization;
+        // step 1 create organization if not exists
+
+        let organization: Organization | undefined;
+
+        if (organizationData) {
+            if (!organizationData.organizationId) {
+                const org = this.organizationModel.create({
+                    name: organizationData.name,
+                    industry: organizationData.industry,
+                    website: organizationData.website,
+                    emails: organizationData.emails,
+                    phones: organizationData.phones,
+                    address: organizationData.address,
+                    description: organizationData.description,
+                    status: organizationData.status
+                });
+                organization = org;
+            } else {
+                organization = this.organizationModel.findById(organizationData.organizationId);
+            }
+        }
+
+
+
+
+        // step 2. create person if not exists
+
+        const personData = data.person;
+
+        let person: Person | undefined;
+
+        if (personData) {
+            if (!personData.personId) {
+                const pers = this.personModel.create({
+                    firstName: personData.firstName,
+                    lastName: personData.lastName,
+                    emails: personData.emails,
+                    phones: personData.phones,
+                    organizationId: organization?.id
+                });
+
+                person = pers;
+            } else {
+                person = this.personModel.findById(personData.personId);
+            }
+        }
+
+
+
         // Verify stage belongs to pipeline
         const stage = this.stageModel.findById(data.stageId);
         if (!stage || stage.pipelineId !== data.pipelineId) {
             throw new Error('Stage does not belong to the specified pipeline');
+        }
+
+
+        // add person
+        if (data.person) {
+
         }
 
 
@@ -84,8 +153,8 @@ export class DealService {
             currency: data.currency || 'USD',
             pipelineId: data.pipelineId,
             stageId: data.stageId,
-            personName: data.personName?.trim(),
-            organizationName: data.organizationName?.trim(),
+            personId: person?.id,
+            organizationId: organization?.id,
             email: data.emails,
             phone: data.phones,
             description: data.description?.trim(),
@@ -97,7 +166,7 @@ export class DealService {
             lastActivityAt: new Date().toISOString(),
             isRotten: false,
             source: data.source,
-            labels: data.labels ? JSON.stringify(data.labels) : undefined,
+            lavelIds: data.lavelIds,
             customFields: data.customFields ? JSON.stringify(data.customFields) : undefined
         });
 
@@ -134,14 +203,37 @@ export class DealService {
         });
         const response = {
             deal,
+            organization,
+            person,
             products
         }
 
         return response;
     }
 
-    async searchDeals(userId: number, search: string): Promise<Deal[]> {
-        return this.dealModel.searchDeals(userId, search);
+    async searchDeals(search: string): Promise<{ deals: Deal[], pipeline: searchResult[], stage: searchResult[], person: Person[], organization: searchOrgResult[] }> {
+
+        const deals = this.dealModel.searchDeals(search);
+
+        const pipeline = this.pipelineModel.searchByPipelineName(search);
+
+        const stage = this.stageModel.searchByStageName(search);
+
+
+
+        const person = this.personModel.searchByPersonName(search);
+
+
+
+        const organization = this.organizationModel.searchByOrganizationName(search);
+
+        return {
+            deals,
+            pipeline,
+            stage,
+            person,
+            organization
+        };
     }
 
 
@@ -152,7 +244,7 @@ export class DealService {
         search?: string;
         page?: number;
         limit?: number;
-    } = {}): Promise<{ deals: Deal[]; pagination: any }> {
+    } = {}): Promise<{ deals: any[]; pagination: any }> {
         const page = filters.page || 1;
         const limit = filters.limit || 20;
         const offset = (page - 1) * limit;
@@ -163,8 +255,41 @@ export class DealService {
             offset
         });
 
+        // Enrich each deal with related data
+        const enrichedDeals = result.deals.map(deal => {
+            const pipeline = this.pipelineModel.findById(deal.pipelineId);
+            const stage = this.stageModel.findById(deal.stageId);
+
+            let person = null;
+            if (deal.personId) {
+                person = this.personModel.findById(deal.personId);
+            }
+
+            let organization = null;
+            if (deal.organizationId) {
+                organization = this.organizationModel.findById(deal.organizationId);
+            }
+
+            return {
+                ...deal,
+                pipeline: pipeline ? { id: pipeline.id, name: pipeline.name } : null,
+                stage: stage ? { id: stage.id, name: stage.name, probability: stage.probability } : null,
+                person: person ? {
+                    id: person.id,
+                    firstName: person.firstName,
+                    lastName: person.lastName,
+                    emails: person.emails
+                } : null,
+                organization: organization ? {
+                    id: organization.id,
+                    name: organization.name
+                } : null,
+                customFields: deal.customFields ? JSON.parse(deal.customFields) : {}
+            };
+        });
+
         return {
-            deals: result.deals,
+            deals: enrichedDeals,
             pagination: {
                 total: result.total,
                 page,
@@ -185,6 +310,21 @@ export class DealService {
         const pipeline = this.pipelineModel.findById(deal.pipelineId);
         const stage = this.stageModel.findById(deal.stageId);
 
+        // Get person info if personId exists
+        let person = null;
+        if (deal.personId) {
+            person = this.personModel.findById(deal.personId);
+        }
+
+        // Get organization info if organizationId exists
+        let organization = null;
+        if (deal.organizationId) {
+            organization = this.organizationModel.findById(deal.organizationId);
+        }
+
+        // Get products associated with this deal
+        const products = this.productModel.findByDealId(id);
+
         // Get history
         const history = this.historyModel.findByDealId(id);
 
@@ -197,10 +337,23 @@ export class DealService {
         return {
             ...deal,
             pipeline: pipeline ? { id: pipeline.id, name: pipeline.name } : null,
-            stage: stage ? { id: stage.id, name: stage.name } : null,
+            stage: stage ? { id: stage.id, name: stage.name, probability: stage.probability } : null,
+            person: person ? {
+                id: person.id,
+                firstName: person.firstName,
+                lastName: person.lastName,
+                emails: person.emails,
+                phones: person.phones
+            } : null,
+            organization: organization ? {
+                id: organization.id,
+                name: organization.name,
+                industry: organization.industry,
+                website: organization.website
+            } : null,
+            products: products || [],
             history,
             timeInCurrentStage,
-            labels: deal.labels ? JSON.parse(deal.labels) : [],
             customFields: deal.customFields ? JSON.parse(deal.customFields) : {}
         };
     }
@@ -263,6 +416,9 @@ export class DealService {
                     createdAt: now
                 });
             }
+
+            // Return enriched deal data
+            return this.getDealById(dealId, userId);
         }
 
         return deal;
@@ -360,7 +516,38 @@ export class DealService {
         return this.dealModel.delete(dealId, userId);
     }
 
-    async getRottenDeals(userId: number, pipelineId?: number): Promise<Deal[]> {
-        return this.dealModel.getRottenDeals(userId, pipelineId);
+    async getRottenDeals(userId: number, pipelineId?: number): Promise<any[]> {
+        const deals = this.dealModel.getRottenDeals(userId, pipelineId);
+
+        // Enrich each deal with related data
+        return deals.map(deal => {
+            const pipeline = this.pipelineModel.findById(deal.pipelineId);
+            const stage = this.stageModel.findById(deal.stageId);
+
+            let person = null;
+            if (deal.personId) {
+                person = this.personModel.findById(deal.personId);
+            }
+
+            let organization = null;
+            if (deal.organizationId) {
+                organization = this.organizationModel.findById(deal.organizationId);
+            }
+
+            return {
+                ...deal,
+                pipeline: pipeline ? { id: pipeline.id, name: pipeline.name } : null,
+                stage: stage ? { id: stage.id, name: stage.name } : null,
+                person: person ? {
+                    id: person.id,
+                    firstName: person.firstName,
+                    lastName: person.lastName
+                } : null,
+                organization: organization ? {
+                    id: organization.id,
+                    name: organization.name
+                } : null
+            };
+        });
     }
 }

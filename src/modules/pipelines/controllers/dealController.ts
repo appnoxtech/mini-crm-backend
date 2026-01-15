@@ -29,9 +29,9 @@ export class DealController {
 
             const { search } = req.query;
 
+            console.log(search);
 
-            const result = await this.dealService.searchDeals(req.user.id, search as string);
-
+            const result = await this.dealService.searchDeals(search as string);
 
             return ResponseHandler.success(res, result, 'Deals fetched successfully');
         } catch (error: any) {

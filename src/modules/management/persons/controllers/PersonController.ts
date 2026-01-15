@@ -6,6 +6,29 @@ import { ResponseHandler } from '../../../../shared/responses/responses';
 export class PersonController {
     constructor(private personService: PersonService) { }
 
+    async searchPersons(req: AuthenticatedRequest, res: Response): Promise<void> {
+        try {
+            if (!req.user) {
+                return ResponseHandler.validationError(res, 'User not authenticated');
+            }
+
+            const { q, organisationId, limit = 100, offset = 0, includeDeleted } = req.query as any;
+
+            const result = await this.personService.searchPersons({
+                search: q as string,
+                organizationId: organisationId ? Number(organisationId) : undefined,
+                limit: Number(limit),
+                offset: Number(offset),
+                includeDeleted: includeDeleted === 'true'
+            });
+
+            return ResponseHandler.success(res, result);
+        } catch (error) {
+            console.error('Error fetching persons:', error);
+            return ResponseHandler.internalError(res, 'Failed to fetch persons');
+        }
+    }
+
     async getAll(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
             if (!req.user) {
@@ -14,9 +37,9 @@ export class PersonController {
 
             const { q, organisationId, limit = 100, offset = 0, includeDeleted } = req.query as any;
 
-            const result = await this.personService.getAll({
+            const result = await this.personService.getAllPersons({
                 search: q as string,
-                organisationId: organisationId ? Number(organisationId) : undefined,
+                organizationId: organisationId ? Number(organisationId) : undefined,
                 limit: Number(limit),
                 offset: Number(offset),
                 includeDeleted: includeDeleted === 'true'
@@ -36,7 +59,7 @@ export class PersonController {
             }
 
             const { id } = req.params;
-            const person = await this.personService.getById(Number(id));
+            const person = await this.personService.getPersonById(Number(id));
 
             if (!person) {
                 return ResponseHandler.notFound(res, 'Person not found');
@@ -57,12 +80,12 @@ export class PersonController {
 
             const { firstName, lastName, emails, phones, organisationId } = req.body;
 
-            const person = await this.personService.create({
+            const person = await this.personService.createPerson({
                 firstName,
                 lastName,
                 emails,
                 phones: phones || [],
-                organisationId: organisationId || undefined
+                organizationId: organisationId || undefined
             });
 
             return ResponseHandler.created(res, person, 'Person created successfully');
@@ -84,12 +107,11 @@ export class PersonController {
             const { id } = req.params;
             const { firstName, lastName, emails, phones, organisationId } = req.body;
 
-            const person = await this.personService.update(Number(id), {
+            const person = await this.personService.updatePerson(Number(id), {
                 firstName,
                 lastName,
                 emails,
                 phones,
-                organisationId
             });
 
             if (!person) {
@@ -113,7 +135,7 @@ export class PersonController {
             }
 
             const { id } = req.params;
-            const success = await this.personService.delete(Number(id));
+            const success = await this.personService.deletePerson(Number(id));
 
             if (!success) {
                 return ResponseHandler.notFound(res, 'Person not found');
@@ -133,7 +155,7 @@ export class PersonController {
             }
 
             const { id } = req.params;
-            const person = await this.personService.restore(Number(id));
+            const person = await this.personService.restorePerson(Number(id));
 
             if (!person) {
                 return ResponseHandler.notFound(res, 'Person not found or not deleted');
