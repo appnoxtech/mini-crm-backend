@@ -11,6 +11,9 @@ export function createDealRoutes(controller: DealController): Router {
     // Deal routes
     router.post('/create', (req, res) => controller.createDeal(req, res));
     router.get('/get', (req, res) => controller.getDeals(req, res));
+
+    router.get('/', (req, res) => controller.searchDeals(req, res));
+
     router.get('/get/rotten', (req, res) => controller.getRottenDeals(req, res));
     router.get('/get/:id', (req, res) => controller.getDealById(req, res));
     router.put('/update/:dealId', (req, res) => controller.updateDeal(req, res));

@@ -21,6 +21,25 @@ export class DealController {
         }
     }
 
+    async searchDeals(req: AuthenticatedRequest, res: Response): Promise<void> {
+        try {
+            if (!req.user) {
+                return ResponseHandler.unauthorized(res, 'User not authenticated');
+            }
+
+            const { search } = req.query;
+
+
+            const result = await this.dealService.searchDeals(req.user.id, search as string);
+
+
+            return ResponseHandler.success(res, result, 'Deals fetched successfully');
+        } catch (error: any) {
+            console.error('Error searching deals:', error);
+            return ResponseHandler.internalError(res, 'Failed to search deals');
+        }
+    }
+
     async getDeals(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
             if (!req.user) {
