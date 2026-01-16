@@ -43,6 +43,21 @@ export class OrganisationModel {
         // Create indexes
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_organisations_name ON organisations(name)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_organisations_deletedAt ON organisations(deletedAt)');
+        // Unique index on website for non-deleted organisations (SQLite partial index)
+        this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_organisations_website_unique ON organisations(website) WHERE website IS NOT NULL AND website != '' AND deletedAt IS NULL`);
+    }
+
+    findByWebsite(website: string, excludeId?: number): Organisation | undefined {
+        let query = 'SELECT * FROM organisations WHERE website = ? AND deletedAt IS NULL';
+        const params: any[] = [website];
+
+        if (excludeId) {
+            query += ' AND id != ?';
+            params.push(excludeId);
+        }
+
+        const stmt = this.db.prepare(query);
+        return stmt.get(...params) as Organisation | undefined;
     }
 
     create(data: CreateOrganisationData): Organisation {

@@ -63,8 +63,11 @@ export class OrganisationController {
             });
 
             return ResponseHandler.created(res, organisation, 'Organisation created successfully');
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error creating organisation:', error);
+            if (error.message === 'Organisation already exists') {
+                return ResponseHandler.validationError(res, 'Organisation already exists');
+            }
             return ResponseHandler.internalError(res, 'Failed to create organisation');
         }
     }
@@ -89,8 +92,11 @@ export class OrganisationController {
             }
 
             return ResponseHandler.success(res, organisation, 'Organisation updated successfully');
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error updating organisation:', error);
+            if (error.message === 'Organisation already exists') {
+                return ResponseHandler.validationError(res, 'Organisation already exists');
+            }
             return ResponseHandler.internalError(res, 'Failed to update organisation');
         }
     }

@@ -4,6 +4,14 @@ export class OrganisationService {
     constructor(private organisationModel: OrganisationModel) { }
 
     async create(data: CreateOrganisationData): Promise<Organisation> {
+        // Check website uniqueness if provided
+        if (data.website && data.website.trim() !== '') {
+            const existingOrg = this.organisationModel.findByWebsite(data.website);
+            if (existingOrg) {
+                throw new Error('Organisation already exists');
+            }
+        }
+
         return this.organisationModel.create(data);
     }
 
@@ -22,6 +30,14 @@ export class OrganisationService {
     }
 
     async update(id: number, data: UpdateOrganisationData): Promise<Organisation | null> {
+        // Check website uniqueness if being updated
+        if (data.website && data.website.trim() !== '') {
+            const existingOrg = this.organisationModel.findByWebsite(data.website, id);
+            if (existingOrg) {
+                throw new Error('Organisation already exists');
+            }
+        }
+
         return this.organisationModel.update(id, data);
     }
 
