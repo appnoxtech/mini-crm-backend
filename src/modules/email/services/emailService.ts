@@ -2,6 +2,7 @@ import { EmailModel } from "../models/emailModel";
 import { EmailConnectorService } from "./emailConnectorService";
 import { Email, EmailAccount, EmailAttachment } from "../models/types";
 import { RealTimeNotificationService } from "./realTimeNotificationService";
+import { simpleParser } from 'mailparser';
 
 export class EmailService {
   private emailModel: EmailModel;
@@ -23,6 +24,32 @@ export class EmailService {
       throw new Error("EmailModel is not initialized!");
     }
     return this.emailModel;
+  }
+
+  /**
+   * Test SMTP connection with provided configuration
+   */
+  async testSmtpConnection(smtpConfig: {
+    host: string;
+    port: number;
+    secure: boolean;
+    username: string;
+    password: string;
+  }): Promise<{ success: boolean; message: string }> {
+    return this.connectorService.testSmtpConnection(smtpConfig);
+  }
+
+  /**
+   * Test IMAP connection with provided configuration
+   */
+  async testImapConnection(imapConfig: {
+    host: string;
+    port: number;
+    secure: boolean;
+    username: string;
+    password: string;
+  }): Promise<{ success: boolean; message: string }> {
+    return this.connectorService.testImapConnection(imapConfig);
   }
 
   async sendEmail(
@@ -123,7 +150,7 @@ export class EmailService {
           account,
           account.lastSyncAt
         );
-      } else if (provider === "imap") {
+      } else if (provider === "imap" || provider === "custom") {
         rawEmails = await this.connectorService.fetchIMAPEmails(
           account,
           account.lastSyncAt
@@ -165,7 +192,7 @@ export class EmailService {
     account: EmailAccount,
     rawEmail: any
   ): Promise<void> {
-    const parsed = this.parseRawEmail(rawEmail, account.provider);
+    const parsed = await this.parseRawEmail(rawEmail, account.provider);
 
     // Check if email already exists
     const existing = await this.emailModel.findEmailByMessageId(
@@ -222,10 +249,10 @@ export class EmailService {
     }
   }
 
-  private parseRawEmail(rawEmail: any, provider: string): Partial<Email> {
+  private async parseRawEmail(rawEmail: any, provider: string): Promise<Partial<Email>> {
     if (provider === "gmail") return this.parseGmailMessage(rawEmail);
     if (provider === "outlook") return this.parseOutlookMessage(rawEmail);
-    if (provider === "imap") return this.parseIMAPMessage(rawEmail);
+    if (provider === "imap" || provider === "custom") return await this.parseIMAPMessage(rawEmail);
     throw new Error(`Unsupported provider: ${provider}`);
   }
 
@@ -334,6 +361,14 @@ export class EmailService {
     account: EmailAccount,
     rawEmail: any
   ): boolean {
+    // Check explicit folder tag from fetchIMAPEmails
+    if (rawEmail.folder === 'SENT') {
+      return false;
+    }
+    if (rawEmail.folder === 'INBOX') {
+      return true;
+    }
+
     // For IMAP, check if the sender matches the account email
     const fromEmail = this.extractEmailFromAddress(parsed.from || "");
     const accountEmail = account.email.toLowerCase();
@@ -415,22 +450,89 @@ export class EmailService {
     } as any;
   }
 
-  private parseIMAPMessage(message: any): Partial<Email> {
+  private async parseIMAPMessage(message: any): Promise<Partial<Email>> {
+    const source = message.source;
+    let body = "";
+    let htmlBody: string | undefined;
+    let parsed: any = {};
+    let attachments: EmailAttachment[] | undefined;
+
+    if (source) {
+      try {
+        // Ensure source is a string or Buffer for simpleParser
+        // imapflow returns Buffer, but let's be safe
+        const sourceData = Buffer.isBuffer(source) ? source : String(source);
+        parsed = await simpleParser(sourceData);
+
+        body = parsed.text || ""; // Plain text body
+        // Prefer HTML, fallback to textAsHtml, then undefined
+        htmlBody = parsed.html || parsed.textAsHtml || undefined;
+
+        // Parse attachments (same structure as Gmail)
+        if (parsed.attachments && parsed.attachments.length > 0) {
+          attachments = parsed.attachments.map((att: any) => ({
+            filename: att.filename || 'attachment',
+            mimeType: att.contentType || 'application/octet-stream',
+            size: att.size || 0,
+            contentId: att.contentId || undefined,
+          }));
+        }
+
+        console.log(`IMAP Email Parsed - text len: ${body.length}, html len: ${htmlBody?.length || 0}, attachments: ${attachments?.length || 0}`);
+      } catch (err) {
+        console.error("Failed to parse IMAP email body:", err);
+        // Do NOT fall back to raw source as body, it looks broken to the user
+        body = "Error parsing email content.";
+      }
+    }
+
+    // Helper to format address objects to match Gmail format "Name <email>"
+    const formatAddress = (addr: any): string[] => {
+      if (!addr) return [];
+      if (Array.isArray(addr.value)) {
+        return addr.value.map((a: any) => a.name ? `${a.name} <${a.address}>` : a.address);
+      }
+      return addr.text ? [addr.text] : [];
+    };
+
+    // Use parsed metadata if available, otherwise fall back to envelope
+    const from = parsed.from?.text || message.envelope?.from?.[0]?.address;
+    const to = parsed.to ? formatAddress(parsed.to) : (message.envelope?.to || []).map((a: any) => a.address);
+    const cc = parsed.cc ? formatAddress(parsed.cc) : message.envelope?.cc?.map((a: any) => a.address);
+    const bcc = parsed.bcc ? formatAddress(parsed.bcc) : message.envelope?.bcc?.map((a: any) => a.address);
+    const subject = parsed.subject || message.envelope?.subject || "";
+    const date = parsed.date || message.envelope?.date;
+
+    // Extract threadId from In-Reply-To or References header (similar to Gmail's threadId)
+    const threadId = parsed.inReplyTo || (parsed.references && parsed.references[0]) || undefined;
+
+    // Determine isRead from flags - check if \Seen flag is present
+    // If flags exist and has the \Seen flag, email is read; otherwise unread
+    let isRead = true; // Default to read
+    if (message.flags) {
+      if (message.flags instanceof Set) {
+        isRead = message.flags.has('\\Seen');
+      } else if (Array.isArray(message.flags)) {
+        isRead = message.flags.includes('\\Seen');
+      }
+    }
+
     return {
-      messageId: message.envelope?.messageId,
-      from: message.envelope?.from?.[0]?.address,
-      to: (message.envelope?.to || []).map((a: any) => a.address),
-      cc: message.envelope?.cc?.map((a: any) => a.address),
-      bcc: message.envelope?.bcc?.map((a: any) => a.address),
-      subject: message.envelope?.subject || "",
-      body: String(message.source || ""),
-      sentAt: message.envelope?.date,
-      receivedAt: message.envelope?.date,
-      isRead: !(
-        message.flags &&
-        message.flags.has &&
-        message.flags.has("\\Seen") === false
-      ),
+      messageId: parsed.messageId || message.envelope?.messageId,
+      threadId: threadId,
+      from: from,
+      to: to,
+      cc: cc,
+      bcc: bcc,
+      subject: subject,
+      body: body,
+      htmlBody: htmlBody,
+      attachments: attachments,
+      sentAt: date,
+      receivedAt: date,
+      isRead: isRead,
+      // Store folder for direction detection (similar to Gmail's labelIds)
+      folder: message.folder,
     } as any;
   }
 

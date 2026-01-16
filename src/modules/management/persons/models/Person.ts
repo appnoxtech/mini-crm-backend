@@ -92,6 +92,69 @@ export class PersonModel {
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_lastName ON persons(lastName)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_organizationId ON persons(organizationId)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_deletedAt ON persons(deletedAt)');
+
+        // Unique indexes on lookup tables
+        this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_person_emails_unique ON person_emails(email)');
+        this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_person_phones_unique ON person_phones(phone)');
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_person_emails_personId ON person_emails(personId)');
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_person_phones_personId ON person_phones(personId)');
+    }
+
+    // Check if any email already exists for another person
+    findExistingEmail(emails: string[], excludePersonId?: number): { email: string; personId: number } | undefined {
+        for (const email of emails) {
+            let query = 'SELECT pe.email, pe.personId FROM person_emails pe JOIN persons p ON pe.personId = p.id WHERE pe.email = ? AND p.deletedAt IS NULL';
+            const params: any[] = [email.toLowerCase()];
+
+            if (excludePersonId) {
+                query += ' AND pe.personId != ?';
+                params.push(excludePersonId);
+            }
+
+            const result = this.db.prepare(query).get(...params) as { email: string; personId: number } | undefined;
+            if (result) return result;
+        }
+        return undefined;
+    }
+
+    // Check if any phone number already exists for another person
+    findExistingPhone(phones: string[], excludePersonId?: number): { phone: string; personId: number } | undefined {
+        for (const phone of phones) {
+            let query = 'SELECT pp.phone, pp.personId FROM person_phones pp JOIN persons p ON pp.personId = p.id WHERE pp.phone = ? AND p.deletedAt IS NULL';
+            const params: any[] = [phone];
+
+            if (excludePersonId) {
+                query += ' AND pp.personId != ?';
+                params.push(excludePersonId);
+            }
+
+            const result = this.db.prepare(query).get(...params) as { phone: string; personId: number } | undefined;
+            if (result) return result;
+        }
+        return undefined;
+    }
+
+    // Sync lookup tables when creating/updating a person
+    private syncEmailLookup(personId: number, emails: PersonEmail[]): void {
+        // Delete existing emails for this person
+        this.db.prepare('DELETE FROM person_emails WHERE personId = ?').run(personId);
+
+        // Insert new emails
+        const insertStmt = this.db.prepare('INSERT INTO person_emails (personId, email) VALUES (?, ?)');
+        for (const emailObj of emails) {
+            insertStmt.run(personId, emailObj.email.toLowerCase());
+        }
+    }
+
+    private syncPhoneLookup(personId: number, phones: PersonPhone[]): void {
+        // Delete existing phones for this person
+        this.db.prepare('DELETE FROM person_phones WHERE personId = ?').run(personId);
+
+        // Insert new phones
+        const insertStmt = this.db.prepare('INSERT INTO person_phones (personId, phone) VALUES (?, ?)');
+        for (const phoneObj of phones) {
+            insertStmt.run(personId, phoneObj.number);
+        }
     }
 
     private rowToPerson(row: PersonRow): Person {
@@ -125,7 +188,15 @@ export class PersonModel {
             now
         );
 
-        const person = this.findById(result.lastInsertRowid as number);
+        const personId = result.lastInsertRowid as number;
+
+        // Sync lookup tables
+        this.syncEmailLookup(personId, data.emails);
+        if (data.phones && data.phones.length > 0) {
+            this.syncPhoneLookup(personId, data.phones);
+        }
+
+        const person = this.findById(personId);
         if (!person) throw new Error('Failed to create person');
 
         return person;
@@ -260,6 +331,14 @@ export class PersonModel {
 
         stmt.run(...params);
 
+        // Sync lookup tables if emails or phones were updated
+        if (data.emails !== undefined) {
+            this.syncEmailLookup(id, data.emails);
+        }
+        if (data.phones !== undefined) {
+            this.syncPhoneLookup(id, data.phones);
+        }
+
         return this.findById(id) || null;
     }
 
@@ -273,6 +352,11 @@ export class PersonModel {
     `);
 
         const result = stmt.run(now, now, id);
+
+        // Clear lookup tables to free up emails/phones for reuse
+        this.db.prepare('DELETE FROM person_emails WHERE personId = ?').run(id);
+        this.db.prepare('DELETE FROM person_phones WHERE personId = ?').run(id);
+
         return result.changes > 0;
     }
 
@@ -287,10 +371,17 @@ export class PersonModel {
 
         stmt.run(now, id);
 
+        // Re-sync lookup tables with the person's emails/phones
+        this.syncEmailLookup(id, existing.emails);
+        if (existing.phones && existing.phones.length > 0) {
+            this.syncPhoneLookup(id, existing.phones);
+        }
+
         return this.findById(id) || null;
     }
 
     hardDelete(id: number): boolean {
+        // Lookup tables are automatically cleaned up via CASCADE
         const stmt = this.db.prepare('DELETE FROM persons WHERE id = ?');
         const result = stmt.run(id);
         return result.changes > 0;
