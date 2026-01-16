@@ -61,6 +61,128 @@ export class EmailConnectorService {
     return client;
   }
 
+  /**
+   * Test SMTP connection with provided configuration
+   * Used to validate credentials before saving an email account
+   */
+  async testSmtpConnection(smtpConfig: {
+    host: string;
+    port: number;
+    secure: boolean;
+    username: string;
+    password: string;
+  }): Promise<{ success: boolean; message: string }> {
+    try {
+      console.log(`Testing SMTP connection to ${smtpConfig.host}:${smtpConfig.port}`);
+
+      const transporter = nodemailer.createTransport({
+        host: smtpConfig.host,
+        port: smtpConfig.port,
+        secure: smtpConfig.secure,
+        auth: {
+          user: smtpConfig.username,
+          pass: smtpConfig.password
+        },
+        connectionTimeout: 10000, // 10 second timeout
+        greetingTimeout: 10000,
+        socketTimeout: 10000
+      });
+
+      await transporter.verify();
+      console.log('SMTP connection test successful');
+
+      return {
+        success: true,
+        message: 'SMTP connection successful'
+      };
+    } catch (error: any) {
+      console.error('SMTP connection test failed:', error);
+
+      let message = 'SMTP connection failed';
+      if (error.code === 'EAUTH') {
+        message = 'Authentication failed. Please check your username and password.';
+      } else if (error.code === 'ECONNREFUSED') {
+        message = 'Connection refused. Please check the host and port.';
+      } else if (error.code === 'ETIMEDOUT') {
+        message = 'Connection timed out. Please check the host and port.';
+      } else if (error.message) {
+        message = error.message;
+      }
+
+      return {
+        success: false,
+        message
+      };
+    }
+  }
+
+  /**
+   * Test IMAP connection with provided configuration
+   * Used to validate credentials before saving an email account
+   */
+  async testImapConnection(imapConfig: {
+    host: string;
+    port: number;
+    secure: boolean;
+    username: string;
+    password: string;
+  }): Promise<{ success: boolean; message: string }> {
+    let client: ImapFlow | null = null;
+
+    try {
+      console.log(`Testing IMAP connection to ${imapConfig.host}:${imapConfig.port}`);
+
+      client = new ImapFlow({
+        host: imapConfig.host,
+        port: imapConfig.port,
+        secure: imapConfig.secure,
+        auth: {
+          user: imapConfig.username,
+          pass: imapConfig.password
+        },
+        logger: false // Disable verbose logging for test
+      });
+
+      await client.connect();
+      console.log('IMAP connection test successful');
+
+      // Logout cleanly
+      await client.logout();
+
+      return {
+        success: true,
+        message: 'IMAP connection successful'
+      };
+    } catch (error: any) {
+      console.error('IMAP connection test failed:', error);
+
+      let message = 'IMAP connection failed';
+      if (error.authenticationFailed) {
+        message = 'Authentication failed. Please check your username and password.';
+      } else if (error.code === 'ECONNREFUSED') {
+        message = 'Connection refused. Please check the host and port.';
+      } else if (error.code === 'ETIMEDOUT') {
+        message = 'Connection timed out. Please check the host and port.';
+      } else if (error.message) {
+        message = error.message;
+      }
+
+      return {
+        success: false,
+        message
+      };
+    } finally {
+      // Ensure cleanup
+      if (client) {
+        try {
+          await client.logout();
+        } catch {
+          // Ignore logout errors during cleanup
+        }
+      }
+    }
+  }
+
   async fetchGmailEmails(account: EmailAccount, lastSyncTime?: Date, maxResults: number = 50): Promise<any[]> {
     try {
       await this.connectGmail(account);
@@ -159,20 +281,68 @@ export class EmailConnectorService {
 
   async fetchIMAPEmails(account: EmailAccount, lastSyncTime?: Date): Promise<any[]> {
     const client = await this.connectIMAP(account);
-    await client.mailboxOpen('INBOX');
-
-    const searchCriteria: any = lastSyncTime ? { since: lastSyncTime } : { all: true };
     const messages: any[] = [];
+    const searchCriteria: any = lastSyncTime ? { since: lastSyncTime } : { all: true };
 
-    for await (const message of client.fetch(searchCriteria, {
-      envelope: true,
-      bodyStructure: true,
-      source: true
-    })) {
-      messages.push(message);
+    try {
+      // 1. Fetch from INBOX
+      await client.mailboxOpen('INBOX');
+      for await (const message of client.fetch(searchCriteria, {
+        envelope: true,
+        bodyStructure: true,
+        source: true
+      })) {
+        messages.push({ ...message, folder: 'INBOX' });
+      }
+
+      // 2. Identify and Fetch from Sent Folder
+      let sentFolder = 'Sent'; // Default guess
+      const mailboxes = await client.list();
+
+      const sentBox = mailboxes.find((box: any) =>
+        (box.specialUse === '\\Sent' || box.name === 'Sent' || box.name === 'Sent Items' || box.name === 'Sent Mail')
+      );
+
+      if (sentBox) {
+        sentFolder = sentBox.path;
+        console.log(`Identified Sent folder as: ${sentFolder}`);
+
+        try {
+          await client.mailboxOpen(sentFolder);
+          for await (const message of client.fetch(searchCriteria, {
+            envelope: true,
+            bodyStructure: true,
+            source: true
+          })) {
+            messages.push({ ...message, folder: 'SENT' });
+          }
+        } catch (err) {
+          console.warn(`Failed to fetch from Sent folder (${sentFolder}):`, err);
+        }
+      } else {
+        console.warn('Could not identify Sent folder via IMAP list.');
+        // Try common fallback
+        try {
+          await client.mailboxOpen('Sent Items');
+          for await (const message of client.fetch(searchCriteria, {
+            envelope: true,
+            bodyStructure: true,
+            source: true
+          })) {
+            messages.push({ ...message, folder: 'SENT' });
+          }
+        } catch (e) {
+          // Ignore fallback error
+        }
+      }
+
+    } catch (err) {
+      console.error('Error during IMAP fetch:', err);
+      throw err;
+    } finally {
+      await client.logout();
     }
 
-    await client.logout();
     return messages;
   }
 

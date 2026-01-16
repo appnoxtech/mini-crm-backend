@@ -28,6 +28,22 @@ export class PersonService {
             }
         }
 
+        // Check email uniqueness
+        const emailStrings = data.emails.map(e => e.email);
+        const existingEmail = this.personModel.findExistingEmail(emailStrings);
+        if (existingEmail) {
+            throw new Error('Person already exists');
+        }
+
+        // Check phone uniqueness if phones provided
+        if (data.phones && data.phones.length > 0) {
+            const phoneStrings = data.phones.map(p => p.number);
+            const existingPhone = this.personModel.findExistingPhone(phoneStrings);
+            if (existingPhone) {
+                throw new Error('Person already exists');
+            }
+        }
+
         return this.personModel.create(data);
     }
 

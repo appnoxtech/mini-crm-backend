@@ -14,7 +14,11 @@ const emailSchema = z.object({
 
 // Phone object schema
 const phoneSchema = z.object({
-    number: z.string().min(1, 'Phone number is required'),
+    number: z
+        .string()
+        // .regex(/^\d+$/, 'Phone number must contain only digits')
+        .min(8, 'Phone number must be at least 8 digits')
+        .max(15, 'Phone number must not exceed 15 digits'),
     type: phoneTypeEnum
 });
 

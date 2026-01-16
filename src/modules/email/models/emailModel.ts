@@ -323,10 +323,12 @@ export class EmailModel {
   }
 
   async getEmailAccounts(userId: string): Promise<EmailAccount[]> {
+    console.log(`Getting email accounts for userId: ${userId}`);
     const stmt = this.db.prepare(
-      "SELECT * FROM email_accounts WHERE userId = ? ORDER BY createdAt DESC"
+      "SELECT * FROM email_accounts WHERE userId = ? AND isActive = 1 ORDER BY createdAt DESC"
     );
     const rows = stmt.all(userId) as any[];
+    console.log(`Found ${rows.length} active email accounts for userId: ${userId}`);
 
     return rows.map((row) => {
       const account: EmailAccount = {
