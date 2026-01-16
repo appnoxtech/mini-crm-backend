@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { LavelController } from '../controllers/lavelController';
+import { LabelController } from '../controllers/labelController';
 import { authMiddleware } from '../../../shared/middleware/auth';
 
-export const createLavelRoutes = (controller: LavelController) => {
+export const createLabelRoutes = (controller: LabelController) => {
     const router = Router();
 
     router.use(authMiddleware);
@@ -12,6 +12,8 @@ export const createLavelRoutes = (controller: LavelController) => {
     router.put('/update', controller.update);
     router.delete('/delete/:levelId', controller.delete);
     router.get('/all/:pipelineId', controller.getAllByPipelineId);
+    router.get('/organization/:organizationId', controller.getAllByOrganizationId);
+    router.get('/person/:personId', controller.getAllByPersonId);
 
     return router;
 };

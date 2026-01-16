@@ -2,9 +2,10 @@ import { Response } from 'express';
 import { OrganizationService } from '../services/OrganizationService';
 import { AuthenticatedRequest } from '../../../../shared/types';
 import { ResponseHandler } from '../../../../shared/responses/responses';
+import { CreateOrganizationData } from '../models/Organization';
 
-export class OrganisationController {
-    constructor(private organisationService: OrganizationService) { }
+export class OrganizationController {
+    constructor(private organizationService: OrganizationService) { }
 
     async getAll(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
@@ -14,7 +15,7 @@ export class OrganisationController {
 
             const { q, limit = 100, offset = 0, includeDeleted } = req.query as any;
 
-            const result = await this.organisationService.getAll({
+            const result = await this.organizationService.getAll({
                 search: q as string,
                 limit: Number(limit),
                 offset: Number(offset),
@@ -35,7 +36,7 @@ export class OrganisationController {
             }
 
             const { id } = req.params;
-            const organisation = await this.organisationService.getById(Number(id));
+            const organisation = await this.organizationService.getById(Number(id));
 
             if (!organisation) {
                 return ResponseHandler.notFound(res, 'Organisation not found');
@@ -54,13 +55,22 @@ export class OrganisationController {
                 return ResponseHandler.validationError(res, 'User not authenticated');
             }
 
-            const { name, description, website } = req.body;
+            // Pass the entire body (or only the fields you need)
+            const organisationData: CreateOrganizationData = {
+                name: req.body.name,
+                description: req.body.description,
+                website: req.body.website,
+                industry: req.body.industry,
+                status: req.body.status,
+                emails: req.body.emails,
+                phones: req.body.phones,
+                annualRevenue: req.body.annualRevenue,
+                numberOfEmployees: req.body.numberOfEmployees,
+                linkedinProfile: req.body.linkedinProfile,
+                address: req.body.address
+            };
 
-            const organisation = await this.organisationService.create({
-                name,
-                description,
-                website: website || undefined
-            });
+            const organisation = await this.organizationService.create(organisationData);
 
             return ResponseHandler.created(res, organisation, 'Organisation created successfully');
         } catch (error: any) {
@@ -79,12 +89,20 @@ export class OrganisationController {
             }
 
             const { id } = req.params;
-            const { name, description, website } = req.body;
+            const { name, description, website, industry, status, emails, phones, annualRevenue, numberOfEmployees, linkedinProfile, address } = req.body;
 
-            const organisation = await this.organisationService.update(Number(id), {
+            const organisation = await this.organizationService.update(Number(id), {
                 name,
                 description,
-                website: website || undefined
+                website,
+                industry,
+                status,
+                emails,
+                phones,
+                annualRevenue,
+                numberOfEmployees,
+                linkedinProfile,
+                address
             });
 
             if (!organisation) {
@@ -108,7 +126,7 @@ export class OrganisationController {
             }
 
             const { id } = req.params;
-            const success = await this.organisationService.delete(Number(id));
+            const success = await this.organizationService.delete(Number(id));
 
             if (!success) {
                 return ResponseHandler.notFound(res, 'Organisation not found');
@@ -121,6 +139,23 @@ export class OrganisationController {
         }
     }
 
+    async searchByOrgName(req: AuthenticatedRequest, res: Response): Promise<void> {
+        try {
+            if (!req.user) {
+                return ResponseHandler.validationError(res, 'User not authenticated');
+            }
+
+            const { q } = req.query;
+            console.log(q);
+            const organisations = await this.organizationService.searchByOrgName(q as string);
+
+            return ResponseHandler.success(res, organisations);
+        } catch (error) {
+            console.error('Error searching organisations:', error);
+            return ResponseHandler.internalError(res, 'Failed to search organisations');
+        }
+    }
+
     async restore(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
             if (!req.user) {
@@ -128,7 +163,7 @@ export class OrganisationController {
             }
 
             const { id } = req.params;
-            const organisation = await this.organisationService.restore(Number(id));
+            const organisation = await this.organizationService.restore(Number(id));
 
             if (!organisation) {
                 return ResponseHandler.notFound(res, 'Organisation not found or not deleted');

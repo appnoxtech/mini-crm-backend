@@ -1,5 +1,5 @@
 import { PersonModel, CreatePersonData, UpdatePersonData, Person } from '../models/Person';
-import { OrganizationModel } from '../../organisations/models/Organisation';
+import { OrganizationModel } from '../../organisations/models/Organization';
 
 export class PersonService {
     constructor(
@@ -13,34 +13,6 @@ export class PersonService {
             const org = this.organizationModel.findById(data.organizationId);
             if (!org) {
                 throw new Error('Organization not found');
-            }
-        }
-
-        // Validate at least one email
-        if (!data.emails || data.emails.length === 0) {
-            throw new Error('At least one email is required');
-        }
-
-        // Validate email format
-        for (const email of data.emails) {
-            if (!email.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.email)) {
-                throw new Error('Invalid email format');
-            }
-        }
-
-        // Check email uniqueness
-        const emailStrings = data.emails.map(e => e.email);
-        const existingEmail = this.personModel.findExistingEmail(emailStrings);
-        if (existingEmail) {
-            throw new Error('Person already exists');
-        }
-
-        // Check phone uniqueness if phones provided
-        if (data.phones && data.phones.length > 0) {
-            const phoneStrings = data.phones.map(p => p.number);
-            const existingPhone = this.personModel.findExistingPhone(phoneStrings);
-            if (existingPhone) {
-                throw new Error('Person already exists');
             }
         }
 

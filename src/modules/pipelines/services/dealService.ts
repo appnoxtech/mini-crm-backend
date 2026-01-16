@@ -1,10 +1,11 @@
 import { Deal, DealModel } from '../models/Deal';
 import { Product, ProductModel } from '../models/Product';
 import { DealHistoryModel } from '../models/DealHistory';
+import { Label, LabelModel } from '../models/Label';
 import { Pipeline, PipelineModel } from '../models/Pipeline';
 import { PipelineStageModel, searchResult } from '../models/PipelineStage';
 import { Person, PersonModel } from '../../management/persons/models/Person';
-import { Organization, OrganizationModel, searchOrgResult } from '../../management/organisations/models/Organisation';
+import { Organization, OrganizationModel, searchOrgResult } from '../../management/organisations/models/Organization';
 
 
 type ContactField = {
@@ -29,7 +30,8 @@ export class DealService {
         private stageModel: PipelineStageModel,
         private productModel: ProductModel,
         private organizationModel: OrganizationModel,
-        private personModel: PersonModel
+        private personModel: PersonModel,
+        private labelModel: LabelModel
     ) { }
 
     async createDeal(userId: number,
@@ -48,7 +50,7 @@ export class DealService {
             probability?: number;
             assignedTo?: number;
             source?: string;
-            lavelIds?: number[];
+            labelIds?: number[];
             products?: {
                 item: string;
                 price: number;
@@ -145,6 +147,7 @@ export class DealService {
         if (data.person) {
 
         }
+        console.log(data);
 
 
         const deal = this.dealModel.create({
@@ -166,7 +169,7 @@ export class DealService {
             lastActivityAt: new Date().toISOString(),
             isRotten: false,
             source: data.source,
-            lavelIds: data.lavelIds,
+            labelIds: data.labelIds,
             customFields: data.customFields ? JSON.stringify(data.customFields) : undefined
         });
 
@@ -235,6 +238,7 @@ export class DealService {
             organization
         };
     }
+
 
 
     async getDeals(userId: number, filters: {
@@ -311,15 +315,19 @@ export class DealService {
         const stage = this.stageModel.findById(deal.stageId);
 
         // Get person info if personId exists
-        let person = null;
+        let person: { person?: Person; labels?: Label[] } = {};
+
         if (deal.personId) {
-            person = this.personModel.findById(deal.personId);
+            person.person = this.personModel.findById(deal.personId);
+            person.labels = this.labelModel.findByPersonId(deal.personId);
         }
 
+
         // Get organization info if organizationId exists
-        let organization = null;
+        let organization: { organization?: Organization; labels?: Label[] } = {};
         if (deal.organizationId) {
-            organization = this.organizationModel.findById(deal.organizationId);
+            organization.organization = this.organizationModel.findById(deal.organizationId);
+            organization.labels = this.labelModel.findByOrganizationId(deal.organizationId);
         }
 
         // Get products associated with this deal
@@ -338,19 +346,16 @@ export class DealService {
             ...deal,
             pipeline: pipeline ? { id: pipeline.id, name: pipeline.name } : null,
             stage: stage ? { id: stage.id, name: stage.name, probability: stage.probability } : null,
-            person: person ? {
-                id: person.id,
-                firstName: person.firstName,
-                lastName: person.lastName,
-                emails: person.emails,
-                phones: person.phones
+            person: person.person ? {
+                id: person.person.id,
+                firstName: person.person.firstName,
+                lastName: person.person.lastName,
+                emails: person.person.emails,
+                phones: person.person.phones,
+                labels: person.labels
             } : null,
-            organization: organization ? {
-                id: organization.id,
-                name: organization.name,
-                industry: organization.industry,
-                website: organization.website
-            } : null,
+            organization: organization.organization,
+            organizationLabels: organization.labels,
             products: products || [],
             history,
             timeInCurrentStage,
@@ -358,70 +363,21 @@ export class DealService {
         };
     }
 
-    async updateDeal(dealId: number, userId: number, data: Partial<{
-        title: string;
-        value: number;
-        currency: string;
-        personName: string;
-        organizationName: string;
-        email: string;
-        phone: string;
-        description: string;
-        expectedCloseDate: string;
-        probability: number;
-        assignedTo: number;
-        labels: string[];
-        customFields: Record<string, any>;
-    }>): Promise<Deal | null> {
-        // Validation
-        if (data.title !== undefined) {
-            if (!data.title.trim()) {
-                throw new Error('Deal title cannot be empty');
-            }
-            if (data.title.length > 200) {
-                throw new Error('Deal title must be 200 characters or less');
-            }
-        }
+    async updateDeal(dealId: number, userId: number, data: Partial<Deal>): Promise<Deal | null> {
+        return this.dealModel.update(dealId, userId, data);
+    }
 
-        if (data.value !== undefined && data.value < 0) {
-            throw new Error('Deal value must be non-negative');
-        }
+    async makeDealAsWon(dealId: number): Promise<Deal | null> {
+        return this.dealModel.makeDealAsWon(dealId);
+    }
 
-        if (data.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
-            throw new Error('Invalid email format');
-        }
+    async makeDealAsLost(dealId: number, info: { reason?: string, comment?: string }): Promise<Deal | null> {
+        console.log("log from service", info);
+        return this.dealModel.makeDealAsLost(dealId, info);
+    }
 
-        const updateData: any = { ...data };
-
-        if (data.labels) {
-            updateData.labels = JSON.stringify(data.labels);
-        }
-
-        if (data.customFields) {
-            updateData.customFields = JSON.stringify(data.customFields);
-        }
-
-        const deal = this.dealModel.update(dealId, userId, updateData);
-
-        if (deal) {
-            // Create history entry for significant changes
-            const now = new Date().toISOString();
-            if (data.value !== undefined) {
-                this.historyModel.create({
-                    dealId,
-                    userId,
-                    eventType: 'value_change',
-                    toValue: data.value.toString(),
-                    description: `Deal value updated to ${data.value}`,
-                    createdAt: now
-                });
-            }
-
-            // Return enriched deal data
-            return this.getDealById(dealId, userId);
-        }
-
-        return deal;
+    async resetDeal(dealId: number): Promise<Deal | null> {
+        return this.dealModel.resetDeal(dealId);
     }
 
     async moveDealToStage(dealId: number, userId: number, toStageId: number, note?: string): Promise<any> {

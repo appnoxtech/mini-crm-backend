@@ -16,8 +16,8 @@ export function createPersonRoutes(personController: PersonController): Router {
     router.get('/search', (req: any, res) => personController.searchPersons(req, res));
 
     router.get('/:id', (req: any, res) => personController.getById(req, res));
-    router.post('/', validate(createPersonSchema), (req: any, res) => personController.create(req, res));
-    router.put('/:id', validate(updatePersonSchema), (req: any, res) => personController.update(req, res));
+    router.post('/', (req: any, res) => personController.create(req, res));
+    router.put('/:id', (req: any, res) => personController.update(req, res));
     router.delete('/:id', (req: any, res) => personController.delete(req, res));
 
     // Restore soft-deleted person
