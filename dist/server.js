@@ -28,6 +28,13 @@ const DealActivity_1 = require("./modules/pipelines/models/DealActivity");
 const Organisation_1 = require("./modules/management/organisations/models/Organisation");
 const Person_1 = require("./modules/management/persons/models/Person");
 const Product_1 = require("./modules/pipelines/models/Product");
+// Import call module
+const Call_1 = require("./modules/calls/models/Call");
+const callService_1 = require("./modules/calls/services/callService");
+const callController_1 = require("./modules/calls/controllers/callController");
+const webhookController_1 = require("./modules/calls/controllers/webhookController");
+const callRoutes_1 = require("./modules/calls/routes/callRoutes");
+const webhookRoutes_1 = require("./modules/calls/routes/webhookRoutes");
 // Import services
 const authService_1 = require("./modules/auth/services/authService");
 const leadService_1 = require("./modules/leads/services/leadService");
@@ -104,6 +111,7 @@ const organisationModel = new Organisation_1.OrganizationModel(db);
 const personModel = new Person_1.PersonModel(db);
 const productModel = new Product_1.ProductModel(db);
 const lavelModel = new Lavel_1.LavelModel(db);
+const callModel = new Call_1.CallModel(db);
 // Initialize database tables
 userModel.initialize();
 leadModel.initialize();
@@ -117,6 +125,7 @@ organisationModel.initialize();
 personModel.initialize();
 lavelModel.initialize();
 productModel.initialize();
+callModel.initialize();
 // db.exec(`DROP TABLE IF EXISTS deals`);
 // Initialize services
 const authService = new authService_1.AuthService(userModel);
@@ -134,6 +143,8 @@ const dealActivityService = new dealActivityService_1.DealActivityService(dealAc
 const organisationService = new OrganizationService_1.OrganizationService(organisationModel);
 const personService = new PersonService_1.PersonService(personModel, organisationModel);
 const lavelService = new lavelService_1.LavelService(lavelModel);
+// Initialize call service
+const callService = new callService_1.CallService(callModel);
 // Initialize enhanced email services
 const configService = new mailSystemConfig_1.MailSystemConfigService();
 const quotaService = new quotaValidationService_1.QuotaValidationService();
@@ -162,6 +173,10 @@ const activityController = new activityController_1.ActivityController(dealActiv
 const organisationController = new OrganisationController_1.OrganisationController(organisationService);
 const personController = new PersonController_1.PersonController(personService);
 const lavelController = new lavelController_1.LavelController(lavelService);
+// Initialize call controllers
+const callController = new callController_1.CallController(callService);
+const webhookController = new webhookController_1.WebhookController(callService);
+webhookController.setSocketIO(io);
 // Middleware
 app.use(express_1.default.json());
 app.use(auth_1.corsMiddleware);
@@ -188,6 +203,9 @@ app.use('/api/activities', (0, activityRoutes_1.createActivityRoutes)(activityCo
 // Management module routes
 app.use('/api/organisations', (0, organisationRoutes_1.createOrganisationRoutes)(organisationController));
 app.use('/api/persons', (0, personRoutes_1.createPersonRoutes)(personController));
+// Call module routes
+app.use('/api/calls', (0, callRoutes_1.createCallRoutes)(callController));
+app.use('/api/webhooks/twilio', (0, webhookRoutes_1.createWebhookRoutes)(webhookController));
 // Health check endpoint
 app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', timestamp: new Date().toISOString() });

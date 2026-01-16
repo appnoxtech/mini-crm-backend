@@ -26,6 +26,14 @@ import { OrganizationModel } from './modules/management/organisations/models/Org
 import { PersonModel } from './modules/management/persons/models/Person';
 import { ProductModel } from './modules/pipelines/models/Product';
 
+// Import call module
+import { CallModel } from './modules/calls/models/Call';
+import { CallService } from './modules/calls/services/callService';
+import { CallController } from './modules/calls/controllers/callController';
+import { WebhookController } from './modules/calls/controllers/webhookController';
+import { createCallRoutes } from './modules/calls/routes/callRoutes';
+import { createWebhookRoutes } from './modules/calls/routes/webhookRoutes';
+
 // Import services
 import { AuthService } from './modules/auth/services/authService';
 import { LeadService } from './modules/leads/services/leadService';
@@ -111,6 +119,7 @@ const organisationModel = new OrganizationModel(db);
 const personModel = new PersonModel(db);
 const productModel = new ProductModel(db);
 const lavelModel = new LavelModel(db);
+const callModel = new CallModel(db);
 
 // Initialize database tables
 userModel.initialize();
@@ -125,6 +134,7 @@ organisationModel.initialize();
 personModel.initialize();
 lavelModel.initialize();
 productModel.initialize();
+callModel.initialize();
 
 // db.exec(`DROP TABLE IF EXISTS deals`);
 
@@ -145,6 +155,9 @@ const dealActivityService = new DealActivityService(dealActivityModel, dealModel
 const organisationService = new OrganizationService(organisationModel);
 const personService = new PersonService(personModel, organisationModel);
 const lavelService = new LavelService(lavelModel);
+
+// Initialize call service
+const callService = new CallService(callModel);
 
 // Initialize enhanced email services
 const configService = new MailSystemConfigService();
@@ -184,6 +197,11 @@ const organisationController = new OrganisationController(organisationService);
 const personController = new PersonController(personService);
 const lavelController = new LavelController(lavelService);
 
+// Initialize call controllers
+const callController = new CallController(callService);
+const webhookController = new WebhookController(callService);
+webhookController.setSocketIO(io);
+
 // Middleware
 app.use(express.json());
 app.use(corsMiddleware);
@@ -218,6 +236,10 @@ app.use('/api/activities', createActivityRoutes(activityController)); // User-le
 // Management module routes
 app.use('/api/organisations', createOrganisationRoutes(organisationController));
 app.use('/api/persons', createPersonRoutes(personController));
+
+// Call module routes
+app.use('/api/calls', createCallRoutes(callController));
+app.use('/api/webhooks/twilio', createWebhookRoutes(webhookController));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
