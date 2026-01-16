@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // Email label enum
-const emailLabelEnum = z.enum(['work', 'home', 'other']);
+const emailLabelEnum = z.enum(['work', 'home', 'other', 'personal']);
 
 // Phone type enum
 const phoneTypeEnum = z.enum(['home', 'work', 'mobile', 'other']);

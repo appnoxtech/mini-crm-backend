@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { BaseEntity } from '../../../shared/types';
+import { Label } from '../models/Label';
 
 export interface Deal extends BaseEntity {
     title: string;
@@ -22,7 +23,7 @@ export interface Deal extends BaseEntity {
     lostReason?: string;
     lastActivityAt?: string;
     isRotten: boolean;
-    lavelIds?: number[];
+    labelIds?: number[];
     source?: string;
     labels?: string;
     customFields?: string;
@@ -71,7 +72,7 @@ export class DealModel {
             { name: 'personId', definition: 'INTEGER' },
             { name: 'organizationId', definition: 'INTEGER' },
             { name: 'source', definition: 'TEXT' },
-            { name: 'lavelIds', definition: 'TEXT' },
+            { name: 'labelIds', definition: 'TEXT' },
             { name: 'customFields', definition: 'TEXT' }
         ];
 
@@ -106,7 +107,7 @@ export class DealModel {
     personId, organizationId,
     email, phone, description, expectedCloseDate, actualCloseDate, probability,
     userId, assignedTo, status, lostReason, lastActivityAt, isRotten, source,
-    lavelIds, customFields, createdAt, updatedAt
+    labelIds, customFields, createdAt, updatedAt
   )
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
@@ -128,12 +129,12 @@ export class DealModel {
             data.probability,
             data.userId,
             data.assignedTo || null,
-            data.status,
+            data.status.toUpperCase(),
             data.lostReason || null,
             data.lastActivityAt || now,
             data.isRotten ? 1 : 0,
             data.source || null,
-            data.lavelIds ? JSON.stringify(data.lavelIds) : null,
+            data.labelIds ? JSON.stringify(data.labelIds) : null,
             data.customFields || null,
             now,
             now
@@ -141,20 +142,34 @@ export class DealModel {
 
         return this.findById(result.lastInsertRowid as number)!;
     }
-
-    findById(id: number): Deal | undefined {
+    findById(id: number): Deal | null {
         const stmt = this.db.prepare('SELECT * FROM deals WHERE id = ?');
         const result = stmt.get(id) as any;
-        if (!result) return undefined;
+        if (!result) return null;
+
+        const labelIds = result.labelIds ? JSON.parse(result.labelIds) : [];
+
+        let labels: Label[] = [];
+        if (labelIds.length > 0) {
+            const placeholders = labelIds.map(() => '?').join(',');
+            const labelsStmt = this.db.prepare(
+                `SELECT * FROM label WHERE id IN (${placeholders})`
+            );
+            labels = labelsStmt.all(...labelIds) as Label[];
+        }
 
         return {
             ...result,
             isRotten: Boolean(result.isRotten),
+            status: result.status.toUpperCase(),
             email: result.email ? JSON.parse(result.email) : null,
             phone: result.phone ? JSON.parse(result.phone) : null,
-            lavelIds: result.lavelIds ? JSON.parse(result.lavelIds) : null,
+            labelIds,
+            labels
         };
     }
+
+
 
     findByUserId(userId: number, filters: {
         pipelineId?: number;
@@ -207,15 +222,20 @@ export class DealModel {
             deals: results.map(r => ({
                 ...r,
                 isRotten: Boolean(r.isRotten),
+                status: r.status.toUpperCase(),
                 email: r.email ? JSON.parse(r.email) : null,
                 phone: r.phone ? JSON.parse(r.phone) : null,
-                lavelIds: r.lavelIds ? JSON.parse(r.lavelIds) : null,
+                labelIds: r.labelIds ? JSON.parse(r.labelIds) : null,
             })),
             total: countResult.count
         };
     }
 
-    update(id: number, userId: number, data: Partial<Omit<Deal, 'id' | 'userId' | 'createdAt' | 'updatedAt'>>): Deal | null {
+    update(
+        id: number,
+        userId: number,
+        data: Partial<Omit<Deal, 'id' | 'userId' | 'createdAt' | 'updatedAt'>>
+    ): Deal | null {
         const deal = this.findById(id);
         if (!deal || deal.userId !== userId) {
             return null;
@@ -225,15 +245,20 @@ export class DealModel {
         const updates: string[] = [];
         const values: any[] = [];
 
-        // Build dynamic update query
         Object.entries(data).forEach(([key, value]) => {
+            if (value === undefined) return; // 🔥 THIS is important
+
             if (key === 'isRotten') {
                 updates.push(`${key} = ?`);
                 values.push(value ? 1 : 0);
             }
-            else if (key === 'lavelIds' && Array.isArray(value)) {
+            else if (key === 'labelIds' && Array.isArray(value)) {
                 updates.push(`${key} = ?`);
                 values.push(JSON.stringify(value));
+            }
+            else if (key === 'status' && typeof value === 'string') {
+                updates.push(`${key} = ?`);
+                values.push(value.toUpperCase());
             }
             else if (key === 'email' && typeof value === 'object') {
                 updates.push(`${key} = ?`);
@@ -245,7 +270,7 @@ export class DealModel {
             }
             else {
                 updates.push(`${key} = ?`);
-                values.push(value === undefined ? null : value);
+                values.push(value);
             }
         });
 
@@ -255,13 +280,14 @@ export class DealModel {
 
         updates.push('updatedAt = ?');
         values.push(now);
-        values.push(id, userId);
+
+        values.push(id);
 
         const stmt = this.db.prepare(`
-      UPDATE deals 
-      SET ${updates.join(', ')}
-      WHERE id = ? AND userId = ?
-    `);
+    UPDATE deals 
+    SET ${updates.join(', ')}
+    WHERE id = ? 
+  `);
 
         stmt.run(...values);
         return this.findById(id) || null;
@@ -327,9 +353,49 @@ export class DealModel {
         return results.map(r => ({
             ...r,
             isRotten: Boolean(r.isRotten),
+            status: r.status.toUpperCase(),
             email: r.email ? JSON.parse(r.email) : null,
             phone: r.phone ? JSON.parse(r.phone) : null,
-            lavelIds: r.lavelIds ? JSON.parse(r.lavelIds) : null,
+            labelIds: r.labelIds ? JSON.parse(r.labelIds) : null,
         }));
+
+
     }
+
+    // for make deal as won return updated deal
+    makeDealAsWon(dealId: number): Deal | null {
+        this.db.prepare('UPDATE deals SET status = ? WHERE id = ?').run('WON', dealId);
+        return this.findById(dealId);
+    }
+
+    makeDealAsLost(
+        dealId: number,
+        info: { reason?: string; comment?: string }
+    ): Deal | null {
+        const customFields = JSON.stringify(info);
+
+        this.db.prepare(
+            `UPDATE deals 
+         SET status = ?, customFields = ?, updatedAt = ? 
+         WHERE id = ?`
+        ).run(
+            'LOST',
+            customFields,
+            new Date().toISOString(),
+            dealId
+        );
+
+        return this.findById(dealId);
+    }
+
+
+
+    resetDeal(dealId: number): Deal | null {
+        this.db.prepare(
+            'UPDATE deals SET status = ?, lostReason = ?, customFields = ? WHERE id = ?'
+        ).run('OPEN', null, null, dealId);
+
+        return this.findById(dealId);
+    }
+
 }

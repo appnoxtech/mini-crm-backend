@@ -194,4 +194,68 @@ export class DealController {
             return ResponseHandler.internalError(res, 'Failed to fetch rotten deals');
         }
     }
+
+    async makeDealAsWon(req: AuthenticatedRequest, res: Response): Promise<void> {
+        try {
+            if (!req.user) {
+                return ResponseHandler.unauthorized(res, 'User not authenticated');
+            }
+
+            const { dealId } = req.params;
+
+            const deal = await this.dealService.makeDealAsWon(Number(dealId));
+
+            if (!deal) {
+                return ResponseHandler.notFound(res, 'Deal not found');
+            }
+
+            return ResponseHandler.success(res, deal, 'Deal marked as won');
+        } catch (error: any) {
+            console.error('Error marking deal as won:', error);
+            return ResponseHandler.internalError(res, 'Failed to mark deal as won');
+        }
+    }
+
+    async makeDealAsLost(req: AuthenticatedRequest, res: Response): Promise<void> {
+        try {
+            if (!req.user) {
+                return ResponseHandler.unauthorized(res, 'User not authenticated');
+            }
+
+            const { dealId } = req.params;
+            const info = req.body;
+            console.log("log from controller", info);
+            const deal = await this.dealService.makeDealAsLost(Number(dealId), info);
+
+            if (!deal) {
+                return ResponseHandler.notFound(res, 'Deal not found');
+            }
+
+            return ResponseHandler.success(res, deal, 'Deal marked as lost');
+        } catch (error: any) {
+            console.error('Error marking deal as lost:', error);
+            return ResponseHandler.internalError(res, 'Failed to mark deal as lost');
+        }
+    }
+
+    async resetDeal(req: AuthenticatedRequest, res: Response): Promise<void> {
+        try {
+            if (!req.user) {
+                return ResponseHandler.unauthorized(res, 'User not authenticated');
+            }
+
+            const { dealId } = req.params;
+
+            const deal = await this.dealService.resetDeal(Number(dealId));
+
+            if (!deal) {
+                return ResponseHandler.notFound(res, 'Deal not found');
+            }
+
+            return ResponseHandler.success(res, deal, 'Deal reset successfully');
+        } catch (error: any) {
+            console.error('Error resetting deal:', error);
+            return ResponseHandler.internalError(res, 'Failed to reset deal');
+        }
+    }
 }

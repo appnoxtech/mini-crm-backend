@@ -22,7 +22,7 @@ import { PipelineStageModel } from './modules/pipelines/models/PipelineStage';
 import { DealModel } from './modules/pipelines/models/Deal';
 import { DealHistoryModel } from './modules/pipelines/models/DealHistory';
 import { DealActivityModel } from './modules/pipelines/models/DealActivity';
-import { OrganizationModel } from './modules/management/organisations/models/Organisation';
+import { OrganizationModel } from './modules/management/organisations/models/Organization';
 import { PersonModel } from './modules/management/persons/models/Person';
 import { ProductModel } from './modules/pipelines/models/Product';
 
@@ -58,8 +58,9 @@ import { PipelineController } from './modules/pipelines/controllers/pipelineCont
 import { DealController } from './modules/pipelines/controllers/dealController';
 import { ProductController } from './modules/pipelines/controllers/productController';
 import { ActivityController } from './modules/pipelines/controllers/activityController';
-import { OrganisationController } from './modules/management/organisations/controllers/OrganisationController';
 import { PersonController } from './modules/management/persons/controllers/PersonController';
+import { OrganizationController } from './modules/management/organisations/controllers/OrganizationController';
+
 
 // Import routes
 import { createAuthRoutes } from './modules/auth/routes/authRoutes';
@@ -70,16 +71,16 @@ import { createPipelineRoutes } from './modules/pipelines/routes/pipelineRoutes'
 import { createDealRoutes } from './modules/pipelines/routes/dealRoutes';
 import { createProductRoutes } from './modules/pipelines/routes/productRoutes';
 import { createActivityRoutes } from './modules/pipelines/routes/activityRoutes';
-import { createOrganisationRoutes } from './modules/management/organisations/routes/organisationRoutes';
+import { createOrganizationRoutes } from './modules/management/organisations/routes/organizationRoutes';
 import { createPersonRoutes } from './modules/management/persons/routes/personRoutes';
-import { createLavelRoutes } from './modules/pipelines/routes/lavelRoutes';
+import { createLabelRoutes } from './modules/pipelines/routes/labelRoutes';
 
 // Import summarization services
 import { SummarizationController } from './modules/email/controllers/summarizationController';
 import { startSummarizationScheduler } from './modules/email/services/summarizationSchedulerService';
-import { LavelService } from './modules/pipelines/services/lavelService';
-import { LavelModel } from './modules/pipelines/models/Lavel';
-import { LavelController } from './modules/pipelines/controllers/lavelController';
+import { LabelService } from './modules/pipelines/services/labelService';
+import { LabelModel } from './modules/pipelines/models/Label';
+import { LabelController } from './modules/pipelines/controllers/labelController';
 import { OrganizationService } from './modules/management/organisations/services/OrganizationService';
 
 
@@ -110,7 +111,12 @@ const dealActivityModel = new DealActivityModel(db);
 const organisationModel = new OrganizationModel(db);
 const personModel = new PersonModel(db);
 const productModel = new ProductModel(db);
-const lavelModel = new LavelModel(db);
+const labelModel = new LabelModel(db);
+
+
+
+// db.exec(`DROP TABLE IF EXISTS deals`);
+// db.exec(`DROP TABLE IF EXISTS deal_activities`);
 
 // Initialize database tables
 userModel.initialize();
@@ -123,10 +129,9 @@ dealHistoryModel.initialize();
 dealActivityModel.initialize();
 organisationModel.initialize();
 personModel.initialize();
-lavelModel.initialize();
+labelModel.initialize();
 productModel.initialize();
 
-// db.exec(`DROP TABLE IF EXISTS deals`);
 
 
 // Initialize services
@@ -139,12 +144,12 @@ const emailService = new EmailService(emailModel, emailConnectorService, notific
 const emailQueueService = new EmailQueueService(emailService, emailModel);
 const pipelineService = new PipelineService(pipelineModel, pipelineStageModel);
 const pipelineStageService = new PipelineStageService(pipelineStageModel, pipelineModel);
-const dealService = new DealService(dealModel, dealHistoryModel, pipelineModel, pipelineStageModel, productModel, organisationModel, personModel);
+const dealService = new DealService(dealModel, dealHistoryModel, pipelineModel, pipelineStageModel, productModel, organisationModel, personModel, labelModel);
 const productService = new ProductService(productModel);
-const dealActivityService = new DealActivityService(dealActivityModel, dealModel);
-const organisationService = new OrganizationService(organisationModel);
+const dealActivityService = new DealActivityService(dealActivityModel, dealModel, dealHistoryModel);
+const organizationService = new OrganizationService(organisationModel);
 const personService = new PersonService(personModel, organisationModel);
-const lavelService = new LavelService(lavelModel);
+const labelService = new LabelService(labelModel);
 
 // Initialize enhanced email services
 const configService = new MailSystemConfigService();
@@ -180,9 +185,9 @@ const pipelineController = new PipelineController(pipelineService, pipelineStage
 const dealController = new DealController(dealService);
 const productController = new ProductController(productService);
 const activityController = new ActivityController(dealActivityService);
-const organisationController = new OrganisationController(organisationService);
+const organizationController = new OrganizationController(organizationService);
 const personController = new PersonController(personService);
-const lavelController = new LavelController(lavelService);
+const labelController = new LabelController(labelService);
 
 // Middleware
 app.use(express.json());
@@ -209,14 +214,14 @@ app.use('/api/summarization', createSummarizationRoutes(summarizationController)
 
 // Pipeline module routes
 app.use('/api/pipelines', createPipelineRoutes(pipelineController));
-app.use('/api/lavel', createLavelRoutes(lavelController));
+app.use('/api/label', createLabelRoutes(labelController));
 app.use('/api/deals', createDealRoutes(dealController));
 app.use('/api/products', createProductRoutes(productController));
-app.use('/api/deals', createActivityRoutes(activityController)); // Deal-specific activities
+app.use('/api/deals-activities', createActivityRoutes(activityController)); // Deal-specific activities
 app.use('/api/activities', createActivityRoutes(activityController)); // User-level activities
 
 // Management module routes
-app.use('/api/organisations', createOrganisationRoutes(organisationController));
+app.use('/api/organisations', createOrganizationRoutes(organizationController));
 app.use('/api/persons', createPersonRoutes(personController));
 
 // Health check endpoint

@@ -1,4 +1,4 @@
-import { Organization, OrganizationModel, CreateOrganizationData, UpdateOrganizationData } from '../models/Organisation';
+import { Organization, OrganizationModel, CreateOrganizationData, UpdateOrganizationData } from '../models/Organization';
 
 export class OrganizationService {
     constructor(private organizationModel: OrganizationModel) { }
@@ -23,6 +23,9 @@ export class OrganizationService {
 
     async update(id: number, data: UpdateOrganizationData): Promise<Organization | null> {
         return this.organizationModel.update(id, data);
+    }
+    async searchByOrgName(query: string): Promise<Organization[] | null> {
+        return this.organizationModel.searchByOrgName(query);
     }
 
     async delete(id: number): Promise<boolean> {

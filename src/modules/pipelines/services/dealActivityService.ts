@@ -1,49 +1,33 @@
 import { DealActivity, DealActivityModel } from '../models/DealActivity';
+import { DealHistory, DealHistoryModel } from '../models/DealHistory';
 import { DealModel } from '../models/Deal';
 
 export class DealActivityService {
     constructor(
         private activityModel: DealActivityModel,
-        private dealModel: DealModel
+        private dealModel: DealModel,
+        private dealHistoryModel: DealHistoryModel
     ) { }
 
-    async createActivity(dealId: number, userId: number, data: {
-        type: string;
-        subject?: string;
-        description?: string;
-        dueDate?: string;
-        dueTime?: string;
-        duration?: number;
-        emailId?: number;
-    }): Promise<DealActivity> {
+    async createActivity(dealId: number, userId: number, data: Partial<DealActivity>): Promise<DealActivity> {
         // Verify deal exists and user has access
         const deal = this.dealModel.findById(dealId);
         if (!deal || deal.userId !== userId) {
             throw new Error('Deal not found');
         }
 
-        // Validation
-        if (!data.type || !data.type.trim()) {
+        // Basic validation - minimum required fields for the record
+        if (!data.type) {
             throw new Error('Activity type is required');
         }
 
-        const validTypes = ['call', 'email', 'meeting', 'note', 'task', 'deadline'];
-        if (!validTypes.includes(data.type)) {
-            throw new Error(`Invalid activity type. Must be one of: ${validTypes.join(', ')}`);
-        }
-
         return this.activityModel.create({
+            ...data,
             dealId,
             userId,
             type: data.type,
-            subject: data.subject?.trim(),
-            description: data.description?.trim(),
-            dueDate: data.dueDate,
-            dueTime: data.dueTime,
-            duration: data.duration,
-            isDone: false,
-            emailId: data.emailId
-        });
+            isDone: data.isDone || false
+        } as any);
     }
 
     async getActivitiesForDeal(dealId: number, userId: number, filters: {
@@ -74,27 +58,11 @@ export class DealActivityService {
         return this.activityModel.findByUserId(userId, filters);
     }
 
-    async updateActivity(id: number, userId: number, data: Partial<{
-        type: string;
-        subject: string;
-        description: string;
-        dueDate: string;
-        dueTime: string;
-        duration: number;
-        isDone: boolean;
-    }>): Promise<DealActivity | null> {
+    async updateActivity(id: number, userId: number, data: Partial<DealActivity>): Promise<DealActivity | null> {
         const activity = this.activityModel.findById(id);
 
         if (!activity || activity.userId !== userId) {
             throw new Error('Activity not found');
-        }
-
-        // Validation
-        if (data.type) {
-            const validTypes = ['call', 'email', 'meeting', 'note', 'task', 'deadline'];
-            if (!validTypes.includes(data.type)) {
-                throw new Error(`Invalid activity type. Must be one of: ${validTypes.join(', ')}`);
-            }
         }
 
         return this.activityModel.update(id, data);
@@ -108,6 +76,11 @@ export class DealActivityService {
         }
 
         return this.activityModel.markAsComplete(id);
+    }
+
+
+    async getDealHistory(dealId: number, limit?: number): Promise<DealHistory[]> {
+        return this.dealHistoryModel.findByDealId(dealId, limit);
     }
 
     async deleteActivity(id: number, userId: number): Promise<boolean> {
