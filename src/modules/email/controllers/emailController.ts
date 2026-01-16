@@ -9,6 +9,55 @@ import { EmailModel } from "../models/emailModel";
 import { summarizeThreadWithVLLM } from "../../../shared/utils/summarizer";
 import { ResponseHandler } from "../../../shared/responses/responses";
 
+/**
+ * Get SMTP/IMAP server defaults based on provider name
+ * Reads from environment variables with fallback to known provider settings
+ */
+function getProviderDefaults(provider: string): {
+  smtp: { host: string; port: number; secure: boolean };
+  imap: { host: string; port: number; secure: boolean };
+} {
+  const providerUpper = provider.toUpperCase();
+
+  // Try provider-specific env vars first
+  const smtpHost = process.env[`${providerUpper}_SMTP_HOST`];
+  const smtpPort = process.env[`${providerUpper}_SMTP_PORT`];
+  const smtpSecure = process.env[`${providerUpper}_SMTP_SECURE`];
+  const imapHost = process.env[`${providerUpper}_IMAP_HOST`];
+  const imapPort = process.env[`${providerUpper}_IMAP_PORT`];
+  const imapSecure = process.env[`${providerUpper}_IMAP_SECURE`];
+
+  // If provider-specific vars exist, use them
+  if (smtpHost) {
+    return {
+      smtp: {
+        host: smtpHost,
+        port: parseInt(smtpPort || '587'),
+        secure: smtpSecure === 'true',
+      },
+      imap: {
+        host: imapHost || smtpHost.replace('smtp', 'imap'),
+        port: parseInt(imapPort || '993'),
+        secure: imapSecure !== 'false',
+      },
+    };
+  }
+
+  // Fallback to DEFAULT provider settings
+  return {
+    smtp: {
+      host: process.env.DEFAULT_SMTP_HOST || 'smtp.hostinger.com',
+      port: parseInt(process.env.DEFAULT_SMTP_PORT || '465'),
+      secure: process.env.DEFAULT_SMTP_SECURE === 'true',
+    },
+    imap: {
+      host: process.env.DEFAULT_IMAP_HOST || 'imap.hostinger.com',
+      port: parseInt(process.env.DEFAULT_IMAP_PORT || '993'),
+      secure: process.env.DEFAULT_IMAP_SECURE !== 'false',
+    },
+  };
+}
+
 export class EmailController {
   private emailService: EmailService;
   private oauthService: OAuthService;
@@ -621,6 +670,8 @@ export class EmailController {
 
       const { smtpConfig, imapConfig } = req.body as any;
 
+      console.log("SMTP Config:", smtpConfig);
+      console.log("IMAP Config:", imapConfig);
       if (!smtpConfig && !imapConfig) {
         return ResponseHandler.validationError(
           res,
@@ -690,37 +741,75 @@ export class EmailController {
         );
       }
 
-      // For non-OAuth providers (imap), require at least smtpConfig for sending
-      if (provider === 'imap' && !smtpConfig) {
-        return ResponseHandler.validationError(
-          res,
-          "SMTP configuration is required for custom email accounts"
-        );
+      // For custom IMAP providers, require at least username/password for SMTP
+      if (provider === 'imap') {
+        if (!smtpConfig?.username || !smtpConfig?.password) {
+          return ResponseHandler.validationError(
+            res,
+            "SMTP username and password are required for custom email accounts"
+          );
+        }
       }
 
+      // Check if account already exists
+      const accountId = `${req.user.id}-${email}`;
+      const existingAccount = await this.emailService.getEmailModel().getEmailAccountById(accountId);
+
       const account: EmailAccount = {
-        id: `${req.user.id}-${email}`,
+        id: accountId,
         userId: req.user.id.toString(),
         email,
         provider,
         isActive: true,
-        createdAt: new Date(),
+        createdAt: existingAccount ? existingAccount.createdAt : new Date(),
         updatedAt: new Date(),
       };
 
-      // Add optional configs
+      // Get provider-specific defaults from environment
+      const providerDefaults = getProviderDefaults(provider);
+
+      // Build SMTP config with provider defaults
       if (smtpConfig) {
-        account.smtpConfig = smtpConfig;
+        account.smtpConfig = {
+          host: smtpConfig.host || providerDefaults.smtp.host,
+          port: smtpConfig.port || providerDefaults.smtp.port,
+          secure: smtpConfig.secure !== undefined ? smtpConfig.secure : providerDefaults.smtp.secure,
+          username: smtpConfig.username,
+          password: smtpConfig.password,
+        };
       }
+
+      // Build IMAP config with provider defaults
       if (imapConfig) {
-        account.imapConfig = imapConfig;
+        account.imapConfig = {
+          host: imapConfig.host || providerDefaults.imap.host,
+          port: imapConfig.port || providerDefaults.imap.port,
+          secure: imapConfig.secure !== undefined ? imapConfig.secure : providerDefaults.imap.secure,
+          username: imapConfig.username,
+          password: imapConfig.password,
+        };
       }
 
-      const createdAccount = await this.emailService.createEmailAccount(
-        account
-      );
+      if (existingAccount) {
+        console.log(`Updating existing email account: ${accountId}`);
+        await this.emailService.updateEmailAccount(accountId, account);
 
-      return ResponseHandler.created(res, createdAccount, "Email account connected successfully");
+        // Trigger initial sync in background
+        this.emailService.processIncomingEmails(account).catch(err =>
+          console.error(`Initial sync failed for ${accountId}:`, err)
+        );
+
+        return ResponseHandler.success(res, account, "Email account updated successfully");
+      } else {
+        const createdAccount = await this.emailService.createEmailAccount(account);
+
+        // Trigger initial sync in background
+        this.emailService.processIncomingEmails(createdAccount).catch(err =>
+          console.error(`Initial sync failed for ${accountId}:`, err)
+        );
+
+        return ResponseHandler.created(res, createdAccount, "Email account connected successfully");
+      }
 
     } catch (error: any) {
       console.error("Error connecting email account:", error);
