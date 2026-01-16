@@ -25,6 +25,9 @@ const PipelineStage_1 = require("./modules/pipelines/models/PipelineStage");
 const Deal_1 = require("./modules/pipelines/models/Deal");
 const DealHistory_1 = require("./modules/pipelines/models/DealHistory");
 const DealActivity_1 = require("./modules/pipelines/models/DealActivity");
+const Organisation_1 = require("./modules/management/organisations/models/Organisation");
+const Person_1 = require("./modules/management/persons/models/Person");
+const Product_1 = require("./modules/pipelines/models/Product");
 // Import services
 const authService_1 = require("./modules/auth/services/authService");
 const leadService_1 = require("./modules/leads/services/leadService");
@@ -36,7 +39,9 @@ const realTimeNotificationService_1 = require("./modules/email/services/realTime
 const pipelineService_1 = require("./modules/pipelines/services/pipelineService");
 const pipelineStageService_1 = require("./modules/pipelines/services/pipelineStageService");
 const dealService_1 = require("./modules/pipelines/services/dealService");
+const productService_1 = require("./modules/pipelines/services/productService");
 const dealActivityService_1 = require("./modules/pipelines/services/dealActivityService");
+const PersonService_1 = require("./modules/management/persons/services/PersonService");
 // Import enhanced email services
 const mailSystemConfig_1 = require("./modules/email/services/mailSystemConfig");
 const quotaValidationService_1 = require("./modules/email/services/quotaValidationService");
@@ -51,7 +56,10 @@ const leadController_1 = require("./modules/leads/controllers/leadController");
 const emailController_1 = require("./modules/email/controllers/emailController");
 const pipelineController_1 = require("./modules/pipelines/controllers/pipelineController");
 const dealController_1 = require("./modules/pipelines/controllers/dealController");
+const productController_1 = require("./modules/pipelines/controllers/productController");
 const activityController_1 = require("./modules/pipelines/controllers/activityController");
+const OrganisationController_1 = require("./modules/management/organisations/controllers/OrganisationController");
+const PersonController_1 = require("./modules/management/persons/controllers/PersonController");
 // Import routes
 const authRoutes_1 = require("./modules/auth/routes/authRoutes");
 const leadRoutes_1 = require("./modules/leads/routes/leadRoutes");
@@ -59,14 +67,22 @@ const emailRoutes_1 = require("./modules/email/routes/emailRoutes");
 const summarizationRoutes_1 = require("./modules/email/routes/summarizationRoutes");
 const pipelineRoutes_1 = require("./modules/pipelines/routes/pipelineRoutes");
 const dealRoutes_1 = require("./modules/pipelines/routes/dealRoutes");
+const productRoutes_1 = require("./modules/pipelines/routes/productRoutes");
 const activityRoutes_1 = require("./modules/pipelines/routes/activityRoutes");
+const organisationRoutes_1 = require("./modules/management/organisations/routes/organisationRoutes");
+const personRoutes_1 = require("./modules/management/persons/routes/personRoutes");
+const lavelRoutes_1 = require("./modules/pipelines/routes/lavelRoutes");
 // Import summarization services
 const summarizationController_1 = require("./modules/email/controllers/summarizationController");
+const lavelService_1 = require("./modules/pipelines/services/lavelService");
+const Lavel_1 = require("./modules/pipelines/models/Lavel");
+const lavelController_1 = require("./modules/pipelines/controllers/lavelController");
+const OrganizationService_1 = require("./modules/management/organisations/services/OrganizationService");
 const app = (0, express_1.default)();
 const server = (0, http_1.createServer)(app);
 const io = new socket_io_1.Server(server, {
     cors: {
-        origin: process.env.FRONTEND_URL || "http://localhost:5173",
+        origin: "*", // Allow all origins
         methods: ["GET", "POST"]
     }
 });
@@ -84,6 +100,10 @@ const pipelineStageModel = new PipelineStage_1.PipelineStageModel(db);
 const dealModel = new Deal_1.DealModel(db);
 const dealHistoryModel = new DealHistory_1.DealHistoryModel(db);
 const dealActivityModel = new DealActivity_1.DealActivityModel(db);
+const organisationModel = new Organisation_1.OrganizationModel(db);
+const personModel = new Person_1.PersonModel(db);
+const productModel = new Product_1.ProductModel(db);
+const lavelModel = new Lavel_1.LavelModel(db);
 // Initialize database tables
 userModel.initialize();
 leadModel.initialize();
@@ -93,6 +113,11 @@ pipelineStageModel.initialize();
 dealModel.initialize();
 dealHistoryModel.initialize();
 dealActivityModel.initialize();
+organisationModel.initialize();
+personModel.initialize();
+lavelModel.initialize();
+productModel.initialize();
+// db.exec(`DROP TABLE IF EXISTS deals`);
 // Initialize services
 const authService = new authService_1.AuthService(userModel);
 const leadService = new leadService_1.LeadService(leadModel);
@@ -103,8 +128,12 @@ const emailService = new emailService_1.EmailService(emailModel, emailConnectorS
 const emailQueueService = new emailQueueService_1.EmailQueueService(emailService, emailModel);
 const pipelineService = new pipelineService_1.PipelineService(pipelineModel, pipelineStageModel);
 const pipelineStageService = new pipelineStageService_1.PipelineStageService(pipelineStageModel, pipelineModel);
-const dealService = new dealService_1.DealService(dealModel, dealHistoryModel, pipelineModel, pipelineStageModel);
+const dealService = new dealService_1.DealService(dealModel, dealHistoryModel, pipelineModel, pipelineStageModel, productModel, organisationModel, personModel);
+const productService = new productService_1.ProductService(productModel);
 const dealActivityService = new dealActivityService_1.DealActivityService(dealActivityModel, dealModel);
+const organisationService = new OrganizationService_1.OrganizationService(organisationModel);
+const personService = new PersonService_1.PersonService(personModel, organisationModel);
+const lavelService = new lavelService_1.LavelService(lavelModel);
 // Initialize enhanced email services
 const configService = new mailSystemConfig_1.MailSystemConfigService();
 const quotaService = new quotaValidationService_1.QuotaValidationService();
@@ -128,7 +157,11 @@ const emailController = new emailController_1.EmailController(emailService, oaut
 const summarizationController = new summarizationController_1.SummarizationController(emailModel, DB_PATH);
 const pipelineController = new pipelineController_1.PipelineController(pipelineService, pipelineStageService);
 const dealController = new dealController_1.DealController(dealService);
+const productController = new productController_1.ProductController(productService);
 const activityController = new activityController_1.ActivityController(dealActivityService);
+const organisationController = new OrganisationController_1.OrganisationController(organisationService);
+const personController = new PersonController_1.PersonController(personService);
+const lavelController = new lavelController_1.LavelController(lavelService);
 // Middleware
 app.use(express_1.default.json());
 app.use(auth_1.corsMiddleware);
@@ -147,9 +180,14 @@ app.use('/api/emails', (0, emailRoutes_1.createEmailRoutes)(emailController));
 app.use('/api/summarization', (0, summarizationRoutes_1.createSummarizationRoutes)(summarizationController));
 // Pipeline module routes
 app.use('/api/pipelines', (0, pipelineRoutes_1.createPipelineRoutes)(pipelineController));
+app.use('/api/lavel', (0, lavelRoutes_1.createLavelRoutes)(lavelController));
 app.use('/api/deals', (0, dealRoutes_1.createDealRoutes)(dealController));
+app.use('/api/products', (0, productRoutes_1.createProductRoutes)(productController));
 app.use('/api/deals', (0, activityRoutes_1.createActivityRoutes)(activityController)); // Deal-specific activities
 app.use('/api/activities', (0, activityRoutes_1.createActivityRoutes)(activityController)); // User-level activities
+// Management module routes
+app.use('/api/organisations', (0, organisationRoutes_1.createOrganisationRoutes)(organisationController));
+app.use('/api/persons', (0, personRoutes_1.createPersonRoutes)(personController));
 // Health check endpoint
 app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', timestamp: new Date().toISOString() });
