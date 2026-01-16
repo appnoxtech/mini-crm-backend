@@ -88,6 +88,10 @@ export class DealHistoryModel {
     };
   }
 
+  getDealHistory(dealId: number): DealHistory[] {
+    const stmt = this.db.prepare('SELECT * FROM deal_history WHERE dealId = ?');
+    return stmt.all(dealId) as DealHistory[];
+  }
 
   // findById(id: number): DealHistory | undefined {
   //     const stmt = this.db.prepare('SELECT * FROM deal_history WHERE id = ?');

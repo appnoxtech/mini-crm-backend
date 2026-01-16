@@ -1,7 +1,8 @@
 import Database from 'better-sqlite3';
 import { BaseEntity } from '../../../../shared/types';
+import { Label, LabelModel } from '../../../pipelines/models/Label';
 
-export type EmailLabel = 'work' | 'home' | 'other';
+export type EmailLabel = 'work' | 'home' | 'other' | 'personal';
 export type PhoneType = 'home' | 'work' | 'mobile' | 'other';
 
 export interface PersonEmail {
@@ -59,31 +60,37 @@ export class PersonModel {
     }
 
     initialize(): void {
+        // Create table with correct column name and foreign key
         this.db.exec(`
-      CREATE TABLE IF NOT EXISTS persons (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        firstName TEXT NOT NULL,
-        lastName TEXT NOT NULL,
-        emails TEXT NOT NULL,
-        phones TEXT NOT NULL DEFAULT '[]',
-        organizationId INTEGER,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL,
-        deletedAt TEXT
-      )
-    `);
+          CREATE TABLE IF NOT EXISTS persons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            firstName TEXT NOT NULL,
+            lastName TEXT,
+            emails TEXT,
+            phones TEXT,
+            organizationId INTEGER,
+            createdAt TEXT NOT NULL,
+            updatedAt TEXT NOT NULL,
+            deletedAt TEXT,
+            FOREIGN KEY (organizationId) REFERENCES organizations(id) ON DELETE SET NULL
+          )
+        `);
 
-        // Add missing columns if they don't exist (for existing databases)
-        const columnsToAdd = [
-            { name: 'organizationId', definition: 'INTEGER' }
-        ];
+        // Migration: If the table was created with organisationId (with 's'), 
+        // we need to add organizationId (with 'z') if it doesn't exist.
+        // Also, the old foreign key might be causing issues.
 
-        for (const column of columnsToAdd) {
+        const tableInfo = this.db.prepare("PRAGMA table_info(persons)").all() as any[];
+        const hasZ = tableInfo.some(col => col.name === 'organizationId');
+        const hasS = tableInfo.some(col => col.name === 'organisationId');
+
+        if (!hasZ && hasS) {
             try {
-                this.db.exec(`ALTER TABLE persons ADD COLUMN ${column.name} ${column.definition}`);
-                console.log(`Added ${column.name} column to persons table`);
+                this.db.exec('ALTER TABLE persons ADD COLUMN organizationId INTEGER');
+                this.db.exec('UPDATE persons SET organizationId = organisationId');
+                console.log('Migrated organisationId to organizationId in persons table');
             } catch (error) {
-                // Column already exists, ignore error
+                console.error('Error during persons table migration:', error);
             }
         }
 

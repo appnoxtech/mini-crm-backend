@@ -10,7 +10,9 @@ export interface Organization extends BaseEntity {
 
     emails?: { value: string; type: string }[];
     phones?: { value: string; type: string }[];
-
+    annualRevenue?: number;
+    numberOfEmployees?: number;
+    linkedinProfile?: string;
     address?: {
         street?: string;
         city?: string;
@@ -32,6 +34,9 @@ export type searchOrgResult = {
     emails: string;
     phones: string;
     address: string;
+    annualRevenue: number;
+    numberOfEmployees: number;
+    linkedinProfile: string;
 }
 
 
@@ -39,12 +44,40 @@ export interface CreateOrganizationData {
     name: string;
     description?: string;
     website?: string;
+    industry?: string;
+    status?: string;
+    emails?: { value: string; type: string }[];
+    phones?: { value: string; type: string }[];
+    annualRevenue?: number;
+    numberOfEmployees?: number;
+    linkedinProfile?: string;
+    address?: {
+        street?: string;
+        city?: string;
+        state?: string;
+        country?: string;
+        pincode?: string;
+    };
 }
 
 export interface UpdateOrganizationData {
     name?: string;
     description?: string;
     website?: string;
+    industry?: string;
+    status?: string;
+    emails?: { value: string; type: string }[];
+    phones?: { value: string; type: string }[];
+    annualRevenue?: number;
+    numberOfEmployees?: number;
+    linkedinProfile?: string;
+    address?: {
+        street?: string;
+        city?: string;
+        state?: string;
+        country?: string;
+        pincode?: string;
+    };
 }
 
 export class OrganizationModel {
@@ -56,7 +89,7 @@ export class OrganizationModel {
 
     initialize(): void {
         this.db.exec(`
-        CREATE TABLE IF NOT EXISTS Organizations (
+        CREATE TABLE IF NOT EXISTS organizations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             description TEXT,
@@ -65,6 +98,9 @@ export class OrganizationModel {
             status TEXT,
             emails TEXT,
             phones TEXT,
+            annualRevenue REAL,
+            numberOfEmployees INTEGER,
+            linkedinProfile TEXT,
             address TEXT,
             createdAt TEXT NOT NULL,
             updatedAt TEXT NOT NULL,
@@ -74,22 +110,19 @@ export class OrganizationModel {
 
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_organizations_name ON organizations(name)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_organizations_deletedAt ON organizations(deletedAt)');
+
+        // Ensure 'organisations' (with 's') works as a reference to 'organizations' (with 'z')
+        this.db.exec('CREATE VIEW IF NOT EXISTS organisations AS SELECT * FROM organizations');
     }
 
 
-    create(data: CreateOrganizationData & {
-        industry?: string;
-        status?: string;
-        emails?: any[];
-        phones?: any[];
-        address?: any;
-    }): Organization {
+    create(data: CreateOrganizationData): Organization {
         const now = new Date().toISOString();
 
         const stmt = this.db.prepare(`
-        INSERT INTO Organizations 
-        (name, description, industry, website, status, emails, phones, address, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO organizations 
+        (name, description, industry, website, status, emails, phones, annualRevenue, numberOfEmployees, linkedinProfile, address, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
         const result = stmt.run(
@@ -100,6 +133,9 @@ export class OrganizationModel {
             data.status || null,
             data.emails ? JSON.stringify(data.emails) : null,
             data.phones ? JSON.stringify(data.phones) : null,
+            data.annualRevenue || null,
+            data.numberOfEmployees || null,
+            data.linkedinProfile || null,
             data.address ? JSON.stringify(data.address) : null,
             now,
             now
@@ -110,7 +146,7 @@ export class OrganizationModel {
 
 
     findById(id: number, includeDeleted = false): Organization | undefined {
-        let query = 'SELECT * FROM Organizations WHERE id = ?';
+        let query = 'SELECT * FROM organizations WHERE id = ?';
         if (!includeDeleted) query += ' AND deletedAt IS NULL';
 
         const org = this.db.prepare(query).get(id) as any;
@@ -120,9 +156,23 @@ export class OrganizationModel {
             ...org,
             emails: org.emails ? JSON.parse(org.emails) : [],
             phones: org.phones ? JSON.parse(org.phones) : [],
-            address: org.address ? JSON.parse(org.address) : null
+            address: org.address ? JSON.parse(org.address) : null,
+            annualRevenue: org.annualRevenue || null,
+            numberOfEmployees: org.numberOfEmployees || null,
+            linkedinProfile: org.linkedinProfile || null
         };
     }
+
+    searchByOrgName(search: string): Organization[] {
+        const stmt = this.db.prepare(`
+        SELECT * FROM organizations 
+        WHERE name LIKE ? 
+        `);
+
+        const rows = stmt.all(`%${search}%`) as any[];
+        return rows.map((row) => this.findById(row.id)!);
+    }
+
 
     searchByOrganizationName(search: string): searchOrgResult[] {
         const stmt = this.db.prepare(`
@@ -134,12 +184,16 @@ export class OrganizationModel {
            OR status LIKE ? 
            OR emails LIKE ? 
            OR phones LIKE ? 
+           OR annualRevenue LIKE ? 
+           OR numberOfEmployees LIKE ? 
+           OR linkedinProfile LIKE ? 
            OR address LIKE ?
     `);
 
         const rows = stmt.all(
             `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`,
-            `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`
+            `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`,
+            `%${search}%`, `%${search}%`, `%${search}%`
         ) as any[]; // cast as any[] because DB returns raw JSON strings
 
         // Parse JSON fields and remove unwanted fields
@@ -153,6 +207,9 @@ export class OrganizationModel {
             emails: org.emails ? JSON.parse(org.emails) : [],
             phones: org.phones ? JSON.parse(org.phones) : [],
             address: org.address ? JSON.parse(org.address) : null,
+            annualRevenue: org.annualRevenue,
+            numberOfEmployees: org.numberOfEmployees,
+            linkedinProfile: org.linkedinProfile,
             // remove createdAt, updatedAt, deletedAt
         }));
 
@@ -166,7 +223,7 @@ export class OrganizationModel {
         offset?: number;
         includeDeleted?: boolean;
     } = {}): { organizations: Organization[]; count: number } {
-        let query = 'SELECT * FROM Organizations WHERE 1=1';
+        let query = 'SELECT * FROM organizations WHERE 1=1';
         const params: any[] = [];
 
         if (!options.includeDeleted) {
@@ -189,7 +246,7 @@ export class OrganizationModel {
         const organizations = this.db.prepare(query).all(...params) as Organization[];
 
         // Get total count
-        let countQuery = 'SELECT COUNT(*) as count FROM Organizations WHERE 1=1';
+        let countQuery = 'SELECT COUNT(*) as count FROM organizations WHERE 1=1';
         const countParams: any[] = [];
 
         if (!options.includeDeleted) {
@@ -266,7 +323,7 @@ export class OrganizationModel {
         params.push(id);
 
         this.db.prepare(`
-        UPDATE Organizations SET ${updates.join(', ')} WHERE id = ?
+        UPDATE organizations SET ${updates.join(', ')} WHERE id = ?
     `).run(...params);
 
         return this.findById(id) ?? null;
@@ -279,7 +336,7 @@ export class OrganizationModel {
 
         const now = new Date().toISOString();
         const stmt = this.db.prepare(`
-      UPDATE Organizations SET deletedAt = ?, updatedAt = ? WHERE id = ?
+      UPDATE organizations SET deletedAt = ?, updatedAt = ? WHERE id = ?
     `);
 
         const result = stmt.run(now, now, id);
@@ -292,7 +349,7 @@ export class OrganizationModel {
 
         const now = new Date().toISOString();
         const stmt = this.db.prepare(`
-      UPDATE Organizations SET deletedAt = NULL, updatedAt = ? WHERE id = ?
+      UPDATE organizations SET deletedAt = NULL, updatedAt = ? WHERE id = ?
     `);
 
         stmt.run(now, id);
@@ -301,7 +358,7 @@ export class OrganizationModel {
     }
 
     hardDelete(id: number): boolean {
-        const stmt = this.db.prepare('DELETE FROM Organizations WHERE id = ?');
+        const stmt = this.db.prepare('DELETE FROM organizations WHERE id = ?');
         const result = stmt.run(id);
         return result.changes > 0;
     }
