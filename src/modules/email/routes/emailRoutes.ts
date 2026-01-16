@@ -37,8 +37,10 @@ export function createEmailRoutes(emailController: EmailController): Router {
 
   // Email account management
   router.get('/accounts', (req: any, res) => emailController.getEmailAccounts(req, res));
+  router.post('/accounts/test-connection', (req: any, res) => emailController.testConnection(req, res));
   router.post('/accounts', (req: any, res) => emailController.connectEmailAccount(req, res));
   router.put('/accounts/:accountId', (req: any, res) => emailController.updateEmailAccount(req, res));
+  router.delete('/accounts/:accountId', (req: any, res) => emailController.deleteEmailAccount(req, res));
   router.get('/accounts/validate', (req: any, res) => emailController.validateEmailAccount(req, res));
 
   // Email sync management

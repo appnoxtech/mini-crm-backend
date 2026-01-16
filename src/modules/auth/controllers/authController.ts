@@ -16,7 +16,7 @@ export class AuthController {
 
   async register(req: Request, res: Response): Promise<void> {
     try {
-      const { name, email, password} = req.body as any;
+      const { name, email, password } = req.body as any;
 
       if (!name || !email || !password) {
         res.status(400).json({ error: 'Missing required fields: name, email, password' });

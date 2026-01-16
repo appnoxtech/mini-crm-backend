@@ -281,20 +281,68 @@ export class EmailConnectorService {
 
   async fetchIMAPEmails(account: EmailAccount, lastSyncTime?: Date): Promise<any[]> {
     const client = await this.connectIMAP(account);
-    await client.mailboxOpen('INBOX');
-
-    const searchCriteria: any = lastSyncTime ? { since: lastSyncTime } : { all: true };
     const messages: any[] = [];
+    const searchCriteria: any = lastSyncTime ? { since: lastSyncTime } : { all: true };
 
-    for await (const message of client.fetch(searchCriteria, {
-      envelope: true,
-      bodyStructure: true,
-      source: true
-    })) {
-      messages.push(message);
+    try {
+      // 1. Fetch from INBOX
+      await client.mailboxOpen('INBOX');
+      for await (const message of client.fetch(searchCriteria, {
+        envelope: true,
+        bodyStructure: true,
+        source: true
+      })) {
+        messages.push({ ...message, folder: 'INBOX' });
+      }
+
+      // 2. Identify and Fetch from Sent Folder
+      let sentFolder = 'Sent'; // Default guess
+      const mailboxes = await client.list();
+
+      const sentBox = mailboxes.find((box: any) =>
+        (box.specialUse === '\\Sent' || box.name === 'Sent' || box.name === 'Sent Items' || box.name === 'Sent Mail')
+      );
+
+      if (sentBox) {
+        sentFolder = sentBox.path;
+        console.log(`Identified Sent folder as: ${sentFolder}`);
+
+        try {
+          await client.mailboxOpen(sentFolder);
+          for await (const message of client.fetch(searchCriteria, {
+            envelope: true,
+            bodyStructure: true,
+            source: true
+          })) {
+            messages.push({ ...message, folder: 'SENT' });
+          }
+        } catch (err) {
+          console.warn(`Failed to fetch from Sent folder (${sentFolder}):`, err);
+        }
+      } else {
+        console.warn('Could not identify Sent folder via IMAP list.');
+        // Try common fallback
+        try {
+          await client.mailboxOpen('Sent Items');
+          for await (const message of client.fetch(searchCriteria, {
+            envelope: true,
+            bodyStructure: true,
+            source: true
+          })) {
+            messages.push({ ...message, folder: 'SENT' });
+          }
+        } catch (e) {
+          // Ignore fallback error
+        }
+      }
+
+    } catch (err) {
+      console.error('Error during IMAP fetch:', err);
+      throw err;
+    } finally {
+      await client.logout();
     }
 
-    await client.logout();
     return messages;
   }
 
