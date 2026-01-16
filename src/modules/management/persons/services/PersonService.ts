@@ -1,4 +1,4 @@
-import { Person, PersonModel, CreatePersonData, UpdatePersonData } from '../models/Person';
+import { Person, PersonModel, CreatePersonData, UpdatePersonData, PersonEmail, PersonPhone } from '../models/Person';
 import { OrganisationModel } from '../../organisations/models/Organisation';
 
 export class PersonService {
@@ -13,6 +13,22 @@ export class PersonService {
             const org = this.organisationModel.findById(data.organisationId);
             if (!org) {
                 throw new Error('Organisation not found');
+            }
+        }
+
+        // Check email uniqueness
+        const emailStrings = data.emails.map(e => e.email);
+        const existingEmail = this.personModel.findExistingEmail(emailStrings);
+        if (existingEmail) {
+            throw new Error('Person already exists');
+        }
+
+        // Check phone uniqueness if phones provided
+        if (data.phones && data.phones.length > 0) {
+            const phoneStrings = data.phones.map(p => p.number);
+            const existingPhone = this.personModel.findExistingPhone(phoneStrings);
+            if (existingPhone) {
+                throw new Error('Person already exists');
             }
         }
 
@@ -44,6 +60,24 @@ export class PersonService {
             const org = this.organisationModel.findById(data.organisationId);
             if (!org) {
                 throw new Error('Organisation not found');
+            }
+        }
+
+        // Check email uniqueness if emails are being updated
+        if (data.emails && data.emails.length > 0) {
+            const emailStrings = data.emails.map(e => e.email);
+            const existingEmail = this.personModel.findExistingEmail(emailStrings, id);
+            if (existingEmail) {
+                throw new Error('Person already exists');
+            }
+        }
+
+        // Check phone uniqueness if phones are being updated
+        if (data.phones && data.phones.length > 0) {
+            const phoneStrings = data.phones.map(p => p.number);
+            const existingPhone = this.personModel.findExistingPhone(phoneStrings, id);
+            if (existingPhone) {
+                throw new Error('Person already exists');
             }
         }
 

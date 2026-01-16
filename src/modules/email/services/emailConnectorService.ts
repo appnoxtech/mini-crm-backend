@@ -61,6 +61,128 @@ export class EmailConnectorService {
     return client;
   }
 
+  /**
+   * Test SMTP connection with provided configuration
+   * Used to validate credentials before saving an email account
+   */
+  async testSmtpConnection(smtpConfig: {
+    host: string;
+    port: number;
+    secure: boolean;
+    username: string;
+    password: string;
+  }): Promise<{ success: boolean; message: string }> {
+    try {
+      console.log(`Testing SMTP connection to ${smtpConfig.host}:${smtpConfig.port}`);
+
+      const transporter = nodemailer.createTransport({
+        host: smtpConfig.host,
+        port: smtpConfig.port,
+        secure: smtpConfig.secure,
+        auth: {
+          user: smtpConfig.username,
+          pass: smtpConfig.password
+        },
+        connectionTimeout: 10000, // 10 second timeout
+        greetingTimeout: 10000,
+        socketTimeout: 10000
+      });
+
+      await transporter.verify();
+      console.log('SMTP connection test successful');
+
+      return {
+        success: true,
+        message: 'SMTP connection successful'
+      };
+    } catch (error: any) {
+      console.error('SMTP connection test failed:', error);
+
+      let message = 'SMTP connection failed';
+      if (error.code === 'EAUTH') {
+        message = 'Authentication failed. Please check your username and password.';
+      } else if (error.code === 'ECONNREFUSED') {
+        message = 'Connection refused. Please check the host and port.';
+      } else if (error.code === 'ETIMEDOUT') {
+        message = 'Connection timed out. Please check the host and port.';
+      } else if (error.message) {
+        message = error.message;
+      }
+
+      return {
+        success: false,
+        message
+      };
+    }
+  }
+
+  /**
+   * Test IMAP connection with provided configuration
+   * Used to validate credentials before saving an email account
+   */
+  async testImapConnection(imapConfig: {
+    host: string;
+    port: number;
+    secure: boolean;
+    username: string;
+    password: string;
+  }): Promise<{ success: boolean; message: string }> {
+    let client: ImapFlow | null = null;
+
+    try {
+      console.log(`Testing IMAP connection to ${imapConfig.host}:${imapConfig.port}`);
+
+      client = new ImapFlow({
+        host: imapConfig.host,
+        port: imapConfig.port,
+        secure: imapConfig.secure,
+        auth: {
+          user: imapConfig.username,
+          pass: imapConfig.password
+        },
+        logger: false // Disable verbose logging for test
+      });
+
+      await client.connect();
+      console.log('IMAP connection test successful');
+
+      // Logout cleanly
+      await client.logout();
+
+      return {
+        success: true,
+        message: 'IMAP connection successful'
+      };
+    } catch (error: any) {
+      console.error('IMAP connection test failed:', error);
+
+      let message = 'IMAP connection failed';
+      if (error.authenticationFailed) {
+        message = 'Authentication failed. Please check your username and password.';
+      } else if (error.code === 'ECONNREFUSED') {
+        message = 'Connection refused. Please check the host and port.';
+      } else if (error.code === 'ETIMEDOUT') {
+        message = 'Connection timed out. Please check the host and port.';
+      } else if (error.message) {
+        message = error.message;
+      }
+
+      return {
+        success: false,
+        message
+      };
+    } finally {
+      // Ensure cleanup
+      if (client) {
+        try {
+          await client.logout();
+        } catch {
+          // Ignore logout errors during cleanup
+        }
+      }
+    }
+  }
+
   async fetchGmailEmails(account: EmailAccount, lastSyncTime?: Date, maxResults: number = 50): Promise<any[]> {
     try {
       await this.connectGmail(account);

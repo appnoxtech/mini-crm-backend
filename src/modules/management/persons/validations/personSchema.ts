@@ -14,24 +14,61 @@ const emailSchema = z.object({
 
 // Phone object schema
 const phoneSchema = z.object({
-    number: z.string().min(1, 'Phone number is required'),
+    number: z
+        .string()
+        // .regex(/^\d+$/, 'Phone number must contain only digits')
+        .min(8, 'Phone number must be at least 8 digits')
+        .max(15, 'Phone number must not exceed 15 digits'),
     type: phoneTypeEnum
 });
 
 export const createPersonSchema = z.object({
-    firstName: z.string().min(1, 'First name is required').max(100, 'First name is too long'),
-    lastName: z.string().min(1, 'Last name is required').max(100, 'Last name is too long'),
-    emails: z.array(emailSchema).min(1, 'At least one email is required'),
-    phones: z.array(phoneSchema).optional().default([]),
-    organisationId: z.number().int().positive().optional()
+    firstName: z
+        .string()
+        .min(1, 'First name is required')
+        .max(100, 'First name is too long'),
+    lastName: z
+        .string()
+        .min(1, 'Last name is required')
+        .max(100, 'Last name is too long'),
+    emails: z
+        .array(emailSchema)
+        .min(1, 'At least one email is required'),
+    phones: z
+        .array(phoneSchema)
+        .optional()
+        .default([]),
+    organisationId: z
+        .number()
+        .int()
+        .positive()
+        .optional()
 });
 
 export const updatePersonSchema = z.object({
-    firstName: z.string().min(1, 'First name is required').max(100, 'First name is too long').optional(),
-    lastName: z.string().min(1, 'Last name is required').max(100, 'Last name is too long').optional(),
-    emails: z.array(emailSchema).min(1, 'At least one email is required').optional(),
-    phones: z.array(phoneSchema).optional(),
-    organisationId: z.number().int().positive().nullable().optional()
+    firstName: z
+        .string()
+        .min(1, 'First name is required')
+        .max(100, 'First name is too long')
+        .optional(),
+    lastName: z
+        .string()
+        .min(1, 'Last name is required')
+        .max(100, 'Last name is too long')
+        .optional(),
+    emails: z
+        .array(emailSchema)
+        .min(1, 'At least one email is required')
+        .optional(),
+    phones: z
+        .array(phoneSchema)
+        .optional(),
+    organisationId: z
+        .number()
+        .int()
+        .positive()
+        .nullable()
+        .optional()
 });
 
 export type CreatePersonInput = z.infer<typeof createPersonSchema>;

@@ -25,6 +25,32 @@ export class EmailService {
     return this.emailModel;
   }
 
+  /**
+   * Test SMTP connection with provided configuration
+   */
+  async testSmtpConnection(smtpConfig: {
+    host: string;
+    port: number;
+    secure: boolean;
+    username: string;
+    password: string;
+  }): Promise<{ success: boolean; message: string }> {
+    return this.connectorService.testSmtpConnection(smtpConfig);
+  }
+
+  /**
+   * Test IMAP connection with provided configuration
+   */
+  async testImapConnection(imapConfig: {
+    host: string;
+    port: number;
+    secure: boolean;
+    username: string;
+    password: string;
+  }): Promise<{ success: boolean; message: string }> {
+    return this.connectorService.testImapConnection(imapConfig);
+  }
+
   async sendEmail(
     accountId: string,
     emailData: {

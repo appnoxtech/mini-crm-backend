@@ -606,6 +606,71 @@ export class EmailController {
     }
   }
 
+  /**
+   * Test SMTP and/or IMAP connection before saving account
+   * This allows users to validate credentials before committing to an account
+   */
+  async testConnection(
+    req: AuthenticatedRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      if (!req.user) {
+        return ResponseHandler.unauthorized(res, "User not authenticated");
+      }
+
+      const { smtpConfig, imapConfig } = req.body as any;
+
+      if (!smtpConfig && !imapConfig) {
+        return ResponseHandler.validationError(
+          res,
+          "At least one of smtpConfig or imapConfig is required"
+        );
+      }
+
+      const results: {
+        smtp?: { success: boolean; message: string };
+        imap?: { success: boolean; message: string };
+      } = {};
+
+      // Test SMTP if provided
+      if (smtpConfig) {
+        if (!smtpConfig.host || !smtpConfig.port || !smtpConfig.username || !smtpConfig.password) {
+          return ResponseHandler.validationError(
+            res,
+            "SMTP config requires: host, port, username, password"
+          );
+        }
+        results.smtp = await this.emailService.testSmtpConnection(smtpConfig);
+      }
+
+      // Test IMAP if provided
+      if (imapConfig) {
+        if (!imapConfig.host || !imapConfig.port || !imapConfig.username || !imapConfig.password) {
+          return ResponseHandler.validationError(
+            res,
+            "IMAP config requires: host, port, username, password"
+          );
+        }
+        results.imap = await this.emailService.testImapConnection(imapConfig);
+      }
+
+      // Check if any test failed
+      const allSuccessful =
+        (!results.smtp || results.smtp.success) &&
+        (!results.imap || results.imap.success);
+
+      if (allSuccessful) {
+        return ResponseHandler.success(res, results, "Connection test successful");
+      } else {
+        return ResponseHandler.validationError(res, results, "Connection test failed");
+      }
+    } catch (error: any) {
+      console.error("Error testing connection:", error);
+      return ResponseHandler.internalError(res, "Failed to test connection");
+    }
+  }
+
   async connectEmailAccount(
     req: AuthenticatedRequest,
     res: Response
@@ -615,10 +680,22 @@ export class EmailController {
         return ResponseHandler.unauthorized(res, "User not authenticated");
       }
 
-      const { email, provider, smtpConfig } = req.body as any;
+      const { email, provider, smtpConfig, imapConfig } = req.body as any;
 
-      if (!email || !provider || !smtpConfig) {
-        return ResponseHandler.validationError(res, "Missing required fields: email, provider, smtpConfig");
+      // Require email and provider
+      if (!email || !provider) {
+        return ResponseHandler.validationError(
+          res,
+          "Missing required fields: email, provider"
+        );
+      }
+
+      // For non-OAuth providers (imap), require at least smtpConfig for sending
+      if (provider === 'imap' && !smtpConfig) {
+        return ResponseHandler.validationError(
+          res,
+          "SMTP configuration is required for custom email accounts"
+        );
       }
 
       const account: EmailAccount = {
@@ -626,20 +703,26 @@ export class EmailController {
         userId: req.user.id.toString(),
         email,
         provider,
-        smtpConfig,
         isActive: true,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
 
+      // Add optional configs
+      if (smtpConfig) {
+        account.smtpConfig = smtpConfig;
+      }
+      if (imapConfig) {
+        account.imapConfig = imapConfig;
+      }
+
       const createdAccount = await this.emailService.createEmailAccount(
         account
       );
 
-      return ResponseHandler.created(res, createdAccount, "Email connect successfully");
+      return ResponseHandler.created(res, createdAccount, "Email account connected successfully");
 
     } catch (error: any) {
-
       console.error("Error connecting email account:", error);
       return ResponseHandler.internalError(res, "Failed to connect email account");
     }
@@ -662,11 +745,50 @@ export class EmailController {
       return ResponseHandler.success(res, [], "Email account updated successfully");
     } catch (error: any) {
       console.error("Error updating email account:", error);
-      res.status(500).json({ error: "Failed to update email account" });
+      return ResponseHandler.internalError(res, "Failed to update email account");
     }
   }
 
+  /**
+   * Delete (deactivate) an email account
+   * Performs soft delete by setting isActive = false
+   */
+  async deleteEmailAccount(
+    req: AuthenticatedRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      if (!req.user) {
+        return ResponseHandler.unauthorized(res, "User not authenticated");
+      }
 
+      const { accountId } = (req as any).params;
+
+      if (!accountId) {
+        return ResponseHandler.validationError(res, "Account ID is required");
+      }
+
+      // Verify the account belongs to the user
+      const accounts = await this.emailService.getEmailAccounts(
+        req.user.id.toString()
+      );
+      const account = accounts.find((acc) => acc.id === accountId);
+
+      if (!account) {
+        return ResponseHandler.notFound(res, "Email account not found");
+      }
+
+      // Soft delete by deactivating
+      await this.emailService.updateEmailAccount(accountId, {
+        isActive: false,
+      });
+
+      return ResponseHandler.success(res, null, "Email account deleted successfully");
+    } catch (error: any) {
+      console.error("Error deleting email account:", error);
+      return ResponseHandler.internalError(res, "Failed to delete email account");
+    }
+  }
 
 
 

@@ -71,6 +71,9 @@ export class PersonController {
             if (error.message === 'Organisation not found') {
                 return ResponseHandler.validationError(res, 'Organisation not found');
             }
+            if (error.message === 'Person already exists') {
+                return ResponseHandler.validationError(res, 'Person already exists');
+            }
             return ResponseHandler.internalError(res, 'Failed to create person');
         }
     }
@@ -101,6 +104,9 @@ export class PersonController {
             console.error('Error updating person:', error);
             if (error.message === 'Organisation not found') {
                 return ResponseHandler.validationError(res, 'Organisation not found');
+            }
+            if (error.message === 'Person already exists') {
+                return ResponseHandler.validationError(res, 'Person already exists');
             }
             return ResponseHandler.internalError(res, 'Failed to update person');
         }
