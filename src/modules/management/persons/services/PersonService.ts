@@ -1,5 +1,5 @@
 import { PersonModel, CreatePersonData, UpdatePersonData, Person } from '../models/Person';
-import { OrganizationModel } from '../../organisations/models/Organisation';
+import { OrganizationModel } from '../../organisations/models/Organization';
 
 export class PersonService {
     constructor(
@@ -13,18 +13,6 @@ export class PersonService {
             const org = this.organizationModel.findById(data.organizationId);
             if (!org) {
                 throw new Error('Organization not found');
-            }
-        }
-
-        // Validate at least one email
-        if (!data.emails || data.emails.length === 0) {
-            throw new Error('At least one email is required');
-        }
-
-        // Validate email format
-        for (const email of data.emails) {
-            if (!email.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.email)) {
-                throw new Error('Invalid email format');
             }
         }
 

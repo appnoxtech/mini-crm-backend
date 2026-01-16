@@ -20,6 +20,9 @@ export function createDealRoutes(controller: DealController): Router {
     router.patch('/move/:dealId', (req, res) => controller.moveDeal(req, res));
     router.patch('/close/:dealId', (req, res) => controller.closeDeal(req, res));
     router.delete('/delete/:dealId', (req, res) => controller.deleteDeal(req, res));
+    router.patch('/make-won/:dealId', (req, res) => controller.makeDealAsWon(req, res));
+    router.put('/make-lost/:dealId', (req, res) => controller.makeDealAsLost(req, res));
+    router.patch('/reset/:dealId', (req, res) => controller.resetDeal(req, res));
 
     return router;
 }

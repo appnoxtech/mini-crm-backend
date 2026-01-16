@@ -149,4 +149,25 @@ export class ActivityController {
             return ResponseHandler.internalError(res, 'Failed to fetch upcoming activities');
         }
     }
+
+    async getDealHistory(req: AuthenticatedRequest, res: Response): Promise<void> {
+        try {
+            if (!req.user) {
+                return ResponseHandler.unauthorized(res, 'User not authenticated');
+            }
+
+            const { dealId } = req.params;
+
+            const dealHistory = await this.activityService.getDealHistory(Number(dealId));
+
+            if (!dealHistory) {
+                return ResponseHandler.notFound(res, 'Deal history not found');
+            }
+
+            return ResponseHandler.success(res, dealHistory, 'Deal history fetched successfully');
+        } catch (error: any) {
+            console.error('Error fetching deal history:', error);
+            return ResponseHandler.internalError(res, 'Failed to fetch deal history');
+        }
+    }
 }

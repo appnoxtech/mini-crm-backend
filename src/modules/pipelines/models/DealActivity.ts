@@ -5,14 +5,48 @@ export interface DealActivity extends BaseEntity {
     dealId: number;
     userId: number;
     type: string;
+
     subject?: string;
-    description?: string;
-    dueDate?: string;
-    dueTime?: string;
-    duration?: number;
+    label?: string;
+
+    startDate?: string;
+    endDate?: string;
+    startTime?: string;
+    endTime?: string;
+
+    priority?: 'low' | 'medium' | 'high';
+    busyFree?: 'busy' | 'free' | 'notSet';
+
+    note?: string;
+    organization?: string;
+
+    participants?: {
+        id: number;
+        name: string;
+        email?: string;
+        phone?: string;
+    }[];
+
+    deal?: {
+        name?: string;
+        value?: string;
+    };
+
+    persons?: {
+        id?: number;
+        name?: string;
+        email?: string;
+        phone?: string;
+    }[];
+
+    mataData?: {
+        key?: string;
+        value?: string;
+        type?: string;
+    }[];
+
     isDone: boolean;
     completedAt?: string;
-    emailId?: number;
 }
 
 export class DealActivityModel {
@@ -22,43 +56,46 @@ export class DealActivityModel {
         this.db = db;
     }
 
-    initialize(): void {
+    initialize() {
         this.db.exec(`
-      CREATE TABLE IF NOT EXISTS deal_activities (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        dealId INTEGER NOT NULL,
-        userId INTEGER NOT NULL,
-        type TEXT NOT NULL,
-        subject TEXT,
-        description TEXT,
-        dueDate TEXT,
-        dueTime TEXT,
-        duration INTEGER,
-        isDone BOOLEAN DEFAULT 0,
-        completedAt TEXT,
-        emailId INTEGER,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL,
-        FOREIGN KEY (dealId) REFERENCES deals(id) ON DELETE CASCADE,
-        FOREIGN KEY (userId) REFERENCES users(id) ON DELETE SET NULL,
-        FOREIGN KEY (emailId) REFERENCES emails(id) ON DELETE SET NULL
-      )
+        CREATE TABLE IF NOT EXISTS deal_activities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            dealId INTEGER NOT NULL,
+            userId INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            subject TEXT,
+            label TEXT,
+            startDate TEXT,
+            endDate TEXT,
+            startTime TEXT,
+            endTime TEXT,
+            priority TEXT CHECK(priority IN ('low','medium','high')),
+            busyFree TEXT CHECK(busyFree IN ('busy','free','notSet')),
+            note TEXT,
+            organization TEXT,
+            participants TEXT,   -- store JSON string
+            deal TEXT,           -- store JSON string
+            persons TEXT,        -- store JSON string
+            mataData TEXT,       -- store JSON string
+            isDone INTEGER NOT NULL DEFAULT 0,
+            completedAt TEXT,
+            createdAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updatedAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
     `);
-
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_deal_activities_dealId ON deal_activities(dealId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_deal_activities_userId ON deal_activities(userId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_deal_activities_dueDate ON deal_activities(dueDate)');
     }
 
     create(data: Omit<DealActivity, 'id' | 'createdAt' | 'updatedAt'>): DealActivity {
         const now = new Date().toISOString();
 
         const stmt = this.db.prepare(`
-      INSERT INTO deal_activities (
-        dealId, userId, type, subject, description, dueDate, dueTime,
-        duration, isDone, completedAt, emailId, createdAt, updatedAt
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO deal_activities (
+            dealId, userId, type, subject, label,
+            startDate, endDate, startTime, endTime,
+            priority, busyFree, note, organization,
+            participants, deal, persons, mataData,
+            isDone, completedAt, createdAt, updatedAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
         const result = stmt.run(
@@ -66,13 +103,21 @@ export class DealActivityModel {
             data.userId,
             data.type,
             data.subject || null,
-            data.description || null,
-            data.dueDate || null,
-            data.dueTime || null,
-            data.duration || null,
+            data.label || null,
+            data.startDate || null,
+            data.endDate || null,
+            data.startTime || null,
+            data.endTime || null,
+            data.priority || null,
+            data.busyFree || null,
+            data.note || null,
+            data.organization || null,
+            data.participants ? JSON.stringify(data.participants) : null,
+            data.deal ? JSON.stringify(data.deal) : null,
+            data.persons ? JSON.stringify(data.persons) : null,
+            data.mataData ? JSON.stringify(data.mataData) : null,
             data.isDone ? 1 : 0,
             data.completedAt || null,
-            data.emailId || null,
             now,
             now
         );
@@ -90,7 +135,11 @@ export class DealActivityModel {
 
         return {
             ...result,
-            isDone: Boolean(result.isDone)
+            isDone: Boolean(result.isDone),
+            participants: result.participants ? JSON.parse(result.participants) : [],
+            deal: result.deal ? JSON.parse(result.deal) : {},
+            persons: result.persons ? JSON.parse(result.persons) : [],
+            mataData: result.mataData ? JSON.parse(result.mataData) : []
         };
     }
 
@@ -112,7 +161,7 @@ export class DealActivityModel {
             params.push(filters.isDone ? 1 : 0);
         }
 
-        query += ' ORDER BY dueDate DESC, createdAt DESC';
+        query += ' ORDER BY startDate DESC, createdAt DESC';
 
         if (filters.limit) {
             query += ' LIMIT ?';
@@ -124,7 +173,11 @@ export class DealActivityModel {
 
         return results.map(r => ({
             ...r,
-            isDone: Boolean(r.isDone)
+            isDone: Boolean(r.isDone),
+            participants: r.participants ? JSON.parse(r.participants) : undefined,
+            deal: r.deal ? JSON.parse(r.deal) : undefined,
+            persons: r.persons ? JSON.parse(r.persons) : undefined,
+            mataData: r.mataData ? JSON.parse(r.mataData) : undefined
         }));
     }
 
@@ -149,11 +202,11 @@ export class DealActivityModel {
 
         if (filters.upcoming) {
             const today = new Date().toISOString().split('T')[0];
-            query += ' AND dueDate >= ? AND isDone = 0';
+            query += ' AND startDate >= ? AND isDone = 0';
             params.push(today);
         }
 
-        query += ' ORDER BY dueDate ASC, createdAt DESC';
+        query += ' ORDER BY startDate ASC, createdAt DESC';
 
         if (filters.limit) {
             query += ' LIMIT ?';
@@ -165,15 +218,20 @@ export class DealActivityModel {
 
         return results.map(r => ({
             ...r,
-            isDone: Boolean(r.isDone)
+            isDone: Boolean(r.isDone),
+            participants: r.participants ? JSON.parse(r.participants) : undefined,
+            deal: r.deal ? JSON.parse(r.deal) : undefined,
+            persons: r.persons ? JSON.parse(r.persons) : undefined,
+            mataData: r.mataData ? JSON.parse(r.mataData) : undefined
         }));
     }
 
-    update(id: number, data: Partial<Omit<DealActivity, 'id' | 'dealId' | 'userId' | 'createdAt' | 'updatedAt'>>): DealActivity | null {
+    update(
+        id: number,
+        data: Partial<Omit<DealActivity, 'id' | 'dealId' | 'userId' | 'createdAt' | 'updatedAt'>>
+    ): DealActivity | null {
         const activity = this.findById(id);
-        if (!activity) {
-            return null;
-        }
+        if (!activity) return null;
 
         const now = new Date().toISOString();
         const updates: string[] = [];
@@ -183,24 +241,25 @@ export class DealActivityModel {
             if (key === 'isDone') {
                 updates.push(`${key} = ?`);
                 values.push(value ? 1 : 0);
+            } else if (['participants', 'deal', 'persons', 'mataData'].includes(key)) {
+                updates.push(`${key} = ?`);
+                values.push(value ? JSON.stringify(value) : null);
             } else {
                 updates.push(`${key} = ?`);
                 values.push(value === undefined ? null : value);
             }
         });
 
-        if (updates.length === 0) {
-            return activity;
-        }
+        if (updates.length === 0) return activity;
 
         updates.push('updatedAt = ?');
         values.push(now);
         values.push(id);
 
         const stmt = this.db.prepare(`
-      UPDATE deal_activities 
-      SET ${updates.join(', ')}
-      WHERE id = ?
+        UPDATE deal_activities 
+        SET ${updates.join(', ')}
+        WHERE id = ?
     `);
 
         stmt.run(...values);
@@ -215,9 +274,9 @@ export class DealActivityModel {
         const now = new Date().toISOString();
 
         const stmt = this.db.prepare(`
-      UPDATE deal_activities 
-      SET isDone = 1, completedAt = ?, updatedAt = ?
-      WHERE id = ?
+        UPDATE deal_activities 
+        SET isDone = 1, completedAt = ?, updatedAt = ?
+        WHERE id = ?
     `);
 
         stmt.run(now, now, id);
@@ -243,12 +302,12 @@ export class DealActivityModel {
         futureDate.setDate(today.getDate() + days);
 
         const stmt = this.db.prepare(`
-      SELECT * FROM deal_activities 
-      WHERE userId = ? 
-        AND isDone = 0 
-        AND dueDate >= ? 
-        AND dueDate <= ?
-      ORDER BY dueDate ASC, dueTime ASC
+        SELECT * FROM deal_activities 
+        WHERE userId = ? 
+          AND isDone = 0 
+          AND startDate >= ? 
+          AND startDate <= ?
+        ORDER BY startDate ASC, startTime ASC
     `);
 
         const results = stmt.all(
@@ -259,7 +318,11 @@ export class DealActivityModel {
 
         return results.map(r => ({
             ...r,
-            isDone: Boolean(r.isDone)
+            isDone: Boolean(r.isDone),
+            participants: r.participants ? JSON.parse(r.participants) : undefined,
+            deal: r.deal ? JSON.parse(r.deal) : undefined,
+            persons: r.persons ? JSON.parse(r.persons) : undefined,
+            mataData: r.mataData ? JSON.parse(r.mataData) : undefined
         }));
     }
 }

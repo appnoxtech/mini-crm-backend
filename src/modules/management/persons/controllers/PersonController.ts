@@ -75,9 +75,9 @@ export class PersonController {
             const { firstName, lastName, emails, phones, organisationId } = req.body;
 
             const person = await this.personService.createPerson({
-                firstName,
-                lastName,
-                emails,
+                firstName: firstName || "",
+                lastName: lastName || "",
+                emails: emails || [],
                 phones: phones || [],
                 organizationId: organisationId || undefined
             });
