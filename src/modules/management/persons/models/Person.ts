@@ -94,11 +94,30 @@ export class PersonModel {
             }
         }
 
-        // Create indexes
+        // Create indexes for persons table
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_firstName ON persons(firstName)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_lastName ON persons(lastName)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_organizationId ON persons(organizationId)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_deletedAt ON persons(deletedAt)');
+
+        // Create lookup tables for email and phone uniqueness checks
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS person_emails (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            personId INTEGER NOT NULL,
+            email TEXT NOT NULL,
+            FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE
+          )
+        `);
+
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS person_phones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            personId INTEGER NOT NULL,
+            phone TEXT NOT NULL,
+            FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE
+          )
+        `);
 
         // Unique indexes on lookup tables
         this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_person_emails_unique ON person_emails(email)');
