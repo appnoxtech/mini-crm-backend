@@ -23,6 +23,48 @@ export class ActivityController {
         }
     }
 
+    async getAllActivitiesOfDeal(req: AuthenticatedRequest, res: Response): Promise<void> {
+        try {
+            if (!req.user) {
+                return ResponseHandler.unauthorized(res, 'User not authenticated');
+            }
+
+            const { dealId } = req.params;
+            const { activityType, isDone, limit } = req.query;
+
+            console.log("dealId", dealId);
+
+            const result = await this.activityService.getAllActivitiesOfDeal(Number(dealId), {
+                activityType: activityType as string,
+                isDone: isDone === 'true' ? true : isDone === 'false' ? false : undefined,
+                limit: limit ? Number(limit) : undefined
+            });
+
+            return ResponseHandler.success(res, result, 'Activities fetched successfully');
+        } catch (error: any) {
+            console.error('Error fetching activities:', error);
+            return ResponseHandler.internalError(res, error.message || 'Failed to fetch activities');
+        }
+    }
+
+    async createNoteActivity(req: AuthenticatedRequest, res: Response): Promise<void> {
+        try {
+            if (!req.user) {
+                return ResponseHandler.unauthorized(res, 'User not authenticated');
+            }
+
+            const { dealId } = req.params;
+            const { note } = req.body;
+
+            const activity = await this.activityService.createNoteActivity(req.user.id, Number(dealId), note);
+
+            return ResponseHandler.created(res, activity, 'Activity created successfully');
+        } catch (error: any) {
+            console.error('Error creating activity:', error);
+            return ResponseHandler.internalError(res, error.message || 'Failed to create activity');
+        }
+    }
+
     async getActivitiesForDeal(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
             if (!req.user) {
@@ -30,10 +72,12 @@ export class ActivityController {
             }
 
             const { dealId } = req.params;
-            const { type, isDone, limit } = req.query;
+            const { activityType, isDone, limit } = req.query;
 
-            const result = await this.activityService.getActivitiesForDeal(Number(dealId), req.user.id, {
-                type: type as string,
+            console.log("dealId", dealId);
+
+            const result = await this.activityService.getActivitiesForDeal(Number(dealId), {
+                activityType: activityType as string,
                 isDone: isDone === 'true' ? true : isDone === 'false' ? false : undefined,
                 limit: limit ? Number(limit) : undefined
             });
@@ -51,10 +95,10 @@ export class ActivityController {
                 return ResponseHandler.unauthorized(res, 'User not authenticated');
             }
 
-            const { type, isDone, upcoming, limit } = req.query;
+            const { activityType, isDone, upcoming, limit } = req.query;
 
             const activities = await this.activityService.getActivitiesForUser(req.user.id, {
-                type: type as string,
+                activityType: activityType as string,
                 isDone: isDone === 'true' ? true : isDone === 'false' ? false : undefined,
                 upcoming: upcoming === 'true',
                 limit: limit ? Number(limit) : undefined
@@ -170,4 +214,29 @@ export class ActivityController {
             return ResponseHandler.internalError(res, 'Failed to fetch deal history');
         }
     }
+
+
+    async uploadActivityFiles(req: AuthenticatedRequest, res: Response): Promise<void> {
+        try {
+            const { dealId } = req.params;
+            const userId = req?.user?.id;
+            const files = req.processedFiles;
+
+            if (!files || files.length === 0) {
+                return ResponseHandler.validationError(res, 'No files were processed');
+            }
+
+            console.log("log from controller", files);
+
+            await this.activityService.createFileActivity(Number(dealId), Number(userId), files);
+
+            return ResponseHandler.success(res, { dealId, files }, 'Files uploaded and processed successfully');
+        } catch (error: any) {
+            console.error('Error in uploadDealFiles:', error);
+            return ResponseHandler.internalError(res, 'Failed to handle file upload');
+        }
+    }
+
+
+
 }

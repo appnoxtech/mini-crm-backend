@@ -314,6 +314,21 @@ export class OrganizationModel {
             updates.push('phones = ?');
             params.push(JSON.stringify(data.phones));
         }
+        if (data.annualRevenue !== undefined) {
+            updates.push('annualRevenue = ?');
+            params.push(data.annualRevenue);
+        }
+
+        if (data.numberOfEmployees !== undefined) {
+            updates.push('numberOfEmployees = ?');
+            params.push(data.numberOfEmployees);
+        }
+
+        if (data.linkedinProfile !== undefined) {
+            updates.push('linkedinProfile = ?');
+            params.push(data.linkedinProfile);
+        }
+
 
         if (data.address !== undefined) {
             updates.push('address = ?');

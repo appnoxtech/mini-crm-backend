@@ -3,6 +3,7 @@ import { EmailConnectorService } from "./emailConnectorService";
 import { Email, EmailAccount, EmailAttachment } from "../models/types";
 import { RealTimeNotificationService } from "./realTimeNotificationService";
 import { simpleParser } from 'mailparser';
+import { DealActivityModel } from "../../pipelines/models/DealActivity";
 
 export class EmailService {
   private emailModel: EmailModel;
@@ -12,7 +13,8 @@ export class EmailService {
   constructor(
     emailModel: EmailModel,
     connectorService: EmailConnectorService,
-    notificationService?: RealTimeNotificationService
+    notificationService?: RealTimeNotificationService,
+    private activityModel?: DealActivityModel
   ) {
     this.emailModel = emailModel;
     this.connectorService = connectorService;
@@ -62,6 +64,7 @@ export class EmailService {
       body: string;
       htmlBody?: string;
       attachments?: EmailAttachment[];
+      dealId?: number;
     }
   ): Promise<string> {
     // Get the email account
@@ -93,7 +96,7 @@ export class EmailService {
       isIncoming: false,
       sentAt: new Date(),
       contactIds: [],
-      dealIds: [],
+      dealIds: emailData.dealId ? [emailData.dealId.toString()] : [],
       accountEntityIds: [],
       opens: 0,
       clicks: 0,
@@ -108,6 +111,25 @@ export class EmailService {
     if (emailData.attachments) email.attachments = emailData.attachments;
 
     await this.emailModel.createEmail(email);
+
+
+    // Create history entry if dealId is provided
+    if (emailData.dealId && this.activityModel) {
+      await this.activityModel.create({
+        dealId: emailData.dealId,
+        userId: Number(account.userId),
+        activityType: 'email',
+        subject: emailData.subject,
+        label: 'outgoing',
+        priority: 'none',
+        busyFree: 'free',
+        email,
+        organization: emailData.to.join(', '),
+        participants: [],
+        persons: [],
+        isDone: false,
+      });
+    }
 
     // Notify user about email sent
     if (this.notificationService) {

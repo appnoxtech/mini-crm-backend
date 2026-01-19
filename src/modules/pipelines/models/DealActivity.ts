@@ -4,9 +4,10 @@ import { BaseEntity } from '../../../shared/types';
 export interface DealActivity extends BaseEntity {
     dealId: number;
     userId: number;
-    type: string;
+    activityType: string;
 
     subject?: string;
+
     label?: string;
 
     startDate?: string;
@@ -14,11 +15,23 @@ export interface DealActivity extends BaseEntity {
     startTime?: string;
     endTime?: string;
 
-    priority?: 'low' | 'medium' | 'high';
+    priority?: 'low' | 'medium' | 'high' | "none";
     busyFree?: 'busy' | 'free' | 'notSet';
 
     note?: string;
     organization?: string;
+
+    email?: {
+        from: string;
+        to: string[];
+        subject: string;
+        body: string;
+    }
+
+    files?: {
+        url: string;
+
+    }[],
 
     participants?: {
         id: number;
@@ -62,7 +75,7 @@ export class DealActivityModel {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             dealId INTEGER NOT NULL,
             userId INTEGER NOT NULL,
-            type TEXT NOT NULL,
+            activityType TEXT NOT NULL,
             subject TEXT,
             label TEXT,
             startDate TEXT,
@@ -73,6 +86,8 @@ export class DealActivityModel {
             busyFree TEXT CHECK(busyFree IN ('busy','free','notSet')),
             note TEXT,
             organization TEXT,
+            email TEXT,
+            files TEXT,
             participants TEXT,   -- store JSON string
             deal TEXT,           -- store JSON string
             persons TEXT,        -- store JSON string
@@ -90,18 +105,18 @@ export class DealActivityModel {
 
         const stmt = this.db.prepare(`
         INSERT INTO deal_activities (
-            dealId, userId, type, subject, label,
+            dealId, userId, activityType, subject, label,
             startDate, endDate, startTime, endTime,
             priority, busyFree, note, organization,
-            participants, deal, persons, mataData,
+            email, files, participants, deal, persons, mataData,
             isDone, completedAt, createdAt, updatedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
         const result = stmt.run(
             data.dealId,
             data.userId,
-            data.type,
+            data.activityType,
             data.subject || null,
             data.label || null,
             data.startDate || null,
@@ -112,6 +127,8 @@ export class DealActivityModel {
             data.busyFree || null,
             data.note || null,
             data.organization || null,
+            data.email ? JSON.stringify(data.email) : null,
+            data.files ? JSON.stringify(data.files) : null,
             data.participants ? JSON.stringify(data.participants) : null,
             data.deal ? JSON.stringify(data.deal) : null,
             data.persons ? JSON.stringify(data.persons) : null,
@@ -144,16 +161,16 @@ export class DealActivityModel {
     }
 
     findByDealId(dealId: number, filters: {
-        type?: string;
+        activityType?: string;
         isDone?: boolean;
         limit?: number;
     } = {}): DealActivity[] {
         let query = 'SELECT * FROM deal_activities WHERE dealId = ?';
         const params: any[] = [dealId];
 
-        if (filters.type) {
-            query += ' AND type = ?';
-            params.push(filters.type);
+        if (filters.activityType) {
+            query += ' AND activityType = ?';
+            params.push(filters.activityType);
         }
 
         if (filters.isDone !== undefined) {
@@ -181,8 +198,34 @@ export class DealActivityModel {
         }));
     }
 
+    // create note type activity 
+    createNoteActivity(userId: number, dealId: number, note: string): DealActivity {
+        return this.create({
+            userId,
+            dealId,
+            activityType: 'note',
+            note,
+            isDone: false
+        });
+    }
+
+
+    createFileActivity(userId: number, dealId: number, files: any[]): DealActivity {
+        return this.create({
+            userId,
+            dealId,
+            activityType: 'file',
+            files,
+            isDone: false
+        });
+    }
+
+
+
+
+
     findByUserId(userId: number, filters: {
-        type?: string;
+        activityType?: string;
         isDone?: boolean;
         upcoming?: boolean;
         limit?: number;
@@ -190,9 +233,9 @@ export class DealActivityModel {
         let query = 'SELECT * FROM deal_activities WHERE userId = ?';
         const params: any[] = [userId];
 
-        if (filters.type) {
-            query += ' AND type = ?';
-            params.push(filters.type);
+        if (filters.activityType) {
+            query += ' AND activityType = ?';
+            params.push(filters.activityType);
         }
 
         if (filters.isDone !== undefined) {
@@ -294,6 +337,18 @@ export class DealActivityModel {
         const stmt = this.db.prepare('DELETE FROM deal_activities WHERE id = ?');
         const result = stmt.run(id);
         return result.changes > 0;
+    }
+
+    addActivityNote(userId: number, activityId: number, note: string): DealActivity | null {
+        const stmt = this.db.prepare(`
+        UPDATE deal_activities 
+        SET note = ?
+        WHERE id = ?
+    `);
+
+        stmt.run(note, activityId);
+
+        return this.findById(activityId) || null;
     }
 
     getUpcomingActivities(userId: number, days: number = 7): DealActivity[] {

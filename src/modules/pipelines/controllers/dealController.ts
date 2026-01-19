@@ -258,4 +258,41 @@ export class DealController {
             return ResponseHandler.internalError(res, 'Failed to reset deal');
         }
     }
+    async getDealHistory(req: AuthenticatedRequest, res: Response): Promise<void> {
+        try {
+            if (!req.user) {
+                return ResponseHandler.unauthorized(res, 'User not authenticated');
+            }
+
+            const { dealId } = req.params;
+
+            const deal = await this.dealService.getDealHistory(Number(dealId));
+
+            if (!deal) {
+                return ResponseHandler.notFound(res, 'Deal not found');
+            }
+
+            return ResponseHandler.success(res, deal, 'Deal history fetched successfully');
+        } catch (error: any) {
+            console.error('Error fetching deal history:', error);
+            return ResponseHandler.internalError(res, 'Failed to fetch deal history');
+        }
+    }
+
+    async uploadDealFiles(req: Request, res: Response): Promise<void> {
+        try {
+            const { dealId } = req.params;
+            const files = req.processedFiles;
+
+            if (!files || files.length === 0) {
+                return ResponseHandler.validationError(res, 'No files were processed');
+            }
+            console.log("log from controller", files);
+
+            return ResponseHandler.success(res, { dealId, files }, 'Files uploaded and processed successfully');
+        } catch (error: any) {
+            console.error('Error in uploadDealFiles:', error);
+            return ResponseHandler.internalError(res, 'Failed to handle file upload');
+        }
+    }
 }
