@@ -108,6 +108,22 @@ export class OrganizationModel {
         )
     `);
 
+        // Add missing columns if they don't exist (for existing databases)
+        const columnsToAdd = [
+            { name: 'annualRevenue', definition: 'REAL' },
+            { name: 'numberOfEmployees', definition: 'INTEGER' },
+            { name: 'linkedinProfile', definition: 'TEXT' },
+        ];
+
+        for (const column of columnsToAdd) {
+            try {
+                this.db.exec(`ALTER TABLE organizations ADD COLUMN ${column.name} ${column.definition}`);
+                console.log(`Added ${column.name} column to organizations table`);
+            } catch (error) {
+                // Column already exists, ignore error
+            }
+        }
+
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_organizations_name ON organizations(name)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_organizations_deletedAt ON organizations(deletedAt)');
 

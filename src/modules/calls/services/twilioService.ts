@@ -18,11 +18,21 @@ const VoiceGrant = AccessToken.VoiceGrant;
  */
 export class TwilioService {
     private client: Twilio.Twilio | null = null;
-    private config = getTwilioConfig();
+    private _config: ReturnType<typeof getTwilioConfig> | null = null;
     private initialized = false;
 
     constructor() {
         this.initialize();
+    }
+
+    /**
+     * Get config lazily to ensure dotenv is loaded first
+     */
+    private getConfig() {
+        if (!this._config) {
+            this._config = getTwilioConfig();
+        }
+        return this._config;
     }
 
     /**
@@ -38,7 +48,8 @@ export class TwilioService {
         }
 
         try {
-            this.client = Twilio(this.config.accountSid, this.config.authToken);
+            const config = this.getConfig();
+            this.client = Twilio(config.accountSid, config.authToken);
             this.initialized = true;
             console.log('[TwilioService] Initialized successfully');
         } catch (error) {
@@ -69,16 +80,17 @@ export class TwilioService {
         const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
 
         // Create access token
+        const config = this.getConfig();
         const accessToken = new AccessToken(
-            this.config.accountSid,
-            this.config.apiKeySid,
-            this.config.apiKeySecret,
+            config.accountSid,
+            config.apiKeySid,
+            config.apiKeySecret,
             { identity, ttl }
         );
 
         // Create Voice grant
         const voiceGrant = new VoiceGrant({
-            outgoingApplicationSid: this.config.twimlAppSid,
+            outgoingApplicationSid: config.twimlAppSid,
             incomingAllow: true // Allow incoming calls to this identity
         });
 
@@ -108,18 +120,19 @@ export class TwilioService {
 
         const webhookUrls = getWebhookUrls();
 
+        const config = this.getConfig();
         try {
             const call = await this.client.calls.create({
                 url: `${webhookUrls.voice}?callId=${callId}&userId=${userId}&direction=outbound`,
                 to: this.formatPhoneNumber(toNumber),
-                from: this.config.outgoingCallerId,
+                from: config.outgoingCallerId,
                 statusCallback: webhookUrls.voiceStatus,
                 statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
                 statusCallbackMethod: 'POST',
-                record: this.config.recordingEnabled,
+                record: config.recordingEnabled,
                 recordingStatusCallback: webhookUrls.recording,
                 recordingStatusCallbackEvent: ['completed'],
-                recordingChannels: this.config.recordingChannels
+                recordingChannels: config.recordingChannels
             });
 
             console.log(`[TwilioService] Call initiated: ${call.sid}`);
@@ -142,10 +155,11 @@ export class TwilioService {
         const VoiceResponse = Twilio.twiml.VoiceResponse;
         const response = new VoiceResponse();
 
+        const config = this.getConfig();
         // Dial the number
         const dial = response.dial({
-            callerId: this.config.outgoingCallerId,
-            record: this.config.recordingEnabled ? 'record-from-answer-dual' : 'do-not-record',
+            callerId: config.outgoingCallerId,
+            record: config.recordingEnabled ? 'record-from-answer-dual' : 'do-not-record',
             recordingStatusCallback: webhookUrls.recording,
             recordingStatusCallbackEvent: ['completed'],
             action: `${webhookUrls.voiceStatus}?callId=${callId}`,
@@ -171,9 +185,10 @@ export class TwilioService {
             response.say({ voice: 'alice' }, `Incoming call from ${callerInfo.name}`);
         }
 
+        const config = this.getConfig();
         // Connect to the browser client
         const dial = response.dial({
-            record: this.config.recordingEnabled ? 'record-from-answer-dual' : 'do-not-record',
+            record: config.recordingEnabled ? 'record-from-answer-dual' : 'do-not-record',
             recordingStatusCallback: webhookUrls.recording,
             recordingStatusCallbackEvent: ['completed'],
             action: `${webhookUrls.voiceStatus}?callId=${callId}`,
@@ -195,10 +210,11 @@ export class TwilioService {
         const response = new VoiceResponse();
 
         response.say({ voice: 'alice' }, message);
+        const config = this.getConfig();
         response.record({
             maxLength: 120,
             playBeep: true,
-            transcribe: this.config.transcriptionEnabled,
+            transcribe: config.transcriptionEnabled,
             transcribeCallback: webhookUrls.transcription,
             recordingStatusCallback: webhookUrls.recording
         });
@@ -265,9 +281,10 @@ export class TwilioService {
 
         try {
             const recording = await this.client.recordings(recordingSid).fetch();
+            const config = this.getConfig();
 
             // Twilio recordings can be downloaded as .wav or .mp3
-            const url = `https://api.twilio.com/2010-04-01/Accounts/${this.config.accountSid}/Recordings/${recordingSid}.mp3`;
+            const url = `https://api.twilio.com/2010-04-01/Accounts/${config.accountSid}/Recordings/${recordingSid}.mp3`;
 
             return {
                 url,
@@ -307,14 +324,15 @@ export class TwilioService {
         url: string,
         params: Record<string, string>
     ): boolean {
-        if (!this.config.authToken) {
+        const config = this.getConfig();
+        if (!config.authToken) {
             console.warn('[TwilioService] Cannot validate webhook - auth token not configured');
             return false;
         }
 
         try {
             return Twilio.validateRequest(
-                this.config.authToken,
+                config.authToken,
                 signature,
                 url,
                 params
