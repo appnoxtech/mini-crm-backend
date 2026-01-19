@@ -29,11 +29,11 @@ export class PersonController {
                 return ResponseHandler.validationError(res, 'User not authenticated');
             }
 
-            const { q, organisationId, limit = 100, offset = 0, includeDeleted } = req.query as any;
+            const { q, organizationId, limit = 100, offset = 0, includeDeleted } = req.query as any;
 
             const result = await this.personService.getAllPersons({
                 search: q as string,
-                organizationId: organisationId ? Number(organisationId) : undefined,
+                organizationId: organizationId ? Number(organizationId) : undefined,
                 limit: Number(limit),
                 offset: Number(offset),
                 includeDeleted: includeDeleted === 'true'
@@ -72,14 +72,14 @@ export class PersonController {
                 return ResponseHandler.validationError(res, 'User not authenticated');
             }
 
-            const { firstName, lastName, emails, phones, organisationId } = req.body;
+            const { firstName, lastName, emails, phones, organizationId } = req.body;
 
             const person = await this.personService.createPerson({
                 firstName: firstName || "",
                 lastName: lastName || "",
                 emails: emails || [],
                 phones: phones || [],
-                organizationId: organisationId || undefined
+                organizationId: organizationId || undefined
             });
 
             return ResponseHandler.created(res, person, 'Person created successfully');

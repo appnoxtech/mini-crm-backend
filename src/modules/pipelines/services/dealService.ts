@@ -1,6 +1,6 @@
 import { Deal, DealModel } from '../models/Deal';
 import { Product, ProductModel } from '../models/Product';
-import { DealHistoryModel } from '../models/DealHistory';
+import { DealHistory, DealHistoryModel } from '../models/DealHistory';
 import { Label, LabelModel } from '../models/Label';
 import { Pipeline, PipelineModel } from '../models/Pipeline';
 import { PipelineStageModel, searchResult } from '../models/PipelineStage';
@@ -165,7 +165,7 @@ export class DealService {
             probability: data.probability || stage.probability,
             userId,
             assignedTo: data.assignedTo,
-            status: 'open',
+            status: 'OPEN',
             lastActivityAt: new Date().toISOString(),
             isRotten: false,
             source: data.source,
@@ -199,7 +199,7 @@ export class DealService {
         this.historyModel.create({
             dealId: deal.id,
             userId,
-            eventType: 'created',
+            eventType: `created deal ${deal.title}`,
             toStageId: data.stageId,
             description: `Deal created in stage: ${stage.name}`,
             createdAt: new Date().toISOString()
@@ -239,7 +239,9 @@ export class DealService {
         };
     }
 
-
+    async getDealHistory(dealId: number): Promise<DealHistory[]> {
+        return this.historyModel.findByDealId(dealId);
+    }
 
     async getDeals(userId: number, filters: {
         pipelineId?: number;
@@ -364,20 +366,72 @@ export class DealService {
     }
 
     async updateDeal(dealId: number, userId: number, data: Partial<Deal>): Promise<Deal | null> {
-        return this.dealModel.update(dealId, userId, data);
+        const updateData = this.dealModel.update(dealId, userId, data);
+
+        if (updateData) {
+            this.historyModel.create({
+                dealId: updateData.id,
+                userId,
+                toValue: "Updated",
+                eventType: `updated deal ${updateData.title}`,
+                toStageId: updateData.stageId,
+                description: `Deal updated in stage: ${updateData?.title}`,
+                createdAt: new Date().toISOString()
+            });
+        }
+        return updateData;
     }
 
     async makeDealAsWon(dealId: number): Promise<Deal | null> {
-        return this.dealModel.makeDealAsWon(dealId);
+        const data = this.dealModel.makeDealAsWon(dealId);
+
+        if (data) {
+            this.historyModel.create({
+                dealId: data.id,
+                userId: data.userId,
+                toValue: "Won",
+                eventType: `won deal ${data.title}`,
+                toStageId: data.stageId,
+                description: `Deal won in stage: ${data?.title}`,
+                createdAt: new Date().toISOString()
+            });
+        }
+        return data;
     }
 
     async makeDealAsLost(dealId: number, info: { reason?: string, comment?: string }): Promise<Deal | null> {
         console.log("log from service", info);
-        return this.dealModel.makeDealAsLost(dealId, info);
+        const data = this.dealModel.makeDealAsLost(dealId, info);
+
+        if (data) {
+            this.historyModel.create({
+                dealId: data.id,
+                userId: data.userId,
+                toValue: "Lost",
+                eventType: `lost deal ${data.title}`,
+                toStageId: data.stageId,
+                description: `Deal lost in stage: ${data?.title}`,
+                createdAt: new Date().toISOString()
+            });
+        }
+        return data;
     }
 
     async resetDeal(dealId: number): Promise<Deal | null> {
-        return this.dealModel.resetDeal(dealId);
+        const data = this.dealModel.resetDeal(dealId);
+
+        if (data) {
+            this.historyModel.create({
+                dealId: data.id,
+                userId: data.userId,
+                toValue: "Reopened",
+                eventType: `reset deal ${data.title}`,
+                toStageId: data.stageId,
+                description: `Deal reset in stage: ${data?.title}`,
+                createdAt: new Date().toISOString()
+            });
+        }
+        return data;
     }
 
     async moveDealToStage(dealId: number, userId: number, toStageId: number, note?: string): Promise<any> {
@@ -416,6 +470,7 @@ export class DealService {
         this.historyModel.create({
             dealId,
             userId,
+            toValue: "Updated Stage",
             eventType: 'stage_change',
             fromStageId,
             toStageId,
@@ -435,14 +490,14 @@ export class DealService {
         };
     }
 
-    async closeDeal(dealId: number, userId: number, status: 'won' | 'lost', lostReason?: string): Promise<Deal | null> {
+    async closeDeal(dealId: number, userId: number, status: 'WON' | 'LOST', lostReason?: string): Promise<Deal | null> {
         const deal = this.dealModel.findById(dealId);
 
         if (!deal || deal.userId !== userId) {
             throw new Error('Deal not found');
         }
 
-        if (status === 'lost' && !lostReason) {
+        if (status === 'LOST' && !lostReason) {
             throw new Error('Lost reason is required when marking deal as lost');
         }
 
@@ -451,15 +506,16 @@ export class DealService {
         const updatedDeal = this.dealModel.update(dealId, userId, {
             status,
             actualCloseDate: now,
-            lostReason: status === 'lost' ? lostReason : undefined
+            lostReason: status === 'LOST' ? lostReason : undefined
         });
 
         // Create history entry
         this.historyModel.create({
             dealId: dealId,
             userId,
-            eventType: status === 'won' ? 'deal_won' : 'deal_lost',
-            description: status === 'won'
+            toValue: status === 'WON' ? 'Won' : 'Lost',
+            eventType: status === 'WON' ? 'deal_won' : 'deal_lost',
+            description: status === 'WON'
                 ? 'Deal marked as won'
                 : `Deal marked as lost: ${lostReason}`,
             createdAt: now
@@ -469,7 +525,20 @@ export class DealService {
     }
 
     async deleteDeal(dealId: number, userId: number): Promise<boolean> {
-        return this.dealModel.delete(dealId, userId);
+        const data = this.dealModel.delete(dealId, userId);
+
+        if (data) {
+            this.historyModel.create({
+                dealId: dealId,
+                userId,
+                toValue: "Deleted",
+                eventType: 'deal_deleted',
+                description: 'Deal deleted',
+                createdAt: new Date().toISOString()
+            });
+        }
+
+        return data;
     }
 
     async getRottenDeals(userId: number, pipelineId?: number): Promise<any[]> {

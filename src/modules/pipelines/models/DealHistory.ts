@@ -11,6 +11,7 @@ export interface DealHistory {
   toStageId?: number;
   stageDuration?: number;
   description?: string;
+
   metadata?: string;
   createdAt: string;
 }

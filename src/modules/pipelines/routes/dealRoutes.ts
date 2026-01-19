@@ -1,6 +1,7 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { DealController } from '../controllers/dealController';
 import { authMiddleware } from '../../../shared/middleware/auth';
+import { fileUploadMiddleware } from '../../../shared/middleware/fileUpload';
 
 export function createDealRoutes(controller: DealController): Router {
     const router = Router();
@@ -22,7 +23,11 @@ export function createDealRoutes(controller: DealController): Router {
     router.delete('/delete/:dealId', (req, res) => controller.deleteDeal(req, res));
     router.patch('/make-won/:dealId', (req, res) => controller.makeDealAsWon(req, res));
     router.put('/make-lost/:dealId', (req, res) => controller.makeDealAsLost(req, res));
-    router.patch('/reset/:dealId', (req, res) => controller.resetDeal(req, res));
+    router.patch('/re-open/:dealId', (req, res) => controller.resetDeal(req, res));
+    router.get("/deal-history/:dealId", (req, res) => controller.getDealHistory(req, res));
+
+    // File upload route
+    router.post('/upload/:dealId', ...fileUploadMiddleware, (req: Request, res: Response) => controller.uploadDealFiles(req, res));
 
     return router;
 }
