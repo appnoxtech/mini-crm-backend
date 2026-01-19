@@ -17,7 +17,7 @@ export class DealActivityService {
         }
 
         // Basic validation - minimum required fields for the record
-        if (!data.type) {
+        if (!data.activityType) {
             throw new Error('Activity type is required');
         }
 
@@ -25,21 +25,42 @@ export class DealActivityService {
             ...data,
             dealId,
             userId,
-            type: data.type,
+            activityType: data.activityType,
             isDone: data.isDone || false
         } as any);
     }
 
-    async getActivitiesForDeal(dealId: number, userId: number, filters: {
-        type?: string;
+    async getAllActivitiesOfDeal(dealId: number, filters: {
+        activityType?: string;
+        isDone?: boolean;
+        limit?: number;
+    } = {}): Promise<{ dealHistory: DealHistory; activities: DealActivity[]; count: number }> {
+        // Verify deal exists
+
+        const dealHistory = this.dealHistoryModel.findById(dealId);
+
+        if (!dealHistory) {
+            throw new Error('Deal not found');
+        }
+
+        const activities = this.activityModel.findByDealId(dealId, filters);
+
+        return {
+            dealHistory,
+            activities,
+            count: activities.length
+        };
+    }
+
+    async createNoteActivity(userId: number, dealId: number, note: string): Promise<DealActivity> {
+        return this.activityModel.createNoteActivity(userId, dealId, note);
+    }
+
+    async getActivitiesForDeal(dealId: number, filters: {
+        activityType?: string;
         isDone?: boolean;
         limit?: number;
     } = {}): Promise<{ activities: DealActivity[]; count: number }> {
-        // Verify deal exists and user has access
-        const deal = this.dealModel.findById(dealId);
-        if (!deal || deal.userId !== userId) {
-            throw new Error('Deal not found');
-        }
 
         const activities = this.activityModel.findByDealId(dealId, filters);
 
@@ -50,7 +71,7 @@ export class DealActivityService {
     }
 
     async getActivitiesForUser(userId: number, filters: {
-        type?: string;
+        activityType?: string;
         isDone?: boolean;
         upcoming?: boolean;
         limit?: number;
@@ -96,4 +117,19 @@ export class DealActivityService {
     async getUpcomingActivities(userId: number, days: number = 7): Promise<DealActivity[]> {
         return this.activityModel.getUpcomingActivities(userId, days);
     }
+
+    async createFileActivity(dealId: number, userId: number, files: any[]): Promise<DealActivity> {
+        // Verify deal exists and user has access
+        const deal = this.dealModel.findById(dealId);
+        if (!deal || deal.userId !== userId) {
+            throw new Error('Deal not found or access denied');
+        }
+
+        if (!files || files.length === 0) {
+            throw new Error('Files are required for file activity');
+        }
+
+        return this.activityModel.createFileActivity(userId, dealId, files);
+    }
+
 }

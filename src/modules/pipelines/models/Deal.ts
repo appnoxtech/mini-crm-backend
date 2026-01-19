@@ -19,7 +19,7 @@ export interface Deal extends BaseEntity {
     probability: number;
     userId: number;
     assignedTo?: number;
-    status: 'open' | 'won' | 'lost' | 'deleted';
+    status: 'OPEN' | 'WON' | 'LOST' | 'DELETED';
     lostReason?: string;
     lastActivityAt?: string;
     isRotten: boolean;

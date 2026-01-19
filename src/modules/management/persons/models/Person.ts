@@ -62,33 +62,51 @@ export class PersonModel {
     initialize(): void {
         // Create table with correct column name and foreign key
         this.db.exec(`
-          CREATE TABLE IF NOT EXISTS persons (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            firstName TEXT NOT NULL,
-            lastName TEXT,
-            emails TEXT,
-            phones TEXT,
-            organizationId INTEGER,
-            createdAt TEXT NOT NULL,
-            updatedAt TEXT NOT NULL,
-            deletedAt TEXT,
-            FOREIGN KEY (organizationId) REFERENCES organizations(id) ON DELETE SET NULL
-          )
-        `);
+      CREATE TABLE IF NOT EXISTS persons (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        firstName TEXT NOT NULL,
+        lastName TEXT,
+        emails TEXT,
+        phones TEXT,
+        organizationId INTEGER,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL,
+        deletedAt TEXT,
+        FOREIGN KEY (organizationId) REFERENCES organizations(id) ON DELETE SET NULL
+      )
+    `);
 
-        // Migration: If the table was created with organisationId (with 's'), 
+        // Create lookup tables for emails and phones
+        this.db.exec(`
+      CREATE TABLE IF NOT EXISTS person_emails (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        personId INTEGER NOT NULL,
+        email TEXT NOT NULL,
+        FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE
+      )
+    `);
+
+        this.db.exec(`
+      CREATE TABLE IF NOT EXISTS person_phones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        personId INTEGER NOT NULL,
+        phone TEXT NOT NULL,
+        FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE
+      )
+    `);
+
+        // Migration: If the table was created with organizationId (with 's'), 
         // we need to add organizationId (with 'z') if it doesn't exist.
         // Also, the old foreign key might be causing issues.
 
         const tableInfo = this.db.prepare("PRAGMA table_info(persons)").all() as any[];
         const hasZ = tableInfo.some(col => col.name === 'organizationId');
-        const hasS = tableInfo.some(col => col.name === 'organisationId');
 
-        if (!hasZ && hasS) {
+        if (!hasZ) {
             try {
                 this.db.exec('ALTER TABLE persons ADD COLUMN organizationId INTEGER');
-                this.db.exec('UPDATE persons SET organizationId = organisationId');
-                console.log('Migrated organisationId to organizationId in persons table');
+                this.db.exec('UPDATE persons SET organizationId = organizationId');
+                console.log('Migrated organizationId to organizationId in persons table');
             } catch (error) {
                 console.error('Error during persons table migration:', error);
             }
@@ -198,34 +216,36 @@ export class PersonModel {
     }
 
     create(data: CreatePersonData): Person {
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare(`
-      INSERT INTO persons (firstName, lastName, emails, phones, organizationId, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
+        return this.db.transaction(() => {
+            const now = new Date().toISOString();
+            const stmt = this.db.prepare(`
+                INSERT INTO persons (firstName, lastName, emails, phones, organizationId, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            `);
 
-        const result = stmt.run(
-            data.firstName,
-            data.lastName,
-            JSON.stringify(data.emails),
-            JSON.stringify(data.phones || []),
-            data.organizationId || null,
-            now,
-            now
-        );
+            const result = stmt.run(
+                data.firstName,
+                data.lastName || null,
+                JSON.stringify(data.emails),
+                JSON.stringify(data.phones || []),
+                data.organizationId || null,
+                now,
+                now
+            );
 
-        const personId = result.lastInsertRowid as number;
+            const personId = result.lastInsertRowid as number;
 
-        // Sync lookup tables
-        this.syncEmailLookup(personId, data.emails);
-        if (data.phones && data.phones.length > 0) {
-            this.syncPhoneLookup(personId, data.phones);
-        }
+            // Sync lookup tables
+            this.syncEmailLookup(personId, data.emails);
+            if (data.phones && data.phones.length > 0) {
+                this.syncPhoneLookup(personId, data.phones);
+            }
 
-        const person = this.findById(personId);
-        if (!person) throw new Error('Failed to create person');
+            const person = this.findById(personId);
+            if (!person) throw new Error('Failed to create person');
 
-        return person;
+            return person;
+        })();
     }
 
     searchByPersonName(search: string): Person[] {
@@ -320,90 +340,95 @@ export class PersonModel {
     }
 
     update(id: number, data: UpdatePersonData): Person | null {
-        const existing = this.findById(id);
-        if (!existing) return null;
+        return this.db.transaction(() => {
+            const existing = this.findById(id);
+            if (!existing) return null;
 
-        const now = new Date().toISOString();
-        const updates: string[] = ['updatedAt = ?'];
-        const params: any[] = [now];
+            const now = new Date().toISOString();
+            const updates: string[] = ['updatedAt = ?'];
+            const params: any[] = [now];
 
-        if (data.firstName !== undefined) {
-            updates.push('firstName = ?');
-            params.push(data.firstName);
-        }
-        if (data.lastName !== undefined) {
-            updates.push('lastName = ?');
-            params.push(data.lastName);
-        }
-        if (data.emails !== undefined) {
-            updates.push('emails = ?');
-            params.push(JSON.stringify(data.emails));
-        }
-        if (data.phones !== undefined) {
-            updates.push('phones = ?');
-            params.push(JSON.stringify(data.phones));
-        }
-        if (data.organizationId !== undefined) {
-            updates.push('organizationId = ?');
-            params.push(data.organizationId);
-        }
+            if (data.firstName !== undefined) {
+                updates.push('firstName = ?');
+                params.push(data.firstName);
+            }
+            if (data.lastName !== undefined) {
+                updates.push('lastName = ?');
+                params.push(data.lastName);
+            }
+            if (data.emails !== undefined) {
+                updates.push('emails = ?');
+                params.push(JSON.stringify(data.emails));
+            }
+            if (data.phones !== undefined) {
+                updates.push('phones = ?');
+                params.push(JSON.stringify(data.phones));
+            }
+            if (data.organizationId !== undefined) {
+                updates.push('organizationId = ?');
+                params.push(data.organizationId);
+            }
 
-        params.push(id);
+            params.push(id);
 
-        // update the comming data with the existing data
-        const stmt = this.db.prepare(`
-      UPDATE persons SET ${updates.join(', ')} WHERE id = ?
-    `);
+            const stmt = this.db.prepare(`
+                UPDATE persons SET ${updates.join(', ')} WHERE id = ?
+            `);
 
-        stmt.run(...params);
+            stmt.run(...params);
 
-        // Sync lookup tables if emails or phones were updated
-        if (data.emails !== undefined) {
-            this.syncEmailLookup(id, data.emails);
-        }
-        if (data.phones !== undefined) {
-            this.syncPhoneLookup(id, data.phones);
-        }
+            // Sync lookup tables if emails or phones were updated
+            if (data.emails !== undefined) {
+                this.syncEmailLookup(id, data.emails);
+            }
+            if (data.phones !== undefined) {
+                this.syncPhoneLookup(id, data.phones);
+            }
 
-        return this.findById(id) || null;
+            return this.findById(id) || null;
+        })();
     }
 
     softDelete(id: number): boolean {
-        const existing = this.findById(id);
-        if (!existing) return false;
+        return this.db.transaction(() => {
+            const existing = this.findById(id);
+            if (!existing) return false;
 
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare(`
-      UPDATE persons SET deletedAt = ?, updatedAt = ? WHERE id = ?
-    `);
+            const now = new Date().toISOString();
+            const stmt = this.db.prepare(`
+                UPDATE persons SET deletedAt = ?, updatedAt = ? WHERE id = ?
+            `);
 
-        const result = stmt.run(now, now, id);
+            const result = stmt.run(now, now, id);
 
-        // Clear lookup tables to free up emails/phones for reuse
-        this.db.prepare('DELETE FROM person_emails WHERE personId = ?').run(id);
-        this.db.prepare('DELETE FROM person_phones WHERE personId = ?').run(id);
+            // Clear lookup tables to free up emails/phones for reuse
+            this.db.prepare('DELETE FROM person_emails WHERE personId = ?').run(id);
+            this.db.prepare('DELETE FROM person_phones WHERE personId = ?').run(id);
 
-        return result.changes > 0;
+            return result.changes > 0;
+        })();
     }
 
     restore(id: number): Person | null {
-        const existing = this.findById(id, true);
-        if (!existing || !existing.deletedAt) return null;
+        return this.db.transaction(() => {
+            const existing = this.findById(id, true);
+            if (!existing || !existing.deletedAt) return null;
 
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare(`
-      UPDATE persons SET deletedAt = NULL, updatedAt = ? WHERE id = ?
-    `);
+            const now = new Date().toISOString();
+            const stmt = this.db.prepare(`
+                UPDATE persons SET deletedAt = NULL, updatedAt = ? WHERE id = ?
+            `);
 
-        stmt.run(now, id);
+            stmt.run(now, id);
 
-        // Re-sync lookup tables with the person's emails/phones
-        this.syncEmailLookup(id, existing.emails);
-        if (existing.phones && existing.phones.length > 0) {
-            this.syncPhoneLookup(id, existing.phones);
-        }
+            // Re-sync lookup tables with the person's emails/phones
+            this.syncEmailLookup(id, existing.emails);
+            if (existing.phones && existing.phones.length > 0) {
+                this.syncPhoneLookup(id, existing.phones);
+            }
 
-        return this.findById(id) || null;
+            return this.findById(id) || null;
+        })();
     }
 
     hardDelete(id: number): boolean {
