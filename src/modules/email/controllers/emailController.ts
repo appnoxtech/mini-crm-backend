@@ -1,4 +1,4 @@
-import e, { Request, Response } from "express";
+import type { Request, Response } from "express";
 import { EmailService } from "../services/emailService";
 import { OAuthService } from "../services/oauthService";
 import { EmailQueueService } from "../services/emailQueueService";
@@ -8,6 +8,7 @@ import { EmailAccount } from "../models/types";
 import { EmailModel } from "../models/emailModel";
 import { summarizeThreadWithVLLM } from "../../../shared/utils/summarizer";
 import { ResponseHandler } from "../../../shared/responses/responses";
+import { DealHistoryModel, DealHistory } from "../../pipelines/models/DealHistory";
 
 /**
  * Get SMTP/IMAP server defaults based on provider name
@@ -125,19 +126,17 @@ export class EmailController {
     }
   }
 
-
-
   async sendEmail(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       if (!req.user) {
         return ResponseHandler.unauthorized(res, "User not authenticated");
       }
 
-      const { to, subject, body, htmlBody, attachments } =
+      const { to, subject, body, htmlBody, attachments, dealId } =
         (req.body as any) || {};
 
       if (!to || !subject || !body) {
-        return ResponseHandler.notFound(res, "Missing required fields: to, subject, body");
+        return ResponseHandler.error(res, "Missing required fields: to, subject, body", 400);
       }
 
       // Get user's email account from database
@@ -145,7 +144,6 @@ export class EmailController {
         req.user.id.toString()
       );
       if (!emailAccount) {
-
         return ResponseHandler.notFound(res, "No email account configured OR Please connect your email account first");
       }
 
@@ -157,14 +155,12 @@ export class EmailController {
       ) {
         try {
           await this.validateAndRefreshTokens(emailAccount);
-        }
-        catch (error: any) {
+        } catch (error: any) {
           console.error("Token validation failed:", error);
-
-
           return ResponseHandler.error(
             res,
             `Your ${emailAccount.provider} account needs to be re-connected. Please go to email settings and reconnect your account.`,
+            401
           );
         }
       }
@@ -175,10 +171,10 @@ export class EmailController {
         body,
         htmlBody,
         attachments,
+        dealId: dealId ? Number(dealId) : undefined,
       });
 
       return ResponseHandler.success(res, "Email sent successfully", messageId);
-
     } catch (error: any) {
       console.error("Email send failed:", error);
 

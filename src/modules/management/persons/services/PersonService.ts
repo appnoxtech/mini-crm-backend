@@ -1,5 +1,5 @@
 import { PersonModel, CreatePersonData, UpdatePersonData, Person } from '../models/Person';
-import { OrganizationModel } from '../../organisations/models/Organization';
+import { OrganizationModel, Organization } from '../../organisations/models/Organization';
 
 export class PersonService {
     constructor(
@@ -54,8 +54,21 @@ export class PersonService {
     }
 
 
-    async getPersonById(id: number, includeDeleted = false): Promise<Person | undefined> {
-        return this.personModel.findById(id, includeDeleted);
+    async getPersonById(id: number, includeDeleted = false): Promise<(Person & { organization?: Organization | null }) | null> {
+        const person = this.personModel.findById(id, includeDeleted);
+
+        if (!person) {
+            return null;
+        }
+
+        const organization = person.organizationId && this.organizationModel
+            ? this.organizationModel.findById(person.organizationId)
+            : null;
+
+        return {
+            ...person,
+            organization: organization || null
+        };
     }
 
     async getAllPersons(options: {
