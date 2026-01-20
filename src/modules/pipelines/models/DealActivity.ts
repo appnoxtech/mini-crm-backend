@@ -98,6 +98,38 @@ export class DealActivityModel {
             updatedAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
     `);
+
+        // Add missing columns if they don't exist (for existing databases)
+        const columnsToAdd = [
+            { name: 'activityType', definition: 'TEXT' },
+            { name: 'subject', definition: 'TEXT' },
+            { name: 'label', definition: 'TEXT' },
+            { name: 'startDate', definition: 'TEXT' },
+            { name: 'endDate', definition: 'TEXT' },
+            { name: 'startTime', definition: 'TEXT' },
+            { name: 'endTime', definition: 'TEXT' },
+            { name: 'priority', definition: 'TEXT' },
+            { name: 'busyFree', definition: 'TEXT' },
+            { name: 'note', definition: 'TEXT' },
+            { name: 'organization', definition: 'TEXT' },
+            { name: 'email', definition: 'TEXT' },
+            { name: 'files', definition: 'TEXT' },
+            { name: 'participants', definition: 'TEXT' },
+            { name: 'deal', definition: 'TEXT' },
+            { name: 'persons', definition: 'TEXT' },
+            { name: 'mataData', definition: 'TEXT' },
+            { name: 'isDone', definition: 'INTEGER DEFAULT 0' },
+            { name: 'completedAt', definition: 'TEXT' },
+        ];
+
+        for (const column of columnsToAdd) {
+            try {
+                this.db.exec(`ALTER TABLE deal_activities ADD COLUMN ${column.name} ${column.definition}`);
+                console.log(`Added ${column.name} column to deal_activities table`);
+            } catch (error) {
+                // Column already exists, ignore error
+            }
+        }
     }
 
     create(data: Omit<DealActivity, 'id' | 'createdAt' | 'updatedAt'>): DealActivity {
