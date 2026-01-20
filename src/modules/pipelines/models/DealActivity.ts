@@ -82,7 +82,7 @@ export class DealActivityModel {
             endDate TEXT,
             startTime TEXT,
             endTime TEXT,
-            priority TEXT CHECK(priority IN ('low','medium','high')),
+            priority TEXT CHECK(priority IN ('low','medium','high','none')),
             busyFree TEXT CHECK(busyFree IN ('busy','free','notSet')),
             note TEXT,
             organization TEXT,

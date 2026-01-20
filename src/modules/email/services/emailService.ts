@@ -9,16 +9,18 @@ export class EmailService {
   private emailModel: EmailModel;
   private connectorService: EmailConnectorService;
   private notificationService?: RealTimeNotificationService;
+  private activityModel?: DealActivityModel;
 
   constructor(
     emailModel: EmailModel,
     connectorService: EmailConnectorService,
     notificationService?: RealTimeNotificationService,
-    private activityModel?: DealActivityModel
+    activityModel?: DealActivityModel
   ) {
     this.emailModel = emailModel;
     this.connectorService = connectorService;
     this.notificationService = notificationService;
+    this.activityModel = activityModel;
   }
 
   public getEmailModel(): EmailModel {
@@ -55,7 +57,7 @@ export class EmailService {
   }
 
   async sendEmail(
-    accountId: string,
+    accountOrId: string | EmailAccount,
     emailData: {
       to: string[];
       cc?: string[];
@@ -67,8 +69,16 @@ export class EmailService {
       dealId?: number;
     }
   ): Promise<string> {
-    // Get the email account
-    const account = await this.emailModel.getEmailAccountById(accountId);
+    let account: EmailAccount | null;
+
+    if (typeof accountOrId === 'string') {
+      // Get the email account from DB
+      account = await this.emailModel.getEmailAccountById(accountOrId);
+    } else {
+      // Use the provided account object
+      account = accountOrId;
+    }
+
     if (!account) {
       throw new Error("Email account not found");
     }
@@ -115,33 +125,42 @@ export class EmailService {
 
     // Create history entry if dealId is provided
     if (emailData.dealId && this.activityModel) {
-      await this.activityModel.create({
-        dealId: emailData.dealId,
-        userId: Number(account.userId),
-        activityType: 'email',
-        subject: emailData.subject,
-        label: 'outgoing',
-        priority: 'none',
-        busyFree: 'free',
-        email,
-        organization: emailData.to.join(', '),
-        participants: [],
-        persons: [],
-        isDone: false,
-      });
+      try {
+        await this.activityModel.create({
+          dealId: emailData.dealId,
+          userId: Number(account.userId),
+          activityType: 'mail',
+          subject: emailData.subject,
+          label: 'outgoing',
+          priority: 'none',
+          busyFree: 'free',
+          email: {
+            from: email.from,
+            to: email.to,
+            subject: email.subject,
+            body: email.body
+          },
+          organization: emailData.to.join(', '),
+          participants: [],
+          persons: [],
+          isDone: true,
+          completedAt: new Date().toISOString(),
+        });
+        console.log(`Activity record created for deal ${emailData.dealId}`);
+      } catch (activityError: any) {
+        console.error('Failed to create email activity record:', activityError.message);
+        // We don't throw here to avoid failing the whole send process if only logging fails
+      }
     }
 
     // Notify user about email sent
     if (this.notificationService) {
-      const account = await this.emailModel.getEmailAccountById(accountId);
-      if (account) {
-        this.notificationService.notifyEmailSent(
-          account.userId,
-          messageId,
-          emailData.to,
-          emailData.subject
-        );
-      }
+      this.notificationService.notifyEmailSent(
+        account.userId,
+        messageId,
+        emailData.to,
+        emailData.subject
+      );
     }
 
     return messageId;
@@ -256,8 +275,37 @@ export class EmailService {
     if (parsed.bcc) email.bcc = parsed.bcc;
     if (parsed.htmlBody) email.htmlBody = parsed.htmlBody;
     if (parsed.attachments) email.attachments = parsed.attachments;
+    if (parsed.labelIds) email.labelIds = parsed.labelIds;
 
     await this.emailModel.createEmail(email);
+
+    // Create activity records for matched deals
+    if (dealIds.length > 0 && this.activityModel) {
+      for (const dealId of dealIds) {
+        try {
+          await this.activityModel.create({
+            dealId: Number(dealId),
+            userId: Number(account.userId),
+            activityType: 'mail',
+            subject: email.subject,
+            label: isIncoming ? 'incoming' : 'outgoing',
+            priority: 'none',
+            busyFree: 'free',
+            email: {
+              from: email.from,
+              to: email.to,
+              subject: email.subject,
+              body: email.body
+            },
+            organization: isIncoming ? email.from : email.to.join(', '),
+            isDone: true,
+            completedAt: (isIncoming ? email.receivedAt : email.sentAt)?.toISOString() || new Date().toISOString()
+          });
+        } catch (error) {
+          console.error(`Failed to create activity for deal ${dealId}:`, error);
+        }
+      }
+    }
 
     // Notify user about new incoming email
     if (this.notificationService) {
@@ -389,6 +437,15 @@ export class EmailService {
     }
     if (rawEmail.folder === 'INBOX') {
       return true;
+    }
+    if (rawEmail.folder === 'DRAFT') {
+      return false; // Drafts are outgoing
+    }
+    if (rawEmail.folder === 'SPAM') {
+      return true; // Spam is incoming
+    }
+    if (rawEmail.folder === 'TRASH') {
+      return true; // Trash is incoming
     }
 
     // For IMAP, check if the sender matches the account email
@@ -553,8 +610,9 @@ export class EmailService {
       sentAt: date,
       receivedAt: date,
       isRead: isRead,
-      // Store folder for direction detection (similar to Gmail's labelIds)
+      // Store folder for direction detection and labeling
       folder: message.folder,
+      labelIds: message.folder ? [message.folder] : [],
     } as any;
   }
 
@@ -618,6 +676,10 @@ export class EmailService {
     return this.emailModel.getEmailAccountByEmail(email);
   }
 
+  async getEmailAccountById(accountId: string): Promise<EmailAccount | null> {
+    return this.emailModel.getEmailAccountById(accountId);
+  }
+
   async createEmailAccount(account: EmailAccount): Promise<EmailAccount> {
     return this.emailModel.createEmailAccount(account);
   }
@@ -642,6 +704,7 @@ export class EmailService {
       folder?: string;
       search?: string;
       unreadOnly?: boolean;
+      accountId?: string;
     } = {}
   ): Promise<{ emails: Email[]; total: number }> {
     return this.emailModel.getEmailsForUser(userId, options);
