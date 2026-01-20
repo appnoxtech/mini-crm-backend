@@ -1,0 +1,559 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.EmailService = void 0;
+const mailparser_1 = require("mailparser");
+class EmailService {
+    emailModel;
+    connectorService;
+    notificationService;
+    activityModel;
+    constructor(emailModel, connectorService, notificationService, activityModel) {
+        this.emailModel = emailModel;
+        this.connectorService = connectorService;
+        this.notificationService = notificationService;
+        this.activityModel = activityModel;
+    }
+    getEmailModel() {
+        if (!this.emailModel) {
+            throw new Error("EmailModel is not initialized!");
+        }
+        return this.emailModel;
+    }
+    /**
+     * Test SMTP connection with provided configuration
+     */
+    async testSmtpConnection(smtpConfig) {
+        return this.connectorService.testSmtpConnection(smtpConfig);
+    }
+    /**
+     * Test IMAP connection with provided configuration
+     */
+    async testImapConnection(imapConfig) {
+        return this.connectorService.testImapConnection(imapConfig);
+    }
+    async sendEmail(accountOrId, emailData) {
+        let account;
+        if (typeof accountOrId === 'string') {
+            // Get the email account from DB
+            account = await this.emailModel.getEmailAccountById(accountOrId);
+        }
+        else {
+            // Use the provided account object
+            account = accountOrId;
+        }
+        if (!account) {
+            throw new Error("Email account not found");
+        }
+        // Check if account has OAuth tokens (Gmail/Outlook) or SMTP config
+        if (!account.accessToken && !account.smtpConfig) {
+            throw new Error("Email account not configured. Please connect your email account via OAuth or SMTP.");
+        }
+        // Send email via connector service
+        const messageId = await this.connectorService.sendEmail(account, emailData);
+        // Create email record in database
+        const email = {
+            id: messageId,
+            messageId,
+            accountId: account.id,
+            from: account.email,
+            to: emailData.to,
+            subject: emailData.subject,
+            body: emailData.body,
+            isRead: true,
+            isIncoming: false,
+            sentAt: new Date(),
+            contactIds: [],
+            dealIds: emailData.dealId ? [emailData.dealId.toString()] : [],
+            accountEntityIds: [],
+            opens: 0,
+            clicks: 0,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+        };
+        // Handle optional properties
+        if (emailData.cc)
+            email.cc = emailData.cc;
+        if (emailData.bcc)
+            email.bcc = emailData.bcc;
+        if (emailData.htmlBody)
+            email.htmlBody = emailData.htmlBody;
+        if (emailData.attachments)
+            email.attachments = emailData.attachments;
+        await this.emailModel.createEmail(email);
+        // Create history entry if dealId is provided
+        if (emailData.dealId && this.activityModel) {
+            try {
+                await this.activityModel.create({
+                    dealId: emailData.dealId,
+                    userId: Number(account.userId),
+                    activityType: 'mail',
+                    subject: emailData.subject,
+                    label: 'outgoing',
+                    priority: 'none',
+                    busyFree: 'free',
+                    email: {
+                        from: email.from,
+                        to: email.to,
+                        subject: email.subject,
+                        body: email.body
+                    },
+                    organization: emailData.to.join(', '),
+                    participants: [],
+                    persons: [],
+                    isDone: true,
+                    completedAt: new Date().toISOString(),
+                });
+                console.log(`Activity record created for deal ${emailData.dealId}`);
+            }
+            catch (activityError) {
+                console.error('Failed to create email activity record:', activityError.message);
+                // We don't throw here to avoid failing the whole send process if only logging fails
+            }
+        }
+        // Notify user about email sent
+        if (this.notificationService) {
+            this.notificationService.notifyEmailSent(account.userId, messageId, emailData.to, emailData.subject);
+        }
+        return messageId;
+    }
+    async processIncomingEmails(account) {
+        const provider = account.provider;
+        let rawEmails = [];
+        let processed = 0;
+        let errors = 0;
+        try {
+            console.log(`Processing incoming emails for ${provider} account: ${account.email}`);
+            if (provider === "gmail") {
+                // Fetch up to 100 emails for better sync coverage
+                rawEmails = await this.connectorService.fetchGmailEmails(account, account.lastSyncAt, 100 // Increased from default 50 for better sync coverage
+                );
+            }
+            else if (provider === "outlook") {
+                rawEmails = await this.connectorService.fetchOutlookEmails(account, account.lastSyncAt);
+            }
+            else if (provider === "imap" || provider === "custom") {
+                rawEmails = await this.connectorService.fetchIMAPEmails(account, account.lastSyncAt);
+            }
+            console.log(`Found ${rawEmails.length} emails to process`);
+            for (const rawEmail of rawEmails) {
+                try {
+                    await this.processSingleEmail(account, rawEmail);
+                    processed++;
+                }
+                catch (error) {
+                    console.error("Error processing individual email:", error);
+                    errors++;
+                    // Continue processing other emails
+                }
+            }
+            // Update last sync time
+            await this.emailModel.updateEmailAccount(account.id, {
+                lastSyncAt: new Date(),
+            });
+            console.log(`Email processing completed. Processed: ${processed}, Errors: ${errors}`);
+            return { processed, errors };
+        }
+        catch (error) {
+            console.error(`Error processing emails for account ${account.id}:`, error);
+            throw new Error(`Email processing failed: ${error.message}`);
+        }
+    }
+    async processSingleEmail(account, rawEmail) {
+        const parsed = await this.parseRawEmail(rawEmail, account.provider);
+        // Check if email already exists
+        const existing = await this.emailModel.findEmailByMessageId(parsed.messageId);
+        if (existing)
+            return;
+        // Match with CRM entities
+        const { contactIds, dealIds, accountEntityIds } = await this.matchEmailWithCRMEntities(parsed);
+        // Determine if email is incoming or outgoing
+        const isIncoming = this.determineEmailDirection(parsed, account, rawEmail);
+        const email = {
+            id: parsed.messageId,
+            messageId: parsed.messageId,
+            accountId: account.id,
+            from: parsed.from,
+            to: parsed.to || [],
+            subject: parsed.subject || "",
+            body: parsed.body || "",
+            isRead: parsed.isRead ?? true,
+            isIncoming: isIncoming,
+            sentAt: parsed.sentAt ? new Date(parsed.sentAt) : new Date(),
+            receivedAt: parsed.receivedAt ? new Date(parsed.receivedAt) : new Date(),
+            contactIds,
+            dealIds,
+            accountEntityIds,
+            opens: 0,
+            clicks: 0,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+        };
+        // Handle optional properties
+        if (parsed.threadId)
+            email.threadId = parsed.threadId;
+        if (parsed.cc)
+            email.cc = parsed.cc;
+        if (parsed.bcc)
+            email.bcc = parsed.bcc;
+        if (parsed.htmlBody)
+            email.htmlBody = parsed.htmlBody;
+        if (parsed.attachments)
+            email.attachments = parsed.attachments;
+        if (parsed.labelIds)
+            email.labelIds = parsed.labelIds;
+        await this.emailModel.createEmail(email);
+        // Create activity records for matched deals
+        if (dealIds.length > 0 && this.activityModel) {
+            for (const dealId of dealIds) {
+                try {
+                    await this.activityModel.create({
+                        dealId: Number(dealId),
+                        userId: Number(account.userId),
+                        activityType: 'mail',
+                        subject: email.subject,
+                        label: isIncoming ? 'incoming' : 'outgoing',
+                        priority: 'none',
+                        busyFree: 'free',
+                        email: {
+                            from: email.from,
+                            to: email.to,
+                            subject: email.subject,
+                            body: email.body
+                        },
+                        organization: isIncoming ? email.from : email.to.join(', '),
+                        isDone: true,
+                        completedAt: (isIncoming ? email.receivedAt : email.sentAt)?.toISOString() || new Date().toISOString()
+                    });
+                }
+                catch (error) {
+                    console.error(`Failed to create activity for deal ${dealId}:`, error);
+                }
+            }
+        }
+        // Notify user about new incoming email
+        if (this.notificationService) {
+            console.log("🔔 Sending WebSocket notification for new email:", email.subject);
+            this.notificationService.notifyNewEmail(account.userId, email);
+        }
+        else {
+            console.log("⚠️ Notification service not available");
+        }
+    }
+    async parseRawEmail(rawEmail, provider) {
+        if (provider === "gmail")
+            return this.parseGmailMessage(rawEmail);
+        if (provider === "outlook")
+            return this.parseOutlookMessage(rawEmail);
+        if (provider === "imap" || provider === "custom")
+            return await this.parseIMAPMessage(rawEmail);
+        throw new Error(`Unsupported provider: ${provider}`);
+    }
+    determineEmailDirection(parsed, account, rawEmail) {
+        if (account.provider === "gmail") {
+            return this.determineGmailEmailDirection(parsed, account, rawEmail);
+        }
+        else if (account.provider === "outlook") {
+            return this.determineOutlookEmailDirection(parsed, account, rawEmail);
+        }
+        else if (account.provider === "imap") {
+            return this.determineIMAPEmailDirection(parsed, account, rawEmail);
+        }
+        // Default to incoming if we can't determine
+        return true;
+    }
+    determineGmailEmailDirection(parsed, account, rawEmail) {
+        // Method 1: Check Gmail labels
+        const labelIds = rawEmail.labelIds || [];
+        console.log(`Determining Gmail email direction for ${parsed.subject}:`, {
+            labelIds,
+            from: parsed.from,
+            to: parsed.to,
+            accountEmail: account.email,
+        });
+        if (labelIds.includes("SENT")) {
+            console.log("Email marked as SENT based on Gmail labels");
+            return false; // This is a sent email
+        }
+        if (labelIds.includes("INBOX") ||
+            labelIds.includes("SPAM") ||
+            labelIds.includes("TRASH")) {
+            console.log("Email marked as INCOMING based on Gmail labels");
+            return true; // This is an incoming email
+        }
+        // Method 2: Compare sender with account email
+        const fromEmail = this.extractEmailFromAddress(parsed.from || "");
+        const accountEmail = account.email.toLowerCase();
+        if (fromEmail && fromEmail.toLowerCase() === accountEmail) {
+            console.log("Email marked as SENT based on sender matching account email");
+            return false; // Email is from the account owner, so it's sent
+        }
+        // Method 3: Check if account email is in the 'to' field
+        const toEmails = (parsed.to || []).map((email) => this.extractEmailFromAddress(email));
+        if (toEmails.some((email) => email && email.toLowerCase() === accountEmail)) {
+            console.log("Email marked as INCOMING based on account email in recipients");
+            return true; // Account email is in recipients, so it's incoming
+        }
+        // Default to incoming
+        console.log("Email defaulted to INCOMING");
+        return true;
+    }
+    determineOutlookEmailDirection(parsed, account, rawEmail) {
+        // For Outlook, check if the sender matches the account email
+        const fromEmail = this.extractEmailFromAddress(parsed.from || "");
+        const accountEmail = account.email.toLowerCase();
+        if (fromEmail && fromEmail.toLowerCase() === accountEmail) {
+            return false; // Email is from the account owner, so it's sent
+        }
+        // Check if account email is in the 'to' field
+        const toEmails = (parsed.to || []).map((email) => this.extractEmailFromAddress(email));
+        if (toEmails.some((email) => email && email.toLowerCase() === accountEmail)) {
+            return true; // Account email is in recipients, so it's incoming
+        }
+        // Default to incoming
+        return true;
+    }
+    determineIMAPEmailDirection(parsed, account, rawEmail) {
+        // Check explicit folder tag from fetchIMAPEmails
+        if (rawEmail.folder === 'SENT') {
+            return false;
+        }
+        if (rawEmail.folder === 'INBOX') {
+            return true;
+        }
+        if (rawEmail.folder === 'DRAFT') {
+            return false; // Drafts are outgoing
+        }
+        if (rawEmail.folder === 'SPAM') {
+            return true; // Spam is incoming
+        }
+        if (rawEmail.folder === 'TRASH') {
+            return true; // Trash is incoming
+        }
+        // For IMAP, check if the sender matches the account email
+        const fromEmail = this.extractEmailFromAddress(parsed.from || "");
+        const accountEmail = account.email.toLowerCase();
+        if (fromEmail && fromEmail.toLowerCase() === accountEmail) {
+            return false; // Email is from the account owner, so it's sent
+        }
+        // Default to incoming
+        return true;
+    }
+    extractEmailFromAddress(address) {
+        // Extract email from "Name <email@domain.com>" format
+        const match = address.match(/<([^>]+)>/);
+        if (match && match[1]) {
+            return match[1];
+        }
+        // If no angle brackets, assume the whole string is the email
+        if (address.includes("@")) {
+            return address;
+        }
+        return null;
+    }
+    parseGmailMessage(message) {
+        const headers = (message.payload?.headers || []).reduce((acc, header) => {
+            acc[(header.name || "").toLowerCase()] = header.value;
+            return acc;
+        }, {});
+        return {
+            messageId: headers["message-id"],
+            threadId: message.threadId,
+            from: headers["from"],
+            to: (headers["to"] || "")
+                .split(",")
+                .filter(Boolean)
+                .map((s) => s.trim()),
+            cc: headers["cc"]
+                ? headers["cc"].split(",").map((s) => s.trim())
+                : undefined,
+            bcc: headers["bcc"]
+                ? headers["bcc"].split(",").map((s) => s.trim())
+                : undefined,
+            subject: headers["subject"] || "",
+            body: this.extractTextFromGmailPayload(message.payload),
+            htmlBody: this.extractHtmlFromGmailPayload(message.payload),
+            isRead: !(message.labelIds || []).includes("UNREAD"),
+            sentAt: new Date(parseInt(message.internalDate)),
+            receivedAt: new Date(parseInt(message.internalDate)),
+            // Store labelIds for direction detection
+            labelIds: message.labelIds || [],
+        };
+    }
+    parseOutlookMessage(message) {
+        return {
+            messageId: message.internetMessageId,
+            threadId: message.conversationId,
+            from: message.from?.emailAddress?.address,
+            to: (message.toRecipients || []).map((r) => r.emailAddress.address),
+            cc: (message.ccRecipients || []).map((r) => r.emailAddress.address),
+            bcc: (message.bccRecipients || []).map((r) => r.emailAddress.address),
+            subject: message.subject || "",
+            body: message.body?.contentType === "text" ? message.body.content : "",
+            htmlBody: message.body?.contentType === "html" ? message.body.content : undefined,
+            isRead: !!message.isRead,
+            sentAt: new Date(message.sentDateTime),
+            receivedAt: new Date(message.receivedDateTime),
+        };
+    }
+    async parseIMAPMessage(message) {
+        const source = message.source;
+        let body = "";
+        let htmlBody;
+        let parsed = {};
+        let attachments;
+        if (source) {
+            try {
+                // Ensure source is a string or Buffer for simpleParser
+                // imapflow returns Buffer, but let's be safe
+                const sourceData = Buffer.isBuffer(source) ? source : String(source);
+                parsed = await (0, mailparser_1.simpleParser)(sourceData);
+                body = parsed.text || ""; // Plain text body
+                // Prefer HTML, fallback to textAsHtml, then undefined
+                htmlBody = parsed.html || parsed.textAsHtml || undefined;
+                // Parse attachments (same structure as Gmail)
+                if (parsed.attachments && parsed.attachments.length > 0) {
+                    attachments = parsed.attachments.map((att) => ({
+                        filename: att.filename || 'attachment',
+                        mimeType: att.contentType || 'application/octet-stream',
+                        size: att.size || 0,
+                        contentId: att.contentId || undefined,
+                    }));
+                }
+                console.log(`IMAP Email Parsed - text len: ${body.length}, html len: ${htmlBody?.length || 0}, attachments: ${attachments?.length || 0}`);
+            }
+            catch (err) {
+                console.error("Failed to parse IMAP email body:", err);
+                // Do NOT fall back to raw source as body, it looks broken to the user
+                body = "Error parsing email content.";
+            }
+        }
+        // Helper to format address objects to match Gmail format "Name <email>"
+        const formatAddress = (addr) => {
+            if (!addr)
+                return [];
+            if (Array.isArray(addr.value)) {
+                return addr.value.map((a) => a.name ? `${a.name} <${a.address}>` : a.address);
+            }
+            return addr.text ? [addr.text] : [];
+        };
+        // Use parsed metadata if available, otherwise fall back to envelope
+        const from = parsed.from?.text || message.envelope?.from?.[0]?.address;
+        const to = parsed.to ? formatAddress(parsed.to) : (message.envelope?.to || []).map((a) => a.address);
+        const cc = parsed.cc ? formatAddress(parsed.cc) : message.envelope?.cc?.map((a) => a.address);
+        const bcc = parsed.bcc ? formatAddress(parsed.bcc) : message.envelope?.bcc?.map((a) => a.address);
+        const subject = parsed.subject || message.envelope?.subject || "";
+        const date = parsed.date || message.envelope?.date;
+        // Extract threadId from In-Reply-To or References header (similar to Gmail's threadId)
+        const threadId = parsed.inReplyTo || (parsed.references && parsed.references[0]) || undefined;
+        // Determine isRead from flags - check if \Seen flag is present
+        // If flags exist and has the \Seen flag, email is read; otherwise unread
+        let isRead = true; // Default to read
+        if (message.flags) {
+            if (message.flags instanceof Set) {
+                isRead = message.flags.has('\\Seen');
+            }
+            else if (Array.isArray(message.flags)) {
+                isRead = message.flags.includes('\\Seen');
+            }
+        }
+        return {
+            messageId: parsed.messageId || message.envelope?.messageId,
+            threadId: threadId,
+            from: from,
+            to: to,
+            cc: cc,
+            bcc: bcc,
+            subject: subject,
+            body: body,
+            htmlBody: htmlBody,
+            attachments: attachments,
+            sentAt: date,
+            receivedAt: date,
+            isRead: isRead,
+            // Store folder for direction detection and labeling
+            folder: message.folder,
+            labelIds: message.folder ? [message.folder] : [],
+        };
+    }
+    extractTextFromGmailPayload(payload) {
+        if (!payload)
+            return "";
+        if (payload.mimeType === "text/plain" && payload.body?.data) {
+            return Buffer.from(payload.body.data, "base64").toString();
+        }
+        for (const part of payload.parts || []) {
+            const text = this.extractTextFromGmailPayload(part);
+            if (text)
+                return text;
+        }
+        return "";
+    }
+    extractHtmlFromGmailPayload(payload) {
+        if (!payload)
+            return undefined;
+        if (payload.mimeType === "text/html" && payload.body?.data) {
+            return Buffer.from(payload.body.data, "base64").toString();
+        }
+        for (const part of payload.parts || []) {
+            const html = this.extractHtmlFromGmailPayload(part);
+            if (html)
+                return html;
+        }
+        return undefined;
+    }
+    async matchEmailWithCRMEntities(email) {
+        const allEmails = [
+            email.from,
+            ...(email.to || []),
+            ...(email.cc || []),
+            ...(email.bcc || []),
+        ].filter(Boolean);
+        const contacts = await this.emailModel.findContactsByEmails(allEmails);
+        const contactIds = contacts.map((c) => c.id);
+        const deals = await this.emailModel.findDealsByContactIds(contactIds);
+        const dealIds = deals.map((d) => d.id);
+        return { contactIds, dealIds, accountEntityIds: [] };
+    }
+    async getEmailsForContact(contactId) {
+        return this.emailModel.getEmailsForContact(contactId);
+    }
+    async getEmailsForDeal(dealId) {
+        return this.emailModel.getEmailsForDeal(dealId);
+    }
+    async getEmailAccountByUserId(userId) {
+        return this.emailModel.getEmailAccountByUserId(userId);
+    }
+    async getEmailAccountByEmail(email) {
+        return this.emailModel.getEmailAccountByEmail(email);
+    }
+    async getEmailAccountById(accountId) {
+        return this.emailModel.getEmailAccountById(accountId);
+    }
+    async createEmailAccount(account) {
+        return this.emailModel.createEmailAccount(account);
+    }
+    async updateEmailAccount(accountId, updates) {
+        return this.emailModel.updateEmailAccount(accountId, updates);
+    }
+    async getEmailAccounts(userId) {
+        return this.emailModel.getEmailAccounts(userId);
+    }
+    // Get emails for a user with filtering options
+    async getEmailsForUser(userId, options = {}) {
+        return this.emailModel.getEmailsForUser(userId, options);
+    }
+    // In EmailService
+    async getAllEmails(options = {}) {
+        return this.emailModel.getAllEmails({ limit: 1000 });
+    }
+    // Get a specific email by ID
+    async getEmailById(emailId, userId) {
+        return this.emailModel.getEmailById(emailId, userId);
+    }
+    // Mark email as read/unread
+    async markEmailAsRead(emailId, userId, isRead) {
+        return this.emailModel.markEmailAsRead(emailId, userId, isRead);
+    }
+}
+exports.EmailService = EmailService;
+//# sourceMappingURL=emailService.js.map
