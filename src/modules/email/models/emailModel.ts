@@ -322,6 +322,33 @@ export class EmailModel {
     stmt.run(...values);
   }
 
+  async getAllActiveAccounts(): Promise<EmailAccount[]> {
+    const stmt = this.db.prepare(
+      "SELECT * FROM email_accounts WHERE isActive = 1"
+    );
+    const rows = stmt.all() as any[];
+
+    return rows.map((row) => {
+      const account: EmailAccount = {
+        id: row.id,
+        userId: row.userId,
+        email: row.email,
+        provider: row.provider,
+        isActive: Boolean(row.isActive),
+        createdAt: new Date(row.createdAt),
+        updatedAt: new Date(row.updatedAt),
+      };
+
+      if (row.accessToken) account.accessToken = row.accessToken;
+      if (row.refreshToken) account.refreshToken = row.refreshToken;
+      if (row.imapConfig) account.imapConfig = JSON.parse(row.imapConfig);
+      if (row.smtpConfig) account.smtpConfig = JSON.parse(row.smtpConfig);
+      if (row.lastSyncAt) account.lastSyncAt = new Date(row.lastSyncAt);
+
+      return account;
+    });
+  }
+
   async getEmailAccounts(userId: string): Promise<EmailAccount[]> {
     console.log(`Getting email accounts for userId: ${userId}`);
     const stmt = this.db.prepare(
@@ -454,6 +481,7 @@ export class EmailModel {
       folder?: string;
       search?: string;
       unreadOnly?: boolean;
+      accountId?: string;
     } = {}
   ): Promise<{ emails: Email[]; total: number }> {
     const {
@@ -462,6 +490,7 @@ export class EmailModel {
       folder = "inbox",
       search,
       unreadOnly = false,
+      accountId,
     } = options;
 
     // Build the WHERE clause
@@ -469,29 +498,32 @@ export class EmailModel {
       "WHERE e.accountId IN (SELECT id FROM email_accounts WHERE userId = ?)";
     const params: any[] = [userId];
 
+    if (accountId) {
+      whereClause += " AND e.accountId = ?";
+      params.push(accountId);
+    }
+
     // Add folder filter
     if (folder === "inbox") {
-      whereClause += " AND e.isIncoming = 1";
-      console.log("Filtering for INBOX emails (isIncoming = 1)");
+      whereClause += ` AND e.isIncoming = 1 AND (e.labelIds IS NULL OR (e.labelIds NOT LIKE '%SPAM%' AND e.labelIds NOT LIKE '%JUNK%' AND e.labelIds NOT LIKE '%TRASH%'))`;
+      console.log("Filtering for INBOX emails");
     } else if (folder === "sent") {
-      whereClause += " AND e.isIncoming = 0";
-      console.log("Filtering for SENT emails (isIncoming = 0)");
+      whereClause += ` AND e.isIncoming = 0 AND (e.labelIds IS NULL OR (e.labelIds NOT LIKE '%DRAFT%' AND e.labelIds NOT LIKE '%TRASH%'))`;
+      console.log("Filtering for SENT emails");
     } else if (folder === "spam") {
-      // For spam, we'll filter by Gmail SPAM label or similar
-      whereClause +=
-        ' AND (e.labelIds LIKE "%SPAM%" OR e.labelIds LIKE "%JUNK%")';
+      whereClause += ` AND (e.labelIds LIKE '%SPAM%' OR e.labelIds LIKE '%JUNK%')`;
       console.log("Filtering for SPAM emails");
-    } else if (folder === "archive") {
-      // For archive, we'll filter by Gmail ARCHIVE label or similar
-      whereClause +=
-        ' AND (e.labelIds LIKE "%ARCHIVE%" OR e.labelIds LIKE "%ALL_MAIL%")';
-      console.log("Filtering for ARCHIVE emails");
-    } else if (folder === "drafts") {
-      // For drafts, we'll filter by Gmail DRAFT label
-      whereClause += ' AND e.labelIds LIKE "%DRAFT%"';
+    } else if (folder === "drafts" || folder === "drfts") {
+      whereClause += ` AND e.labelIds LIKE '%DRAFT%'`;
       console.log("Filtering for DRAFT emails");
+    } else if (folder === "trash") {
+      whereClause += ` AND e.labelIds LIKE '%TRASH%'`;
+      console.log("Filtering for TRASH emails");
+    } else if (folder === "archive") {
+      whereClause += ` AND (e.labelIds LIKE '%ARCHIVE%' OR e.labelIds LIKE '%ALL_MAIL%')`;
+      console.log("Filtering for ARCHIVE emails");
     } else {
-      console.log(`No folder filter applied for folder: ${folder}`);
+      console.log(`No specific folder logic for: ${folder}, applying basic owner check only`);
     }
 
     // Add unread filter

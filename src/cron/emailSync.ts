@@ -37,6 +37,8 @@ export function startEmailSyncJob(
                         provider: accountRow.provider,
                         accessToken: accountRow.accessToken,
                         refreshToken: accountRow.refreshToken,
+                        imapConfig: accountRow.imapConfig ? JSON.parse(accountRow.imapConfig) : undefined,
+                        smtpConfig: accountRow.smtpConfig ? JSON.parse(accountRow.smtpConfig) : undefined,
                         isActive: Boolean(accountRow.isActive),
                         lastSyncAt: accountRow.lastSyncAt ? new Date(accountRow.lastSyncAt) : undefined,
                         createdAt: new Date(accountRow.createdAt),

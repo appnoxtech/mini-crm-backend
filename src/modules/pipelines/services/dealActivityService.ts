@@ -17,15 +17,13 @@ export class DealActivityService {
         }
 
         // Basic validation - minimum required fields for the record
-        if (!data.activityType) {
-            throw new Error('Activity type is required');
-        }
+        const activityType = data.activityType || 'SubActivity';
 
         return this.activityModel.create({
             ...data,
             dealId,
             userId,
-            activityType: data.activityType,
+            activityType: activityType,
             isDone: data.isDone || false
         } as any);
     }
