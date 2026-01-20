@@ -49,6 +49,7 @@ const dealService_1 = require("./modules/pipelines/services/dealService");
 const productService_1 = require("./modules/pipelines/services/productService");
 const dealActivityService_1 = require("./modules/pipelines/services/dealActivityService");
 const PersonService_1 = require("./modules/management/persons/services/PersonService");
+const profileService_1 = require("./modules/management/persons/services/profileService");
 // Import enhanced email services
 const mailSystemConfig_1 = require("./modules/email/services/mailSystemConfig");
 const quotaValidationService_1 = require("./modules/email/services/quotaValidationService");
@@ -67,6 +68,7 @@ const productController_1 = require("./modules/pipelines/controllers/productCont
 const activityController_1 = require("./modules/pipelines/controllers/activityController");
 const PersonController_1 = require("./modules/management/persons/controllers/PersonController");
 const OrganizationController_1 = require("./modules/management/organisations/controllers/OrganizationController");
+const profileController_1 = require("./modules/management/persons/controllers/profileController");
 // Import routes
 const authRoutes_1 = require("./modules/auth/routes/authRoutes");
 const leadRoutes_1 = require("./modules/leads/routes/leadRoutes");
@@ -79,6 +81,7 @@ const activityRoutes_1 = require("./modules/pipelines/routes/activityRoutes");
 const organizationRoutes_1 = require("./modules/management/organisations/routes/organizationRoutes");
 const personRoutes_1 = require("./modules/management/persons/routes/personRoutes");
 const labelRoutes_1 = require("./modules/pipelines/routes/labelRoutes");
+const profileRoutes_1 = require("./modules/management/persons/routes/profileRoutes");
 // Import summarization services
 const summarizationController_1 = require("./modules/email/controllers/summarizationController");
 const labelService_1 = require("./modules/pipelines/services/labelService");
@@ -144,6 +147,7 @@ const dealActivityService = new dealActivityService_1.DealActivityService(dealAc
 const organizationService = new OrganizationService_1.OrganizationService(organisationModel);
 const personService = new PersonService_1.PersonService(personModel, organisationModel);
 const labelService = new labelService_1.LabelService(labelModel);
+const profileService = new profileService_1.ProfileService(userModel);
 // Initialize call service
 const callService = new callService_1.CallService(callModel);
 // Initialize enhanced email services
@@ -174,6 +178,7 @@ const activityController = new activityController_1.ActivityController(dealActiv
 const organizationController = new OrganizationController_1.OrganizationController(organizationService);
 const personController = new PersonController_1.PersonController(personService);
 const labelController = new labelController_1.LabelController(labelService);
+const profileController = new profileController_1.ProfileController(profileService);
 // Initialize call controllers
 const callController = new callController_1.CallController(callService);
 const webhookController = new webhookController_1.WebhookController(callService);
@@ -204,6 +209,7 @@ app.use('/api/activities', (0, activityRoutes_1.createActivityRoutes)(activityCo
 // Management module routes
 app.use('/api/organisations', (0, organizationRoutes_1.createOrganizationRoutes)(organizationController));
 app.use('/api/persons', (0, personRoutes_1.createPersonRoutes)(personController));
+app.use('/api/profile', (0, profileRoutes_1.createProfileRoutes)(profileController));
 // Call module routes
 app.use('/api/calls', (0, callRoutes_1.createCallRoutes)(callController));
 app.use('/api/webhooks/twilio', (0, webhookRoutes_1.createWebhookRoutes)(webhookController));
