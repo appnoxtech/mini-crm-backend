@@ -31,7 +31,7 @@ const uploader = fileUpload({
  */
 async function processUploadedFiles(req: Request, res: Response, next: NextFunction) {
     if (!req.files || Object.keys(req.files).length === 0) {
-        return ResponseHandler.validationError(res, 'No files were uploaded.');
+        return next();
     }
 
     const tempFilesToCleanup: string[] = [];
@@ -83,6 +83,20 @@ async function processUploadedFiles(req: Request, res: Response, next: NextFunct
         return ResponseHandler.internalError(res, 'Failed to process and upload files', error.message);
     }
 }
+
+
+export async function safeDeleteFromS3(keys: string[], retries = 3) {
+    try {
+        await storageService.deleteFromS3(keys);
+    } catch (err) {
+        if (retries > 0) {
+            await new Promise(r => setTimeout(r, 1000));
+            return safeDeleteFromS3(keys, retries - 1);
+        }
+        throw err;
+    }
+}
+
 
 /**
  * Combined Middleware export

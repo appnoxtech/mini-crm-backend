@@ -48,6 +48,7 @@ import { DealService } from './modules/pipelines/services/dealService';
 import { ProductService } from './modules/pipelines/services/productService';
 import { DealActivityService } from './modules/pipelines/services/dealActivityService';
 import { PersonService } from './modules/management/persons/services/PersonService';
+import { ProfileService } from './modules/management/persons/services/profileService';
 
 // Import enhanced email services
 import { MailSystemConfigService } from './modules/email/services/mailSystemConfig';
@@ -68,6 +69,7 @@ import { ProductController } from './modules/pipelines/controllers/productContro
 import { ActivityController } from './modules/pipelines/controllers/activityController';
 import { PersonController } from './modules/management/persons/controllers/PersonController';
 import { OrganizationController } from './modules/management/organisations/controllers/OrganizationController';
+import { ProfileController } from './modules/management/persons/controllers/profileController';
 
 
 // Import routes
@@ -82,6 +84,7 @@ import { createActivityRoutes } from './modules/pipelines/routes/activityRoutes'
 import { createOrganizationRoutes } from './modules/management/organisations/routes/organizationRoutes';
 import { createPersonRoutes } from './modules/management/persons/routes/personRoutes';
 import { createLabelRoutes } from './modules/pipelines/routes/labelRoutes';
+import { createProfileRoutes } from './modules/management/persons/routes/profileRoutes';
 
 // Import summarization services
 import { SummarizationController } from './modules/email/controllers/summarizationController';
@@ -160,6 +163,7 @@ const dealActivityService = new DealActivityService(dealActivityModel, dealModel
 const organizationService = new OrganizationService(organisationModel);
 const personService = new PersonService(personModel, organisationModel);
 const labelService = new LabelService(labelModel);
+const profileService = new ProfileService(userModel);
 
 // Initialize call service
 const callService = new CallService(callModel);
@@ -201,6 +205,7 @@ const activityController = new ActivityController(dealActivityService);
 const organizationController = new OrganizationController(organizationService);
 const personController = new PersonController(personService);
 const labelController = new LabelController(labelService);
+const profileController = new ProfileController(profileService);
 
 // Initialize call controllers
 const callController = new CallController(callService);
@@ -241,6 +246,7 @@ app.use('/api/activities', createActivityRoutes(activityController)); // User-le
 // Management module routes
 app.use('/api/organisations', createOrganizationRoutes(organizationController));
 app.use('/api/persons', createPersonRoutes(personController));
+app.use('/api/profile', createProfileRoutes(profileController));
 
 // Call module routes
 app.use('/api/calls', createCallRoutes(callController));

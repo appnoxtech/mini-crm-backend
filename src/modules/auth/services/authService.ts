@@ -45,7 +45,7 @@ export class AuthService {
   async createUser(email: string, name: string, password: string): Promise<AuthUser> {
     const passwordHash = await this.hashPassword(password);
     const user = this.userModel.createUser(email, name, passwordHash);
-    
+
     return {
       id: user.id,
       email: user.email,
@@ -65,34 +65,34 @@ export class AuthService {
       if (!isValid) {
         return null;
       }
-
-      return {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        createdAt: user.createdAt
-      };
+      const { passwordHash, ...safeUser } = user;
+      safeUser.profileImg = JSON.parse(safeUser.profileImg || '[]');
+      return safeUser;
     } catch (error) {
       console.error('Authentication error:', error);
       return null;
     }
   }
-  
-async getProfile(id: number): Promise<AuthUser | null> {
-  const user = this.userModel.findById(id);
-  if (!user) return null;
 
-  return {
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    updatedAt: user.updatedAt
-  };
-}
+  async getProfile(id: number): Promise<AuthUser | null> {
+    const user = this.userModel.findById(id);
+    if (!user) return null;
+
+    return {
+      ...user,
+      profileImg: JSON.parse(user.profileImg || '[]')
+    };
+  }
 
 
   async updateUser(id: number, updates: Partial<{ name: string; email: string }>): Promise<AuthUser | null> {
-    return this.userModel.updateUser(id, updates);
+    const user = this.userModel.updateUser(id, updates);
+    if (!user) return null;
+
+    return {
+      ...user,
+      profileImg: JSON.parse(user.profileImg || '[]')
+    };
   }
 
   async changePassword(id: number, currentPassword: string, newPassword: string): Promise<boolean> {

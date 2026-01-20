@@ -14,6 +14,12 @@ export interface User {
   passwordHash: string;
   createdAt: string;
   updatedAt: string;
+  profileImg?: string;
+  phone?: string;
+  dateFormat?: string;
+  timezone?: string;
+  language?: string;
+  defaultCurrency?: string;
 }
 
 export interface AuthUser {
@@ -22,6 +28,12 @@ export interface AuthUser {
   name: string;
   createdAt?: string;
   updatedAt?: string;
+  profileImg?: string;
+  phone?: string;
+  dateFormat?: string;
+  timezone?: string;
+  language?: string;
+  defaultCurrency?: string;
 }
 
 export interface AuthenticatedRequest extends Request {
