@@ -1,9 +1,10 @@
 import sharp from 'sharp';
 import { PDFDocument } from 'pdf-lib';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import fs from 'fs/promises';
+import { DeleteObjectsCommand } from "@aws-sdk/client-s3";
 
 export interface ProcessedFile {
     originalName: string;
@@ -64,12 +65,14 @@ export class StorageService {
             }
         }
 
-        // Upload to S3
+        // Upload to S3 with no-cache headers
         await this.s3Client.send(new PutObjectCommand({
             Bucket: this.bucketName,
             Key: key,
             Body: fileBuffer,
             ContentType: contentType,
+            CacheControl: 'no-cache, no-store, must-revalidate',
+            Expires: new Date(0)
         }));
 
         const region = process.env.AWS_REGION || 'us-east-1';
@@ -92,8 +95,102 @@ export class StorageService {
             filePaths.map(path => fs.unlink(path).catch(err => console.error(`Cleanup error: ${path}`, err)))
         );
     }
+
+    /**
+     * Delete files from S3 with verification
+     */
+    async deleteFromS3(keys: string[]): Promise<void> {
+        if (!keys || keys.length === 0) {
+            console.log('No keys to delete');
+            return;
+        }
+
+        console.log('🗑️  Attempting to delete from S3:', keys);
+
+        try {
+            const command = new DeleteObjectsCommand({
+                Bucket: this.bucketName,
+                Delete: {
+                    Objects: keys.map(key => ({ Key: key })),
+                    Quiet: false // Important: get detailed response
+                }
+            });
+
+            const result = await this.s3Client.send(command);
+
+            // Log successful deletions
+            if (result.Deleted && result.Deleted.length > 0) {
+                console.log('✅ Successfully deleted:', result.Deleted.map(d => d.Key));
+            }
+
+            // Log any errors
+            if (result.Errors && result.Errors.length > 0) {
+                console.error('❌ Deletion errors:', result.Errors);
+                throw new Error(`Failed to delete some objects: ${JSON.stringify(result.Errors)}`);
+            }
+
+            // Verify deletion (optional but recommended for debugging)
+            if (process.env.NODE_ENV === 'development') {
+                await this.verifyDeletion(keys);
+            }
+
+        } catch (error) {
+            console.error("❌ S3 delete failed:", error);
+            throw error;
+        }
+    }
+
+    /**
+     * Verify files are actually deleted from S3
+     */
+    private async verifyDeletion(keys: string[]): Promise<void> {
+        console.log('🔍 Verifying deletion...');
+
+        for (const key of keys) {
+            try {
+                await this.s3Client.send(new HeadObjectCommand({
+                    Bucket: this.bucketName,
+                    Key: key
+                }));
+                console.warn(`⚠️  WARNING: File still exists in S3: ${key}`);
+            } catch (error: any) {
+                if (error.name === 'NotFound' || error.$metadata?.httpStatusCode === 404) {
+                    console.log(`✅ Confirmed deleted: ${key}`);
+                } else {
+                    console.error(`❓ Error verifying ${key}:`, error.message);
+                }
+            }
+        }
+    }
 }
 
-// Export a singleton for easier use in functional middleware if needed, 
-// or it can be instantiated in server.ts
+// Export a singleton
 export const storageService = new StorageService();
+
+/**
+ * Safely delete files from S3 with retry mechanism
+ */
+export async function safeDeleteFromS3(keys: string[], retries = 3): Promise<void> {
+    if (!keys || keys.length === 0) {
+        console.log('safeDeleteFromS3: No keys provided');
+        return;
+    }
+
+    console.log(`🔄 safeDeleteFromS3 called with ${keys.length} keys, ${retries} retries remaining`);
+
+    try {
+        await storageService.deleteFromS3(keys);
+        console.log('✅ safeDeleteFromS3: Deletion successful');
+    } catch (err: any) {
+        console.error(`❌ safeDeleteFromS3: Attempt failed. Retries left: ${retries - 1}`, err.message);
+
+        if (retries > 0) {
+            console.log(`⏳ Waiting 1 second before retry...`);
+            await new Promise(r => setTimeout(r, 1000));
+            return safeDeleteFromS3(keys, retries - 1);
+        }
+
+        console.error('❌ safeDeleteFromS3: All retries exhausted');
+        throw err;
+    }
+}

@@ -34,19 +34,18 @@ export class DealActivityService {
         activityType?: string;
         isDone?: boolean;
         limit?: number;
-    } = {}): Promise<{ dealHistory: DealHistory; activities: DealActivity[]; count: number }> {
+    } = {}): Promise<{ deal: any; activities: DealActivity[]; count: number }> {
         // Verify deal exists
+        const deal = this.dealModel.findById(dealId);
 
-        const dealHistory = this.dealHistoryModel.findById(dealId);
-
-        if (!dealHistory) {
+        if (!deal) {
             throw new Error('Deal not found');
         }
 
         const activities = this.activityModel.findByDealId(dealId, filters);
 
         return {
-            dealHistory,
+            deal,
             activities,
             count: activities.length
         };
