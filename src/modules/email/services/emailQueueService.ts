@@ -56,11 +56,11 @@ export class EmailQueueService {
     }
 
     this.isProcessing = true;
-    
+
     try {
       // Process sync queue
       await this.processSyncQueue();
-      
+
       // Process send queue
       await this.processSendQueue();
     } catch (error) {
@@ -74,7 +74,7 @@ export class EmailQueueService {
     if (this.syncQueue.length === 0) {
       // Auto-schedule email sync for all active accounts
       await this.scheduleEmailSyncForAllAccounts();
-      return;
+      if (this.syncQueue.length === 0) return;
     }
 
     const job = this.syncQueue.shift();
@@ -82,10 +82,16 @@ export class EmailQueueService {
 
     try {
       console.log(`Processing email sync for account: ${job.accountId}`);
-      
+
       const account = await this.emailModel.getEmailAccountById(job.accountId);
       if (!account || !account.isActive) {
         console.log(`Account ${job.accountId} not found or inactive, skipping sync`);
+        return;
+      }
+
+      // Pre-flight check: if provider needs IMAP but it's missing, log and skip instead of failing and re-queuing
+      if ((account.provider === 'imap' || account.provider === 'custom') && !account.imapConfig) {
+        console.error(`Skipping sync for ${account.email}: IMAP configuration is missing for ${account.provider} account.`);
         return;
       }
 
@@ -93,9 +99,16 @@ export class EmailQueueService {
       console.log(`Email sync completed for ${job.accountId}:`, result);
     } catch (error: any) {
       console.error(`Failed to sync emails for account ${job.accountId}:`, error);
-      
+
       // Re-queue with lower priority if it's a temporary failure
-      if (job.priority !== 'low') {
+      // Permanent failures (like missing config which we now handle above, or authentication errors) shouldn't be re-queued indefinitely
+      const errorMessage = error.message || '';
+      const isPermanentFailure =
+        errorMessage.includes('configuration is missing') ||
+        errorMessage.includes('invalid_grant') ||
+        errorMessage.includes('re-authenticate');
+
+      if (!isPermanentFailure && job.priority !== 'low') {
         this.queueEmailSync(job.accountId, job.userId, 'low');
       }
     }
@@ -107,7 +120,8 @@ export class EmailQueueService {
 
     try {
       console.log(`Processing email send for account: ${job.accountId}`);
-      
+
+      // For sending, we can use the accountId directly as the service handles fetching
       const messageId = await this.emailService.sendEmail(job.accountId, job.emailData);
       console.log(`Email sent successfully: ${messageId}`);
     } catch (error: any) {
@@ -128,7 +142,7 @@ export class EmailQueueService {
     }
 
     this.syncQueue.push({ accountId, userId, priority });
-    
+
     // Sort queue by priority (high first)
     this.syncQueue.sort((a, b) => {
       const priorityOrder = { high: 0, normal: 1, low: 2 };
@@ -147,7 +161,7 @@ export class EmailQueueService {
     try {
       // Get all active accounts that haven't been synced recently
       const accounts = await this.getAllActiveAccountsForSync();
-      
+
       for (const account of accounts) {
         this.queueEmailSync(account.id, account.userId, 'normal');
       }
@@ -157,14 +171,17 @@ export class EmailQueueService {
   }
 
   private async getAllActiveAccountsForSync(): Promise<any[]> {
-    // This is a simplified implementation
-    // In a real system, you'd query the database for accounts that need syncing
     try {
-      // Get accounts that haven't been synced in the last 10 minutes
-      const cutoffTime = new Date(Date.now() - 10 * 60 * 1000);
-      // For now, return empty array as we don't have a proper query method
-      // In the future, this would query the database for accounts
-      return [];
+      // Get all active accounts from model
+      const allAccounts = await this.emailModel.getAllActiveAccounts();
+
+      // Filter for accounts that haven't been synced in the last 15 minutes
+      const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+
+      return allAccounts.filter(account => {
+        // If never synced or last sync was > 15 mins ago
+        return !account.lastSyncAt || account.lastSyncAt < fifteenMinutesAgo;
+      });
     } catch (error) {
       console.error('Failed to get active accounts for sync:', error);
       return [];

@@ -40,7 +40,7 @@ export interface EmailAccount {
   id: string;
   userId: string;
   email: string;
-  provider: 'gmail' | 'outlook' | 'imap';
+  provider: 'gmail' | 'outlook' | 'imap' | 'custom';
   accessToken?: string;
   refreshToken?: string;
   imapConfig?: {
