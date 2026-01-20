@@ -145,19 +145,25 @@ export class DealActivityModel {
         return this.findById(result.lastInsertRowid as number)!;
     }
 
+    private formatActivity(result: any): DealActivity {
+        return {
+            ...result,
+            isDone: Boolean(result.isDone),
+            email: result.email ? JSON.parse(result.email) : undefined,
+            participants: result.participants ? JSON.parse(result.participants) : [],
+            deal: result.deal ? JSON.parse(result.deal) : {},
+            files: result.files ? JSON.parse(result.files) : [],
+            persons: result.persons ? JSON.parse(result.persons) : [],
+            mataData: result.mataData ? JSON.parse(result.mataData) : []
+        };
+    }
+
     findById(id: number): DealActivity | undefined {
         const stmt = this.db.prepare('SELECT * FROM deal_activities WHERE id = ?');
         const result = stmt.get(id) as any;
         if (!result) return undefined;
 
-        return {
-            ...result,
-            isDone: Boolean(result.isDone),
-            participants: result.participants ? JSON.parse(result.participants) : [],
-            deal: result.deal ? JSON.parse(result.deal) : {},
-            persons: result.persons ? JSON.parse(result.persons) : [],
-            mataData: result.mataData ? JSON.parse(result.mataData) : []
-        };
+        return this.formatActivity(result);
     }
 
     findByDealId(dealId: number, filters: {
@@ -188,14 +194,7 @@ export class DealActivityModel {
         const stmt = this.db.prepare(query);
         const results = stmt.all(...params) as any[];
 
-        return results.map(r => ({
-            ...r,
-            isDone: Boolean(r.isDone),
-            participants: r.participants ? JSON.parse(r.participants) : undefined,
-            deal: r.deal ? JSON.parse(r.deal) : undefined,
-            persons: r.persons ? JSON.parse(r.persons) : undefined,
-            mataData: r.mataData ? JSON.parse(r.mataData) : undefined
-        }));
+        return results.map(r => this.formatActivity(r));
     }
 
     // create note type activity 
@@ -259,14 +258,7 @@ export class DealActivityModel {
         const stmt = this.db.prepare(query);
         const results = stmt.all(...params) as any[];
 
-        return results.map(r => ({
-            ...r,
-            isDone: Boolean(r.isDone),
-            participants: r.participants ? JSON.parse(r.participants) : undefined,
-            deal: r.deal ? JSON.parse(r.deal) : undefined,
-            persons: r.persons ? JSON.parse(r.persons) : undefined,
-            mataData: r.mataData ? JSON.parse(r.mataData) : undefined
-        }));
+        return results.map(r => this.formatActivity(r));
     }
 
     update(
@@ -284,7 +276,7 @@ export class DealActivityModel {
             if (key === 'isDone') {
                 updates.push(`${key} = ?`);
                 values.push(value ? 1 : 0);
-            } else if (['participants', 'deal', 'persons', 'mataData'].includes(key)) {
+            } else if (['participants', 'deal', 'persons', 'mataData', 'files', 'email'].includes(key)) {
                 updates.push(`${key} = ?`);
                 values.push(value ? JSON.stringify(value) : null);
             } else {
@@ -371,13 +363,6 @@ export class DealActivityModel {
             futureDate.toISOString().split('T')[0]
         ) as any[];
 
-        return results.map(r => ({
-            ...r,
-            isDone: Boolean(r.isDone),
-            participants: r.participants ? JSON.parse(r.participants) : undefined,
-            deal: r.deal ? JSON.parse(r.deal) : undefined,
-            persons: r.persons ? JSON.parse(r.persons) : undefined,
-            mataData: r.mataData ? JSON.parse(r.mataData) : undefined
-        }));
+        return results.map(r => this.formatActivity(r));
     }
 }

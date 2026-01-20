@@ -12,7 +12,7 @@ export interface DealHistory {
   stageDuration?: number;
   description?: string;
 
-  metadata?: string;
+  metadata?: any;
   createdAt: string;
 }
 
@@ -77,21 +77,25 @@ export class DealHistoryModel {
     return this.findById(result.lastInsertRowid as number)!;
   }
 
+  private formatHistory(result: any): DealHistory {
+    return {
+      ...result,
+      metadata: result.metadata ? JSON.parse(result.metadata) : undefined
+    };
+  }
+
   findById(id: number): DealHistory | undefined {
-    const stmt = this.db.prepare('SELECT * FROM deals WHERE id = ?');
+    const stmt = this.db.prepare('SELECT * FROM deal_history WHERE id = ?');
     const result = stmt.get(id) as any;
     if (!result) return undefined;
 
-    return {
-      ...result,
-      email: result.email ? JSON.parse(result.email) : [],  // parse JSON back to array
-      phone: result.phone ? JSON.parse(result.phone) : []   // parse JSON back to array
-    };
+    return this.formatHistory(result);
   }
 
   getDealHistory(dealId: number): DealHistory[] {
     const stmt = this.db.prepare('SELECT * FROM deal_history WHERE dealId = ?');
-    return stmt.all(dealId) as DealHistory[];
+    const results = stmt.all(dealId) as any[];
+    return results.map(r => this.formatHistory(r));
   }
 
   // findById(id: number): DealHistory | undefined {
@@ -101,13 +105,16 @@ export class DealHistoryModel {
 
   findByDealId(dealId: number, limit?: number): DealHistory[] {
     let query = 'SELECT * FROM deal_history WHERE dealId = ? ORDER BY createdAt DESC';
+    let results: any[];
 
     if (limit) {
       query += ' LIMIT ?';
-      return this.db.prepare(query).all(dealId, limit) as DealHistory[];
+      results = this.db.prepare(query).all(dealId, limit) as any[];
+    } else {
+      results = this.db.prepare(query).all(dealId) as any[];
     }
 
-    return this.db.prepare(query).all(dealId) as DealHistory[];
+    return results.map(r => this.formatHistory(r));
   }
 
   findLastStageChange(dealId: number): DealHistory | undefined {
@@ -118,7 +125,8 @@ export class DealHistoryModel {
       LIMIT 1
     `);
 
-    return stmt.get(dealId) as DealHistory | undefined;
+    const result = stmt.get(dealId) as any;
+    return result ? this.formatHistory(result) : undefined;
   }
 
   findByEventType(dealId: number, eventType: string): DealHistory[] {
@@ -128,7 +136,8 @@ export class DealHistoryModel {
       ORDER BY createdAt DESC
     `);
 
-    return stmt.all(dealId, eventType) as DealHistory[];
+    const results = stmt.all(dealId, eventType) as any[];
+    return results.map(r => this.formatHistory(r));
   }
 
   getTimeInStages(dealId: number): Array<{ stageId: number; stageName: string; duration: number }> {
