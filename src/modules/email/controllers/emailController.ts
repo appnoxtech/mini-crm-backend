@@ -49,12 +49,12 @@ function getProviderDefaults(provider: string): {
     smtp: {
       host: process.env.DEFAULT_SMTP_HOST || 'smtp.hostinger.com',
       port: parseInt(process.env.DEFAULT_SMTP_PORT || '465'),
-      secure: process.env.DEFAULT_SMTP_SECURE === 'true',
+      secure: process.env.DEFAULT_SMTP_SECURE !== undefined ? process.env.DEFAULT_SMTP_SECURE === 'true' : true,
     },
     imap: {
       host: process.env.DEFAULT_IMAP_HOST || 'imap.hostinger.com',
       port: parseInt(process.env.DEFAULT_IMAP_PORT || '993'),
-      secure: process.env.DEFAULT_IMAP_SECURE !== 'false',
+      secure: process.env.DEFAULT_IMAP_SECURE !== undefined ? process.env.DEFAULT_IMAP_SECURE === 'true' : true,
     },
   };
 }
@@ -132,23 +132,86 @@ export class EmailController {
         return ResponseHandler.unauthorized(res, "User not authenticated");
       }
 
-      const { to, subject, body, htmlBody, attachments, dealId } =
+      const { to, subject, body, htmlBody, attachments, dealId, email, provider, smtpConfig } =
         (req.body as any) || {};
 
       if (!to || !subject || !body) {
         return ResponseHandler.error(res, "Missing required fields: to, subject, body", 400);
       }
 
-      // Get user's email account from database
-      const emailAccount = await this.emailService.getEmailAccountByUserId(
-        req.user.id.toString()
-      );
+      let emailAccount: EmailAccount | null = null;
+      const userId = req.user.id.toString();
+
+      // 1. Determine which email address to use as the base for account resolution
+      const targetEmail = email || req.user.email;
+      const accountId = `${userId}-${targetEmail}`;
+
+      // 2. Try to find the specific account for this user and email
+      emailAccount = await this.emailService.getEmailModel().getEmailAccountById(accountId);
+
+      // 3. Fallback: if no specific account found, use the user's first connected account
+      if (!emailAccount) {
+        emailAccount = await this.emailService.getEmailAccountByUserId(userId);
+      }
+
+      // 4. Handle SMTP Configuration (Direct update or override)
+      if (smtpConfig) {
+        const providerName = provider || (emailAccount ? emailAccount.provider : 'custom');
+        const providerDefaults = getProviderDefaults(providerName);
+
+        // Merge provided config with existing account config (to preserve username/password if missing in request)
+        const finalSmtpConfig = {
+          host: smtpConfig.host || (emailAccount?.smtpConfig?.host) || providerDefaults.smtp.host,
+          port: smtpConfig.port || (emailAccount?.smtpConfig?.port) || providerDefaults.smtp.port,
+          secure: smtpConfig.secure !== undefined ? smtpConfig.secure : (emailAccount?.smtpConfig?.secure !== undefined ? emailAccount.smtpConfig.secure : providerDefaults.smtp.secure),
+          username: smtpConfig.username || (emailAccount?.smtpConfig?.username),
+          password: smtpConfig.password || (emailAccount?.smtpConfig?.password),
+        };
+
+        // Also ensure imapConfig is populated if this is an IMAP provider
+        let finalImapConfig = emailAccount?.imapConfig;
+        if (providerName === 'imap' || providerName === 'custom') {
+          finalImapConfig = {
+            host: providerDefaults.imap.host,
+            port: providerDefaults.imap.port,
+            secure: providerDefaults.imap.secure,
+            username: finalSmtpConfig.username,
+            password: finalSmtpConfig.password,
+            ...emailAccount?.imapConfig, // Preserve existing if any
+          };
+        }
+
+        const accountData: EmailAccount = {
+          id: accountId,
+          userId,
+          email: targetEmail,
+          provider: providerName,
+          isActive: true,
+          smtpConfig: finalSmtpConfig,
+          imapConfig: finalImapConfig,
+          createdAt: emailAccount ? emailAccount.createdAt : new Date(),
+          updatedAt: new Date(),
+        };
+
+        // Check if this specific account exists in DB to decide between update and create
+        const dbAccount = await this.emailService.getEmailModel().getEmailAccountById(accountId);
+        if (dbAccount) {
+          accountData.createdAt = dbAccount.createdAt;
+          await this.emailService.updateEmailAccount(accountId, accountData);
+        } else {
+          await this.emailService.createEmailAccount(accountData);
+        }
+
+        emailAccount = accountData;
+      }
+
       if (!emailAccount) {
         return ResponseHandler.notFound(res, "No email account configured OR Please connect your email account first");
       }
 
-      // Validate and refresh OAuth tokens if needed
+      // Validate and refresh OAuth tokens if needed (only for stored OAuth accounts)
       if (
+        !smtpConfig &&
         emailAccount.accessToken &&
         (emailAccount.provider === "gmail" ||
           emailAccount.provider === "outlook")
@@ -165,7 +228,7 @@ export class EmailController {
         }
       }
 
-      const messageId = await this.emailService.sendEmail(emailAccount.id, {
+      const messageId = await this.emailService.sendEmail(emailAccount, {
         to: Array.isArray(to) ? to : [to],
         subject,
         body,
@@ -751,6 +814,10 @@ export class EmailController {
       const accountId = `${req.user.id}-${email}`;
       const existingAccount = await this.emailService.getEmailModel().getEmailAccountById(accountId);
 
+      // Get provider-specific defaults from environment
+      const providerDefaults = getProviderDefaults(provider);
+
+      // Prepare updated account data
       const account: EmailAccount = {
         id: accountId,
         userId: req.user.id.toString(),
@@ -761,10 +828,7 @@ export class EmailController {
         updatedAt: new Date(),
       };
 
-      // Get provider-specific defaults from environment
-      const providerDefaults = getProviderDefaults(provider);
-
-      // Build SMTP config with provider defaults
+      // Build SMTP config - preserve existing if not provided
       if (smtpConfig) {
         account.smtpConfig = {
           host: smtpConfig.host || providerDefaults.smtp.host,
@@ -773,9 +837,11 @@ export class EmailController {
           username: smtpConfig.username,
           password: smtpConfig.password,
         };
+      } else if (existingAccount?.smtpConfig) {
+        account.smtpConfig = existingAccount.smtpConfig;
       }
 
-      // Build IMAP config with provider defaults
+      // Build IMAP config - preserve existing, or infer from smtpConfig if needed
       if (imapConfig) {
         account.imapConfig = {
           host: imapConfig.host || providerDefaults.imap.host,
@@ -784,6 +850,28 @@ export class EmailController {
           username: imapConfig.username,
           password: imapConfig.password,
         };
+      } else if (existingAccount?.imapConfig) {
+        account.imapConfig = existingAccount.imapConfig;
+      } else if (provider === 'imap' || provider === 'custom') {
+        // Inference logic for new IMAP accounts or those missing it
+        const smtpToUse = account.smtpConfig || smtpConfig;
+        if (smtpToUse?.username && smtpToUse?.password) {
+          account.imapConfig = {
+            host: providerDefaults.imap.host,
+            port: providerDefaults.imap.port,
+            secure: providerDefaults.imap.secure,
+            username: smtpToUse.username,
+            password: smtpToUse.password,
+          };
+        }
+      }
+
+      // Preserve tokens if not providing new ones
+      if (existingAccount?.accessToken && !account.accessToken) {
+        account.accessToken = existingAccount.accessToken;
+      }
+      if (existingAccount?.refreshToken && !account.refreshToken) {
+        account.refreshToken = existingAccount.refreshToken;
       }
 
       if (existingAccount) {
@@ -1006,7 +1094,48 @@ export class EmailController {
 
       }
 
-      const { limit, offset, folder, search, unreadOnly } = req.query;
+      const { limit, offset, folder, search, unreadOnly, accountId } = req.query;
+
+      // Handle on-demand sync before fetching from database
+      if (accountId) {
+        try {
+          const account = await this.emailService.getEmailAccountById(accountId as string);
+          if (account && account.userId === req.user.id.toString()) {
+            // Trigger sync if never synced or synced > 2 minutes ago
+            const syncInterval = 2 * 60 * 1000; // 2 minutes
+            const needsSync = !account.lastSyncAt || (new Date().getTime() - new Date(account.lastSyncAt).getTime() > syncInterval);
+
+            if (needsSync) {
+              console.log(`Triggering on-demand sync for account: ${account.email}`);
+              // We await here because the user expects "using IMAP" to update the view
+              await this.emailService.processIncomingEmails(account).catch(err =>
+                console.error(`On-demand sync failed for ${account.email}:`, err)
+              );
+            }
+          }
+        } catch (syncError) {
+          console.error("Error during on-demand sync:", syncError);
+          // Continue to fetch from DB even if sync fails
+        }
+      } else {
+        // If no specific accountId, trigger background sync for all user accounts
+        try {
+          const accounts = await this.emailService.getEmailAccounts(req.user.id.toString());
+          for (const account of accounts) {
+            const syncInterval = 5 * 60 * 1000; // 5 mins for multi-account background sync
+            const needsSync = !account.lastSyncAt || (new Date().getTime() - new Date(account.lastSyncAt).getTime() > syncInterval);
+
+            if (needsSync) {
+              // Don't await here to keep the response fast for multiple accounts
+              this.emailService.processIncomingEmails(account).catch(err =>
+                console.error(`Background sync failed for ${account.email}:`, err)
+              );
+            }
+          }
+        } catch (err) {
+          console.error("Error triggering background syncs:", err);
+        }
+      }
 
       const emails = await this.emailService.getEmailsForUser(
         req.user.id.toString(),
@@ -1016,15 +1145,41 @@ export class EmailController {
           folder: (folder as string) || "inbox",
           search: search as string,
           unreadOnly: unreadOnly === "true",
+          accountId: accountId as string,
         }
       );
 
       return ResponseHandler.success(res, emails, "Emails Fetched Successfully");
 
     } catch (error: any) {
-      console.error("Error ", error);
-      return ResponseHandler.internalError(res, "Failed to get emails");
+      console.error("Error in getEmails:", error);
+      return ResponseHandler.internalError(res, `Failed to get emails: ${error.message}`);
     }
+  }
+
+  async getInbox(req: AuthenticatedRequest, res: Response): Promise<void> {
+    req.query.folder = 'inbox';
+    return this.getEmails(req, res);
+  }
+
+  async getSent(req: AuthenticatedRequest, res: Response): Promise<void> {
+    req.query.folder = 'sent';
+    return this.getEmails(req, res);
+  }
+
+  async getDrafts(req: AuthenticatedRequest, res: Response): Promise<void> {
+    req.query.folder = 'drafts';
+    return this.getEmails(req, res);
+  }
+
+  async getSpam(req: AuthenticatedRequest, res: Response): Promise<void> {
+    req.query.folder = 'spam';
+    return this.getEmails(req, res);
+  }
+
+  async getTrash(req: AuthenticatedRequest, res: Response): Promise<void> {
+    req.query.folder = 'trash';
+    return this.getEmails(req, res);
   }
 
   // Get a specific email by ID

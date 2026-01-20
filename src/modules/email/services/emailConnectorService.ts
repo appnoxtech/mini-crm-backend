@@ -75,13 +75,18 @@ export class EmailConnectorService {
     try {
       console.log(`Testing SMTP connection to ${smtpConfig.host}:${smtpConfig.port}`);
 
+      const finalSmtpConfig = { ...smtpConfig };
+      if (finalSmtpConfig.port === 465) {
+        finalSmtpConfig.secure = true;
+      }
+
       const transporter = nodemailer.createTransport({
-        host: smtpConfig.host,
-        port: smtpConfig.port,
-        secure: smtpConfig.secure,
+        host: finalSmtpConfig.host,
+        port: finalSmtpConfig.port,
+        secure: finalSmtpConfig.secure,
         auth: {
-          user: smtpConfig.username,
-          pass: smtpConfig.password
+          user: finalSmtpConfig.username,
+          pass: finalSmtpConfig.password
         },
         connectionTimeout: 10000, // 10 second timeout
         greetingTimeout: 10000,
@@ -336,6 +341,63 @@ export class EmailConnectorService {
         }
       }
 
+      // 3. Identify and Fetch from Drafts Folder
+      const draftBox = mailboxes.find((box: any) =>
+        (box.specialUse === '\\Drafts' || box.name.toLowerCase().includes('draft'))
+      );
+      if (draftBox) {
+        try {
+          await client.mailboxOpen(draftBox.path);
+          for await (const message of client.fetch(searchCriteria, {
+            envelope: true,
+            bodyStructure: true,
+            source: true
+          })) {
+            messages.push({ ...message, folder: 'DRAFT' });
+          }
+        } catch (err) {
+          console.warn(`Failed to fetch from Drafts folder (${draftBox.path}):`, err);
+        }
+      }
+
+      // 4. Identify and Fetch from Junk/Spam Folder
+      const spamBox = mailboxes.find((box: any) =>
+        (box.specialUse === '\\Junk' || box.name.toLowerCase().includes('spam') || box.name.toLowerCase().includes('junk'))
+      );
+      if (spamBox) {
+        try {
+          await client.mailboxOpen(spamBox.path);
+          for await (const message of client.fetch(searchCriteria, {
+            envelope: true,
+            bodyStructure: true,
+            source: true
+          })) {
+            messages.push({ ...message, folder: 'SPAM' });
+          }
+        } catch (err) {
+          console.warn(`Failed to fetch from Spam folder (${spamBox.path}):`, err);
+        }
+      }
+
+      // 5. Identify and Fetch from Trash Folder
+      const trashBox = mailboxes.find((box: any) =>
+        (box.specialUse === '\\Trash' || box.name.toLowerCase().includes('trash') || box.name.toLowerCase().includes('delete'))
+      );
+      if (trashBox) {
+        try {
+          await client.mailboxOpen(trashBox.path);
+          for await (const message of client.fetch(searchCriteria, {
+            envelope: true,
+            bodyStructure: true,
+            source: true
+          })) {
+            messages.push({ ...message, folder: 'TRASH' });
+          }
+        } catch (err) {
+          console.warn(`Failed to fetch from Trash folder (${trashBox.path}):`, err);
+        }
+      }
+
     } catch (err) {
       console.error('Error during IMAP fetch:', err);
       throw err;
@@ -459,14 +521,24 @@ export class EmailConnectorService {
 
     console.log(`Attempting to send email via ${account.smtpConfig.host}:${account.smtpConfig.port}`);
 
+    const smtpConfig = { ...account.smtpConfig };
+
+    // Smart detection: port 465 is almost always SMTPS (secure: true)
+    if (smtpConfig.port === 465) {
+      smtpConfig.secure = true;
+    }
+
     const transporter = nodemailer.createTransport({
-      host: account.smtpConfig.host,
-      port: account.smtpConfig.port,
-      secure: account.smtpConfig.secure,
+      host: smtpConfig.host,
+      port: smtpConfig.port,
+      secure: smtpConfig.secure,
       auth: {
-        user: account.smtpConfig.username,
-        pass: account.smtpConfig.password
+        user: smtpConfig.username,
+        pass: smtpConfig.password
       },
+      connectionTimeout: 10000, // 10 second timeout
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
       tls: {
         rejectUnauthorized: false // Only for development/testing
       }
