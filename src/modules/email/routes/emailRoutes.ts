@@ -55,8 +55,12 @@ export function createEmailRoutes(emailController: EmailController): Router {
   router.get('/drafts', (req: any, res) => emailController.getDrafts(req, res));
   router.get('/spam', (req: any, res) => emailController.getSpam(req, res));
   router.get('/trash', (req: any, res) => emailController.getTrash(req, res));
+  router.get('/trash', (req: any, res) => emailController.getTrash(req, res));
+  router.get('/archive', (req: any, res) => emailController.getArchive(req, res));
 
-  router.get('/:emailId', (req: any, res) => emailController.getEmailById(req, res));
+  router.post('/:emailId/archive', (req: any, res) => emailController.archiveEmail(req, res));
+  router.post('/:emailId/unarchive', (req: any, res) => emailController.unarchiveEmail(req, res));
+
   router.patch('/:emailId/read', (req: any, res) => emailController.markEmailAsRead(req, res));
 
   return router;
