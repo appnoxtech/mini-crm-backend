@@ -964,7 +964,6 @@ export class EmailController {
   }
 
 
-
   // Email sync management endpoints
   async triggerEmailSync(
     req: AuthenticatedRequest,
@@ -1024,6 +1023,26 @@ export class EmailController {
     } catch (error: any) {
       console.error("Error triggering email sync:", error);
       return ResponseHandler.internalError(res, "Failed to trigger email sync")
+    }
+  }
+
+  async triggerArchiveSync(
+    req: AuthenticatedRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      if (!req.user) {
+        return ResponseHandler.unauthorized(res, "User not authenticated");
+      }
+
+      console.log(`Manual archive sync triggered for user ${req.user.id}`);
+
+      const result = await this.emailService.syncArchivedEmails(req.user.id.toString());
+
+      return ResponseHandler.success(res, result, "Archive sync completed");
+    } catch (error: any) {
+      console.error("Error triggering archive sync:", error);
+      return ResponseHandler.internalError(res, "Failed to sync archives: " + error.message);
     }
   }
 

@@ -49,6 +49,7 @@ export function createEmailRoutes(emailController: EmailController): Router {
   router.get('/notifications/stats', (req: any, res) => emailController.getNotificationStats(req, res));
 
   // Email retrieval and management
+  router.post('/sync-archive', (req: any, res) => emailController.triggerArchiveSync(req, res));
   router.get('/list', (req: any, res) => emailController.getEmails(req, res));
   router.get('/inbox', (req: any, res) => emailController.getInbox(req, res));
   router.get('/sent', (req: any, res) => emailController.getSent(req, res));
