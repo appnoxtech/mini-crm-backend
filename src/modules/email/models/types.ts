@@ -59,6 +59,7 @@ export interface EmailAccount {
   };
   isActive: boolean;
   lastSyncAt?: Date;
+  lastHistoryId?: string;
   createdAt: Date;
   updatedAt: Date;
 }

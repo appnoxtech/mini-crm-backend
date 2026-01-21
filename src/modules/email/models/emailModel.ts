@@ -22,6 +22,7 @@ export class EmailModel {
         smtpConfig TEXT,
         isActive BOOLEAN DEFAULT 1,
         lastSyncAt TEXT,
+        lastHistoryId TEXT,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL
       )
@@ -189,6 +190,7 @@ export class EmailModel {
     if (row.imapConfig) account.imapConfig = JSON.parse(row.imapConfig);
     if (row.smtpConfig) account.smtpConfig = JSON.parse(row.smtpConfig);
     if (row.lastSyncAt) account.lastSyncAt = new Date(row.lastSyncAt);
+    if (row.lastHistoryId) account.lastHistoryId = row.lastHistoryId;
 
     return account;
   }
@@ -251,8 +253,8 @@ export class EmailModel {
     const stmt = this.db.prepare(`
       INSERT INTO email_accounts (
         id, userId, email, provider, accessToken, refreshToken, imapConfig, smtpConfig, 
-        isActive, lastSyncAt, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        isActive, lastSyncAt, lastHistoryId, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -266,6 +268,7 @@ export class EmailModel {
       account.smtpConfig ? JSON.stringify(account.smtpConfig) : null,
       account.isActive ? 1 : 0,
       account.lastSyncAt?.toISOString() || null,
+      account.lastHistoryId || null,
       account.createdAt.toISOString(),
       account.updatedAt.toISOString()
     );
@@ -308,6 +311,11 @@ export class EmailModel {
     if (updates.lastSyncAt !== undefined) {
       fields.push("lastSyncAt = ?");
       values.push(updates.lastSyncAt.toISOString());
+    }
+
+    if (updates.lastHistoryId !== undefined) {
+      fields.push("lastHistoryId = ?");
+      values.push(updates.lastHistoryId);
     }
 
     if (fields.length === 0) return;

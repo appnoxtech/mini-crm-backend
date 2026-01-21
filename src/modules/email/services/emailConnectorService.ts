@@ -222,16 +222,8 @@ export class EmailConnectorService {
       // Batch fetch messages for better performance
       for (const message of messageIds) {
         try {
-          const fullMessage = await this.gmailClient.users.messages.get({
-            userId: 'me',
-            id: message.id,
-            format: 'full'
-          });
-          messages.push({
-            ...fullMessage.data,
-            provider: 'gmail',
-            accountId: account.id
-          });
+          const fullMessage = await this.fetchGmailMessageDetails(account.id, message.id);
+          messages.push(fullMessage);
         } catch (error: any) {
           console.error(`Failed to fetch Gmail message ${message.id}:`, error);
           // Continue with other messages
@@ -251,6 +243,115 @@ export class EmailConnectorService {
 
       throw new Error(`Gmail email fetch failed: ${error.message}`);
     }
+  }
+
+  /**
+   * Fetch specific archived emails (NOT INBOX, SPAM, TRASH)
+   * This is used for initial sync or full resync of archives
+   */
+  async fetchArchivedGmailEmails(account: EmailAccount, maxResults: number = 50, pageToken?: string): Promise<{ messages: any[], nextPageToken?: string, newHistoryId?: string }> {
+    try {
+      await this.connectGmail(account);
+
+      // Query for archived emails: Not in Inbox, Spam, or Trash
+      const query = '-in:inbox -in:spam -in:trash';
+
+      console.log(`Fetching Archived Gmail emails with query: ${query}, maxResults: ${maxResults}`);
+
+      const response = await this.gmailClient.users.messages.list({
+        userId: 'me',
+        q: query,
+        maxResults,
+        pageToken
+      });
+
+      const messages: any[] = [];
+      const messageList = response.data.messages || [];
+      // Capture the current history ID from the list response to use for future incremental syncs
+      // Getting it from list response is an approximation; ideally, we get profile, but this is often enough
+      // To be safer, we can get profile history ID separate if needed, but list response usually doesn't return historyId directly
+      // So let's get profile to be sure about the current state/checkpoint
+      const profile = await this.gmailClient.users.getProfile({ userId: 'me' });
+      const newHistoryId = profile.data.historyId;
+
+      // Batch fetch messages
+      for (const message of messageList) {
+        try {
+          const fullMessage = await this.fetchGmailMessageDetails(account.id, message.id);
+
+          // Double check locally that it doesn't have INBOX label (API q should handle it, but good to be safe)
+          const labelIds = fullMessage.labelIds || [];
+          if (!labelIds.includes('INBOX') && !labelIds.includes('SPAM') && !labelIds.includes('TRASH')) {
+            messages.push(fullMessage);
+          }
+        } catch (error: any) {
+          console.error(`Failed to fetch Archived Gmail message ${message.id}:`, error);
+        }
+      }
+
+      console.log(`Successfully fetched ${messages.length} archived Gmail messages`);
+
+      return {
+        messages,
+        nextPageToken: response.data.nextPageToken,
+        newHistoryId
+      };
+    } catch (error: any) {
+      console.error('Failed to fetch Archived Gmail emails:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch Gmail History (Incremental Sync)
+   * Returns list of changes (added messages, label changes) since startHistoryId
+   */
+  async fetchGmailHistory(account: EmailAccount, startHistoryId: string): Promise<any> {
+    try {
+      await this.connectGmail(account);
+
+      console.log(`Fetching Gmail history starting from ${startHistoryId}`);
+
+      const response = await this.gmailClient.users.history.list({
+        userId: 'me',
+        startHistoryId,
+        historyTypes: ['messageAdded', 'labelAdded', 'labelRemoved']
+      });
+
+      const history = response.data.history || [];
+      const newHistoryId = response.data.historyId; // The ID of the most recent change in this list
+
+      console.log(`Fetched ${history.length} history records. New History ID: ${newHistoryId}`);
+
+      return {
+        history,
+        newHistoryId
+      };
+    } catch (error: any) {
+      // 404 error for historyId means it's too old -> requires full sync
+      if (error.code === 404 || (error.message && error.message.includes('historyId'))) {
+        throw new Error('HISTORY_EXPIRED');
+      }
+      console.error('Failed to fetch Gmail history:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Helper to fetch full details of a single Gmail message
+   */
+  async fetchGmailMessageDetails(accountId: string, messageId: string): Promise<any> {
+    const fullMessage = await this.gmailClient.users.messages.get({
+      userId: 'me',
+      id: messageId,
+      format: 'full'
+    });
+
+    return {
+      ...fullMessage.data,
+      provider: 'gmail',
+      accountId: accountId
+    };
   }
 
   async fetchOutlookEmails(account: EmailAccount, lastSyncTime?: Date, maxResults: number = 50): Promise<any[]> {
