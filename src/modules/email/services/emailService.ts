@@ -728,4 +728,13 @@ export class EmailService {
   ): Promise<boolean> {
     return this.emailModel.markEmailAsRead(emailId, userId, isRead);
   }
+
+  async archiveEmail(emailId: string, userId: string): Promise<boolean> {
+    return this.emailModel.archiveEmail(emailId, userId);
+  }
+
+  async unarchiveEmail(emailId: string, userId: string): Promise<boolean> {
+    return this.emailModel.unarchiveEmail(emailId, userId);
+  }
+
 }

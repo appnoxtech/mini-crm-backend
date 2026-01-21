@@ -505,8 +505,8 @@ export class EmailModel {
 
     // Add folder filter
     if (folder === "inbox") {
-      whereClause += ` AND e.isIncoming = 1 AND (e.labelIds IS NULL OR (e.labelIds NOT LIKE '%SPAM%' AND e.labelIds NOT LIKE '%JUNK%' AND e.labelIds NOT LIKE '%TRASH%'))`;
-      console.log("Filtering for INBOX emails");
+      whereClause += ` AND e.isIncoming = 1 AND (e.labelIds IS NULL OR (e.labelIds NOT LIKE '%SPAM%' AND e.labelIds NOT LIKE '%JUNK%' AND e.labelIds NOT LIKE '%TRASH%' AND e.labelIds NOT LIKE '%ARCHIVE%'))`;
+      console.log("Filtering for INBOX emails (excluding ARCHIVE)");
     } else if (folder === "sent") {
       whereClause += ` AND e.isIncoming = 0 AND (e.labelIds IS NULL OR (e.labelIds NOT LIKE '%DRAFT%' AND e.labelIds NOT LIKE '%TRASH%'))`;
       console.log("Filtering for SENT emails");
@@ -637,6 +637,53 @@ export class EmailModel {
       createdAt: new Date(row.createdAt),
       updatedAt: new Date(row.updatedAt),
     };
+  }
+
+  async archiveEmail(emailId: string, userId: string): Promise<boolean> {
+    const email = await this.getEmailById(emailId, userId);
+    if (!email) return false;
+
+    let labels = email.labelIds || [];
+    if (!labels.includes('ARCHIVE')) {
+      labels.push('ARCHIVE');
+    }
+    // Remove INBOX if present to reflect "Moved out of Inbox" state
+    labels = labels.filter((l) => l !== 'INBOX');
+
+    const stmt = this.db.prepare(
+      `UPDATE emails SET labelIds = ?, updatedAt = ? WHERE id = ?`
+    );
+    const result = stmt.run(
+      JSON.stringify(labels),
+      new Date().toISOString(),
+      emailId
+    );
+    return result.changes > 0;
+  }
+
+  async unarchiveEmail(emailId: string, userId: string): Promise<boolean> {
+    const email = await this.getEmailById(emailId, userId);
+    if (!email) return false;
+
+    let labels = email.labelIds || [];
+    labels = labels.filter((l) => l !== 'ARCHIVE');
+    // We can optionally add INBOX back, or just rely on absence of ARCHIVE
+    // For clarity, let's treat it as returning to Inbox mostly often implies adding INBOX label if your system relies on it.
+    // But since our INBOX query is "NOT ARCHIVE", it works without explicit INBOX label. 
+    // However, if we removed INBOX during archive, adding it back is symmetric.
+    if (!labels.includes('INBOX')) {
+      labels.push('INBOX');
+    }
+
+    const stmt = this.db.prepare(
+      `UPDATE emails SET labelIds = ?, updatedAt = ? WHERE id = ?`
+    );
+    const result = stmt.run(
+      JSON.stringify(labels),
+      new Date().toISOString(),
+      emailId
+    );
+    return result.changes > 0;
   }
 
   // Mark email as read/unread

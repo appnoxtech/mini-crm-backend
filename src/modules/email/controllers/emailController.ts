@@ -1260,4 +1260,64 @@ export class EmailController {
       return ResponseHandler.internalError(res, "Failed to mark email as read");
     }
   }
+
+  async archiveEmail(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        return ResponseHandler.unauthorized(res, "User not authenticated");
+      }
+
+      const { emailId } = req.params;
+      if (!emailId) {
+        return ResponseHandler.error(res, "Email ID is required");
+      }
+
+      const success = await this.emailService.archiveEmail(
+        emailId,
+        req.user.id.toString()
+      );
+
+      if (!success) {
+        return ResponseHandler.notFound(res, "Email not found");
+      }
+
+      return ResponseHandler.success(res, "Email archived successfully");
+    } catch (error: any) {
+      console.error("Error archiving email:", error);
+      return ResponseHandler.internalError(res, "Failed to archive email");
+    }
+  }
+
+  async unarchiveEmail(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        return ResponseHandler.unauthorized(res, "User not authenticated");
+      }
+
+      const { emailId } = req.params;
+      if (!emailId) {
+        return ResponseHandler.error(res, "Email ID is required");
+      }
+
+      const success = await this.emailService.unarchiveEmail(
+        emailId,
+        req.user.id.toString()
+      );
+
+      if (!success) {
+        return ResponseHandler.notFound(res, "Email not found");
+      }
+
+      return ResponseHandler.success(res, "Email unarchived successfully");
+    } catch (error: any) {
+      console.error("Error unarchiving email:", error);
+      return ResponseHandler.internalError(res, "Failed to unarchive email");
+    }
+  }
+
+  async getArchive(req: AuthenticatedRequest, res: Response): Promise<void> {
+    req.query.folder = 'archive';
+    return this.getEmails(req, res);
+  }
+
 }
