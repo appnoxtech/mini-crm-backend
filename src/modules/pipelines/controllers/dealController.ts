@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { DealService } from '../services/dealService';
 import { AuthenticatedRequest } from '../../../shared/types';
 import { ResponseHandler } from '../../../shared/responses/responses';
+import { string } from 'zod';
 
 export class DealController {
     constructor(private dealService: DealService) { }
@@ -27,11 +28,14 @@ export class DealController {
                 return ResponseHandler.unauthorized(res, 'User not authenticated');
             }
 
-            const { search } = req.query;
+            const search = (req.query.search as string) || '';
+            const includeDeleted = req.query.includeDeleted === 'true';
 
-            console.log(search);
-
-            const result = await this.dealService.searchDeals(search as string);
+            const result = await this.dealService.searchDeals(
+                req.user.id,
+                search.trim(),
+                includeDeleted
+            );
 
             return ResponseHandler.success(res, result, 'Deals fetched successfully');
         } catch (error: any) {
@@ -39,6 +43,7 @@ export class DealController {
             return ResponseHandler.internalError(res, 'Failed to search deals');
         }
     }
+
 
     async getDeals(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {

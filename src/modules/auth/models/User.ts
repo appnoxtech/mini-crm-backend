@@ -1,5 +1,23 @@
 import Database from 'better-sqlite3';
 import { User, AuthUser } from '../../../shared/types';
+import { profile } from 'console';
+
+
+type LoginUserResponse = {
+  id: number;
+  email: string;
+  name: string;
+  profileImg: any[];
+  phone: string | null;
+  dateFormat: string | null;
+  timezone: string | null;
+  language: string | null;
+  defaultCurrency: string | null;
+  createdAt: string;
+  updatedAt: string;
+  role: string | null;
+};
+
 
 export class UserModel {
   private db: Database.Database;
@@ -152,4 +170,36 @@ export class UserModel {
       return false;
     }
   }
+
+  searchByPersonName(search: string): LoginUserResponse[] {
+    const stmt = this.db.prepare(`
+    SELECT * FROM users
+    WHERE name LIKE ? OR email LIKE ?
+  `);
+
+    const rows = stmt.all(`%${search}%`, `%${search}%`) as User[];
+
+    return rows.map(user => this.mapToLoginUser(user));
+  }
+
+
+  private mapToLoginUser(user: User): LoginUserResponse {
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      profileImg: JSON.parse(user.profileImg || '[]'),
+      phone: user.phone ?? null,
+      dateFormat: user.dateFormat ?? null,
+      timezone: user.timezone ?? null,
+      language: user.language ?? null,
+      defaultCurrency: user.defaultCurrency ?? null,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      role: user.role ?? null,
+    };
+  }
+
+
 }
+

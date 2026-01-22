@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { AuthService } from '../services/authService';
-import { AuthenticatedRequest } from '../../../shared/types';
+import { AuthenticatedRequest, AuthUser } from '../../../shared/types';
 import { UserModel } from '../models/User';
 import bcrypt from 'bcryptjs';
 import { ResponseHandler } from '../../../shared/responses/responses';
@@ -226,4 +226,31 @@ export class AuthController {
       return ResponseHandler.internalError(res, 'Failed to change account role');
     }
   }
+
+  async searchByPersonName(
+    req: AuthenticatedRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({ error: 'User not authenticated' });
+        return;
+      }
+
+      const search =
+        typeof req.query.search === 'string'
+          ? req.query.search
+          : '';
+
+      console.log('user search:', search);
+
+      const users = await this.authService.searchByPersonName(search);
+
+      return ResponseHandler.success(res, users, "Successfully Search");
+    } catch (error) {
+      console.error('Error searching users:', error);
+      res.status(500).json({ error: 'Failed to search users' });
+    }
+  }
+
 }
