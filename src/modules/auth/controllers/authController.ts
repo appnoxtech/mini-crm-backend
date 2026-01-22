@@ -203,4 +203,27 @@ export class AuthController {
       return ResponseHandler.internalError(res, 'Failed to change password');
     }
   }
+
+
+  async changeAccountRole(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({ error: 'User not authenticated' });
+        return;
+      }
+
+      const { role } = req.body as any;
+
+      const success = await this.authService.changeAccountRole(req.user.id, role);
+
+      if (!success) {
+        return ResponseHandler.error(res, 'Failed to change account role', 401);
+      }
+      return ResponseHandler.success(res, 'Account role updated successfully');
+
+    } catch (error) {
+      console.error('Account role change error:', error);
+      return ResponseHandler.internalError(res, 'Failed to change account role');
+    }
+  }
 }

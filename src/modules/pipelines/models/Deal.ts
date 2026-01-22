@@ -398,4 +398,19 @@ export class DealModel {
         return this.findById(dealId);
     }
 
+    // remove the label from deal
+    removeLabelFromDeal(dealId: number, labelId: number): Deal | null {
+        const deal = this.findById(dealId);
+        if (!deal) return null;
+
+        const labelIds = deal.labelIds || [];
+        const updatedLabelIds = labelIds.filter(id => id !== labelId);
+
+        this.db.prepare(
+            'UPDATE deals SET labelIds = ? WHERE id = ?'
+        ).run(JSON.stringify(updatedLabelIds), dealId);
+
+        return this.findById(dealId);
+    }
+
 }
