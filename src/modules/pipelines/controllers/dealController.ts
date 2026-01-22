@@ -295,4 +295,26 @@ export class DealController {
             return ResponseHandler.internalError(res, 'Failed to handle file upload');
         }
     }
+
+    async removeLabelFromDeal(req: AuthenticatedRequest, res: Response): Promise<void> {
+        try {
+            if (!req.user) {
+                return ResponseHandler.unauthorized(res, 'User not authenticated');
+            }
+
+            const { dealId } = req.params;
+            const { labelId } = req.body;
+
+            const deal = await this.dealService.removeLabelFromDeal(Number(dealId), Number(labelId));
+
+            if (!deal) {
+                return ResponseHandler.notFound(res, 'Deal not found');
+            }
+
+            return ResponseHandler.success(res, deal, 'Label removed from deal successfully');
+        } catch (error: any) {
+            console.error('Error removing label from deal:', error);
+            return ResponseHandler.internalError(res, 'Failed to remove label from deal');
+        }
+    }
 }

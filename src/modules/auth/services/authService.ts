@@ -44,7 +44,7 @@ export class AuthService {
 
   async createUser(email: string, name: string, password: string): Promise<AuthUser> {
     const passwordHash = await this.hashPassword(password);
-    const user = this.userModel.createUser(email, name, passwordHash);
+    const user = this.userModel.createUser(email, name, passwordHash, 'user');
 
     return {
       id: user.id,
@@ -114,6 +114,15 @@ export class AuthService {
       return false;
     }
   }
+
+  async changeAccountRole(id: number, role: string): Promise<boolean> {
+    try {
+      return this.userModel.updateAccountRole(id, role);
+    } catch (error) {
+      console.error('Account role change error:', error);
+      return false;
+    }
+  }
 }
 
 // Export individual functions for backward compatibility
@@ -145,3 +154,4 @@ export function verifyToken(token: string): AuthUser | null {
     return null;
   }
 }
+

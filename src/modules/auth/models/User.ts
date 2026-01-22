@@ -18,6 +18,7 @@ export class UserModel {
         passwordHash TEXT NOT NULL,
         profileImg TEXT,
         phone TEXT,
+        role TEXT DEFAULT user,
         dateFormat TEXT,
         timezone TEXT,
         language TEXT,
@@ -31,6 +32,7 @@ export class UserModel {
     const columns = [
       { name: 'profileImg', type: 'TEXT' },
       { name: 'phone', type: 'TEXT' },
+      { name: 'role', type: 'TEXT' },
       { name: 'dateFormat', type: 'TEXT' },
       { name: 'timezone', type: 'TEXT' },
       { name: 'language', type: 'TEXT' },
@@ -49,20 +51,21 @@ export class UserModel {
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)');
   }
 
-  createUser(email: string, name: string, passwordHash: string): User {
+  createUser(email: string, name: string, passwordHash: string, role: string): User {
     const now = new Date().toISOString();
     const stmt = this.db.prepare(`
-      INSERT INTO users (email, name, passwordHash, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO users (email, name, passwordHash, role, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
 
-    const result = stmt.run(email.toLowerCase(), name, passwordHash, now, now);
+    const result = stmt.run(email.toLowerCase(), name, passwordHash, role, now, now);
 
     return {
       id: result.lastInsertRowid as number,
       email: email.toLowerCase(),
       name,
       passwordHash,
+      role,
       createdAt: now,
       updatedAt: now
     };
@@ -134,6 +137,18 @@ export class UserModel {
       return result.changes > 0;
     } catch (error) {
       console.error('Error updating password:', error);
+      return false;
+    }
+  }
+
+  updateAccountRole(id: number, role: string): boolean {
+    try {
+      const now = new Date().toISOString();
+      const stmt = this.db.prepare('UPDATE users SET role = ?, updatedAt = ? WHERE id = ?');
+      const result = stmt.run(role, now, id);
+      return result.changes > 0;
+    } catch (error) {
+      console.error('Error updating account role:', error);
       return false;
     }
   }

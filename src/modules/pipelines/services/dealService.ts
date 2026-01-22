@@ -575,4 +575,8 @@ export class DealService {
             };
         });
     }
+
+    async removeLabelFromDeal(dealId: number, labelId: number): Promise<Deal | null> {
+        return this.dealModel.removeLabelFromDeal(dealId, labelId);
+    }
 }
