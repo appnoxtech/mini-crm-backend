@@ -16,6 +16,7 @@ export interface Person extends BaseEntity {
     emails: PersonEmail[];
     phones: PersonPhone[];
     organizationId?: number;
+    country?: string;
     deletedAt?: string;
 }
 export interface PersonRow {
@@ -25,6 +26,7 @@ export interface PersonRow {
     emails: string;
     phones: string;
     organizationId: number | null;
+    country: string | null;
     createdAt: string;
     updatedAt: string;
     deletedAt: string | null;
@@ -35,6 +37,7 @@ export interface CreatePersonData {
     emails: PersonEmail[];
     phones?: PersonPhone[];
     organizationId?: number;
+    country?: string;
 }
 export interface UpdatePersonData {
     firstName?: string;
@@ -42,6 +45,7 @@ export interface UpdatePersonData {
     emails?: PersonEmail[];
     phones?: PersonPhone[];
     organizationId?: number | null;
+    country?: string | null;
 }
 export declare class PersonModel {
     private db;

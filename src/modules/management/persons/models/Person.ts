@@ -21,6 +21,7 @@ export interface Person extends BaseEntity {
     emails: PersonEmail[];
     phones: PersonPhone[];
     organizationId?: number;
+    country?: string;
     deletedAt?: string;
 }
 
@@ -31,6 +32,7 @@ export interface PersonRow {
     emails: string; // JSON string in DB
     phones: string; // JSON string in DB
     organizationId: number | null;
+    country: string | null;
     createdAt: string;
     updatedAt: string;
     deletedAt: string | null;
@@ -42,6 +44,7 @@ export interface CreatePersonData {
     emails: PersonEmail[];
     phones?: PersonPhone[];
     organizationId?: number;
+    country?: string;
 }
 
 export interface UpdatePersonData {
@@ -50,6 +53,7 @@ export interface UpdatePersonData {
     emails?: PersonEmail[];
     phones?: PersonPhone[];
     organizationId?: number | null;
+    country?: string | null;
 }
 
 export class PersonModel {
@@ -112,11 +116,23 @@ export class PersonModel {
             }
         }
 
+        // Migration: Add country column if it doesn't exist
+        const hasCountry = tableInfo.some(col => col.name === 'country');
+        if (!hasCountry) {
+            try {
+                this.db.exec('ALTER TABLE persons ADD COLUMN country TEXT');
+                console.log('Added country column to persons table');
+            } catch (error) {
+                console.error('Error adding country column:', error);
+            }
+        }
+
         // Create indexes for persons table
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_firstName ON persons(firstName)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_lastName ON persons(lastName)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_organizationId ON persons(organizationId)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_deletedAt ON persons(deletedAt)');
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_country ON persons(country)');
 
         // Create lookup tables for email and phone uniqueness checks
         this.db.exec(`
@@ -209,6 +225,7 @@ export class PersonModel {
             emails: JSON.parse(row.emails),
             phones: JSON.parse(row.phones),
             organizationId: row.organizationId || undefined,
+            country: row.country || undefined,
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,
             deletedAt: row.deletedAt || undefined
@@ -219,8 +236,8 @@ export class PersonModel {
         return this.db.transaction(() => {
             const now = new Date().toISOString();
             const stmt = this.db.prepare(`
-                INSERT INTO persons (firstName, lastName, emails, phones, organizationId, createdAt, updatedAt)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO persons (firstName, lastName, emails, phones, organizationId, country, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             `);
 
             const result = stmt.run(
@@ -229,6 +246,7 @@ export class PersonModel {
                 JSON.stringify(data.emails),
                 JSON.stringify(data.phones || []),
                 data.organizationId || null,
+                data.country || null,
                 now,
                 now
             );
@@ -367,6 +385,10 @@ export class PersonModel {
             if (data.organizationId !== undefined) {
                 updates.push('organizationId = ?');
                 params.push(data.organizationId);
+            }
+            if (data.country !== undefined) {
+                updates.push('country = ?');
+                params.push(data.country);
             }
 
             params.push(id);

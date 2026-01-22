@@ -54,11 +54,23 @@ class PersonModel {
                 console.error('Error during persons table migration:', error);
             }
         }
+        // Migration: Add country column if it doesn't exist
+        const hasCountry = tableInfo.some(col => col.name === 'country');
+        if (!hasCountry) {
+            try {
+                this.db.exec('ALTER TABLE persons ADD COLUMN country TEXT');
+                console.log('Added country column to persons table');
+            }
+            catch (error) {
+                console.error('Error adding country column:', error);
+            }
+        }
         // Create indexes for persons table
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_firstName ON persons(firstName)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_lastName ON persons(lastName)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_organizationId ON persons(organizationId)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_deletedAt ON persons(deletedAt)');
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_country ON persons(country)');
         // Create lookup tables for email and phone uniqueness checks
         this.db.exec(`
           CREATE TABLE IF NOT EXISTS person_emails (
@@ -139,6 +151,7 @@ class PersonModel {
             emails: JSON.parse(row.emails),
             phones: JSON.parse(row.phones),
             organizationId: row.organizationId || undefined,
+            country: row.country || undefined,
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,
             deletedAt: row.deletedAt || undefined
@@ -148,10 +161,10 @@ class PersonModel {
         return this.db.transaction(() => {
             const now = new Date().toISOString();
             const stmt = this.db.prepare(`
-                INSERT INTO persons (firstName, lastName, emails, phones, organizationId, createdAt, updatedAt)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO persons (firstName, lastName, emails, phones, organizationId, country, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             `);
-            const result = stmt.run(data.firstName, data.lastName || null, JSON.stringify(data.emails), JSON.stringify(data.phones || []), data.organizationId || null, now, now);
+            const result = stmt.run(data.firstName, data.lastName || null, JSON.stringify(data.emails), JSON.stringify(data.phones || []), data.organizationId || null, data.country || null, now, now);
             const personId = result.lastInsertRowid;
             // Sync lookup tables
             this.syncEmailLookup(personId, data.emails);
@@ -259,6 +272,10 @@ class PersonModel {
             if (data.organizationId !== undefined) {
                 updates.push('organizationId = ?');
                 params.push(data.organizationId);
+            }
+            if (data.country !== undefined) {
+                updates.push('country = ?');
+                params.push(data.country);
             }
             params.push(id);
             const stmt = this.db.prepare(`
