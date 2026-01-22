@@ -41,7 +41,7 @@ class AuthService {
     }
     async createUser(email, name, password) {
         const passwordHash = await this.hashPassword(password);
-        const user = this.userModel.createUser(email, name, passwordHash);
+        const user = this.userModel.createUser(email, name, passwordHash, 'user');
         return {
             id: user.id,
             email: user.email,
@@ -103,6 +103,21 @@ class AuthService {
             console.error('Password change error:', error);
             return false;
         }
+    }
+    async changeAccountRole(id, role) {
+        try {
+            return this.userModel.updateAccountRole(id, role);
+        }
+        catch (error) {
+            console.error('Account role change error:', error);
+            return false;
+        }
+    }
+    async searchByPersonName(searchTerm) {
+        if (!searchTerm || !searchTerm.trim()) {
+            return;
+        }
+        return this.userModel.searchByPersonName(searchTerm.trim());
     }
 }
 exports.AuthService = AuthService;

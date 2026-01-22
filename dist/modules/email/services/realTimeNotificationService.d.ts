@@ -12,9 +12,24 @@ export declare class RealTimeNotificationService {
     initialize(io: SocketIOServer): void;
     private setupSocketHandlers;
     private handleEmailSyncRequest;
-    notifyUser(userId: string, notification: EmailNotification): void;
+    notifyUser(userId: string | number, notification: EmailNotification): void;
     notifyAll(notification: EmailNotification): void;
-    notifyNewEmail(userId: string, email: Email): void;
+    notifyNewEmail(userId: string, email: Email, accountInfo?: {
+        id: string;
+        email: string;
+    }): void;
+    /**
+     * Extract sender name from "Name <email>" format
+     */
+    private extractSenderName;
+    /**
+     * Extract email address from "Name <email>" format
+     */
+    private extractEmailAddress;
+    /**
+     * Clean email snippet by removing HTML and extra whitespace
+     */
+    private cleanEmailSnippet;
     notifyEmailSent(userId: string, messageId: string, to: string[], subject: string): void;
     notifySyncStatus(userId: string, accountId: string, status: 'starting' | 'completed' | 'failed', details?: any): void;
     notifyError(userId: string, error: string, context?: any): void;

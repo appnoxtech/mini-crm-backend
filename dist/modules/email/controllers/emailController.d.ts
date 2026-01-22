@@ -39,6 +39,7 @@ export declare class EmailController {
      */
     deleteEmailAccount(req: AuthenticatedRequest, res: Response): Promise<void>;
     triggerEmailSync(req: AuthenticatedRequest, res: Response): Promise<void>;
+    triggerArchiveSync(req: AuthenticatedRequest, res: Response): Promise<void>;
     getQueueStatus(req: AuthenticatedRequest, res: Response): Promise<void>;
     getNotificationStats(req: AuthenticatedRequest, res: Response): Promise<void>;
     getEmails(req: AuthenticatedRequest, res: Response): Promise<void>;
@@ -49,5 +50,8 @@ export declare class EmailController {
     getTrash(req: AuthenticatedRequest, res: Response): Promise<void>;
     getEmailById(req: AuthenticatedRequest, res: Response): Promise<void>;
     markEmailAsRead(req: AuthenticatedRequest, res: Response): Promise<void>;
+    archiveEmail(req: AuthenticatedRequest, res: Response): Promise<void>;
+    unarchiveEmail(req: AuthenticatedRequest, res: Response): Promise<void>;
+    getArchive(req: AuthenticatedRequest, res: Response): Promise<void>;
 }
 //# sourceMappingURL=emailController.d.ts.map

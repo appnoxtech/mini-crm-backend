@@ -37,6 +37,24 @@ export declare class EmailConnectorService {
         message: string;
     }>;
     fetchGmailEmails(account: EmailAccount, lastSyncTime?: Date, maxResults?: number): Promise<any[]>;
+    /**
+     * Fetch specific archived emails (NOT INBOX, SPAM, TRASH)
+     * This is used for initial sync or full resync of archives
+     */
+    fetchArchivedGmailEmails(account: EmailAccount, maxResults?: number, pageToken?: string): Promise<{
+        messages: any[];
+        nextPageToken?: string;
+        newHistoryId?: string;
+    }>;
+    /**
+     * Fetch Gmail History (Incremental Sync)
+     * Returns list of changes (added messages, label changes) since startHistoryId
+     */
+    fetchGmailHistory(account: EmailAccount, startHistoryId: string): Promise<any>;
+    /**
+     * Helper to fetch full details of a single Gmail message
+     */
+    fetchGmailMessageDetails(accountId: string, messageId: string): Promise<any>;
     fetchOutlookEmails(account: EmailAccount, lastSyncTime?: Date, maxResults?: number): Promise<any[]>;
     fetchIMAPEmails(account: EmailAccount, lastSyncTime?: Date): Promise<any[]>;
     private validateOAuthTokens;

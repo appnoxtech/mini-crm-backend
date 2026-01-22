@@ -107,6 +107,8 @@ class DealService {
             isRotten: false,
             source: data.source,
             labelIds: data.labelIds,
+            ownerIds: data.ownerIds,
+            isVisibleToAll: data.isVisibleToAll,
             customFields: data.customFields ? JSON.stringify(data.customFields) : undefined
         });
         // create Product 
@@ -145,12 +147,26 @@ class DealService {
         };
         return response;
     }
-    async searchDeals(search) {
-        const deals = this.dealModel.searchDeals(search);
-        const pipeline = this.pipelineModel.searchByPipelineName(search);
-        const stage = this.stageModel.searchByStageName(search);
-        const person = this.personModel.searchByPersonName(search);
-        const organization = this.organizationModel.searchByOrganizationName(search);
+    async searchDeals(userId, search, includeDeleted = false) {
+        // Trim and validate search term
+        const searchTerm = search.trim();
+        if (!searchTerm) {
+            return {
+                deals: [],
+                pipeline: [],
+                stage: [],
+                person: [],
+                organization: []
+            };
+        }
+        // Execute all searches in parallel for better performance
+        const [deals, pipeline, stage, person, organization] = await Promise.all([
+            this.dealModel.searchDeals(userId, searchTerm, includeDeleted),
+            this.pipelineModel.searchByPipelineName(searchTerm),
+            this.stageModel.searchByStageName(searchTerm),
+            this.personModel.searchByPersonName(searchTerm),
+            this.organizationModel.searchByOrganizationName(searchTerm)
+        ]);
         return {
             deals,
             pipeline,
@@ -437,6 +453,9 @@ class DealService {
                 } : null
             };
         });
+    }
+    async removeLabelFromDeal(dealId, labelId) {
+        return this.dealModel.removeLabelFromDeal(dealId, labelId);
     }
 }
 exports.DealService = DealService;

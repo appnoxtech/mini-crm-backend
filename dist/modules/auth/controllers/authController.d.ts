@@ -11,5 +11,7 @@ export declare class AuthController {
     getProfile(req: AuthenticatedRequest, res: Response): Promise<void>;
     updateProfile(req: AuthenticatedRequest, res: Response): Promise<void>;
     changePassword(req: AuthenticatedRequest, res: Response): Promise<void>;
+    changeAccountRole(req: AuthenticatedRequest, res: Response): Promise<void>;
+    searchByPersonName(req: AuthenticatedRequest, res: Response): Promise<void>;
 }
 //# sourceMappingURL=authController.d.ts.map

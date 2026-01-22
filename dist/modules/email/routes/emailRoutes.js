@@ -39,13 +39,16 @@ function createEmailRoutes(emailController) {
     router.get('/queue/status', (req, res) => emailController.getQueueStatus(req, res));
     router.get('/notifications/stats', (req, res) => emailController.getNotificationStats(req, res));
     // Email retrieval and management
+    router.post('/sync-archive', (req, res) => emailController.triggerArchiveSync(req, res));
     router.get('/list', (req, res) => emailController.getEmails(req, res));
     router.get('/inbox', (req, res) => emailController.getInbox(req, res));
     router.get('/sent', (req, res) => emailController.getSent(req, res));
     router.get('/drafts', (req, res) => emailController.getDrafts(req, res));
     router.get('/spam', (req, res) => emailController.getSpam(req, res));
     router.get('/trash', (req, res) => emailController.getTrash(req, res));
-    router.get('/:emailId', (req, res) => emailController.getEmailById(req, res));
+    router.get('/archive', (req, res) => emailController.getArchive(req, res));
+    router.post('/:emailId/archive', (req, res) => emailController.archiveEmail(req, res));
+    router.post('/:emailId/unarchive', (req, res) => emailController.unarchiveEmail(req, res));
     router.patch('/:emailId/read', (req, res) => emailController.markEmailAsRead(req, res));
     return router;
 }

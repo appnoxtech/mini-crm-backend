@@ -13,6 +13,7 @@ export interface User {
     updatedAt: string;
     profileImg?: string;
     phone?: string;
+    role?: string;
     dateFormat?: string;
     timezone?: string;
     language?: string;
@@ -26,6 +27,7 @@ export interface AuthUser {
     updatedAt?: string;
     profileImg?: string;
     phone?: string;
+    role?: string;
     dateFormat?: string;
     timezone?: string;
     language?: string;

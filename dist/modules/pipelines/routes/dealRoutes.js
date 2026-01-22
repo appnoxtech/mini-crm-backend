@@ -22,6 +22,7 @@ function createDealRoutes(controller) {
     router.put('/make-lost/:dealId', (req, res) => controller.makeDealAsLost(req, res));
     router.patch('/re-open/:dealId', (req, res) => controller.resetDeal(req, res));
     router.get("/deal-history/:dealId", (req, res) => controller.getDealHistory(req, res));
+    router.delete('/remove-label/:dealId', (req, res) => controller.removeLabelFromDeal(req, res));
     // File upload route
     router.post('/upload/:dealId', ...fileUpload_1.fileUploadMiddleware, (req, res) => controller.uploadDealFiles(req, res));
     return router;

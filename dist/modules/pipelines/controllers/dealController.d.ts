@@ -18,5 +18,6 @@ export declare class DealController {
     resetDeal(req: AuthenticatedRequest, res: Response): Promise<void>;
     getDealHistory(req: AuthenticatedRequest, res: Response): Promise<void>;
     uploadDealFiles(req: Request, res: Response): Promise<void>;
+    removeLabelFromDeal(req: AuthenticatedRequest, res: Response): Promise<void>;
 }
 //# sourceMappingURL=dealController.d.ts.map

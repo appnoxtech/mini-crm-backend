@@ -39,6 +39,8 @@ export declare class DealService {
         description?: string;
         expectedCloseDate?: string;
         probability?: number;
+        ownerIds?: number[];
+        isVisibleToAll?: boolean;
         assignedTo?: number;
         source?: string;
         labelIds?: number[];
@@ -57,7 +59,7 @@ export declare class DealService {
         deal: Deal;
         products: Product[];
     }>;
-    searchDeals(search: string): Promise<{
+    searchDeals(userId: number, search: string, includeDeleted?: boolean): Promise<{
         deals: Deal[];
         pipeline: searchResult[];
         stage: searchResult[];
@@ -88,6 +90,7 @@ export declare class DealService {
     closeDeal(dealId: number, userId: number, status: 'WON' | 'LOST', lostReason?: string): Promise<Deal | null>;
     deleteDeal(dealId: number, userId: number): Promise<boolean>;
     getRottenDeals(userId: number, pipelineId?: number): Promise<any[]>;
+    removeLabelFromDeal(dealId: number, labelId: number): Promise<Deal | null>;
 }
 export {};
 //# sourceMappingURL=dealService.d.ts.map

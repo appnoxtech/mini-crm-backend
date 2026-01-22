@@ -121,8 +121,13 @@ class EmailService {
         let rawEmails = [];
         let processed = 0;
         let errors = 0;
+        let newEmails = 0;
         try {
             console.log(`Processing incoming emails for ${provider} account: ${account.email}`);
+            // Notify user that sync is in progress
+            if (this.notificationService) {
+                this.notificationService.notifySyncStatus(account.userId, account.id, 'starting');
+            }
             if (provider === "gmail") {
                 // Fetch up to 100 emails for better sync coverage
                 rawEmails = await this.connectorService.fetchGmailEmails(account, account.lastSyncAt, 100 // Increased from default 50 for better sync coverage
@@ -137,8 +142,10 @@ class EmailService {
             console.log(`Found ${rawEmails.length} emails to process`);
             for (const rawEmail of rawEmails) {
                 try {
-                    await this.processSingleEmail(account, rawEmail);
+                    const isNew = await this.processSingleEmail(account, rawEmail);
                     processed++;
+                    if (isNew)
+                        newEmails++;
                 }
                 catch (error) {
                     console.error("Error processing individual email:", error);
@@ -150,11 +157,24 @@ class EmailService {
             await this.emailModel.updateEmailAccount(account.id, {
                 lastSyncAt: new Date(),
             });
-            console.log(`Email processing completed. Processed: ${processed}, Errors: ${errors}`);
-            return { processed, errors };
+            console.log(`Email processing completed. Processed: ${processed}, New: ${newEmails}, Errors: ${errors}`);
+            // Notify user about sync completion
+            if (this.notificationService) {
+                this.notificationService.notifySyncStatus(account.userId, account.id, 'completed', {
+                    processed,
+                    newEmails,
+                    errors
+                });
+            }
+            return { processed, errors, newEmails };
         }
         catch (error) {
             console.error(`Error processing emails for account ${account.id}:`, error);
+            if (this.notificationService) {
+                this.notificationService.notifySyncStatus(account.userId, account.id, 'failed', {
+                    error: error.message
+                });
+            }
             throw new Error(`Email processing failed: ${error.message}`);
         }
     }
@@ -162,12 +182,15 @@ class EmailService {
         const parsed = await this.parseRawEmail(rawEmail, account.provider);
         // Check if email already exists
         const existing = await this.emailModel.findEmailByMessageId(parsed.messageId);
-        if (existing)
-            return;
+        if (existing) {
+            // console.log(`Email ${parsed.messageId} already exists, skipping notification.`);
+            return false;
+        }
         // Match with CRM entities
         const { contactIds, dealIds, accountEntityIds } = await this.matchEmailWithCRMEntities(parsed);
         // Determine if email is incoming or outgoing
         const isIncoming = this.determineEmailDirection(parsed, account, rawEmail);
+        console.log(`Email ${parsed.messageId} direction: ${isIncoming ? 'INCOMING' : 'OUTGOING'}`);
         const email = {
             id: parsed.messageId,
             messageId: parsed.messageId,
@@ -202,6 +225,7 @@ class EmailService {
         if (parsed.labelIds)
             email.labelIds = parsed.labelIds;
         await this.emailModel.createEmail(email);
+        console.log(`Created database record for email: ${email.subject}`);
         // Create activity records for matched deals
         if (dealIds.length > 0 && this.activityModel) {
             for (const dealId of dealIds) {
@@ -231,13 +255,17 @@ class EmailService {
             }
         }
         // Notify user about new incoming email
-        if (this.notificationService) {
-            console.log("🔔 Sending WebSocket notification for new email:", email.subject);
+        if (this.notificationService && isIncoming) {
+            console.log(`🔔 Triggering WebSocket notification for: ${email.subject} (User: ${account.userId})`);
             this.notificationService.notifyNewEmail(account.userId, email);
         }
-        else {
-            console.log("⚠️ Notification service not available");
+        else if (this.notificationService && !isIncoming) {
+            console.log(`ℹ️ Not an incoming email (${email.subject}), skipping notification.`);
         }
+        else if (!this.notificationService) {
+            console.log("⚠️ Notification service (this.notificationService) is MISSING in EmailService");
+        }
+        return true;
     }
     async parseRawEmail(rawEmail, provider) {
         if (provider === "gmail")
@@ -553,6 +581,175 @@ class EmailService {
     // Mark email as read/unread
     async markEmailAsRead(emailId, userId, isRead) {
         return this.emailModel.markEmailAsRead(emailId, userId, isRead);
+    }
+    async archiveEmail(emailId, userId) {
+        return this.emailModel.archiveEmail(emailId, userId);
+    }
+    async unarchiveEmail(emailId, userId) {
+        return this.emailModel.unarchiveEmail(emailId, userId);
+    }
+    /**
+     * Sync archived emails for a user from Gmail
+     * Uses history API for incremental sync if available
+     */
+    async syncArchivedEmails(userId) {
+        const account = await this.emailModel.getEmailAccountByUserId(userId);
+        if (!account || account.provider !== 'gmail' || !account.accessToken) {
+            console.log(`Skipping archive sync: User ${userId} has no connected Gmail account`);
+            return { processed: 0, errors: 0 };
+        }
+        console.log(`Starting Gmail archive sync for user ${userId} (Account: ${account.email})`);
+        let processed = 0;
+        let errors = 0;
+        try {
+            // Check if we have a history ID to do incremental sync
+            if (account.lastHistoryId) {
+                return await this.syncGmailHistory(account);
+            }
+            else {
+                // First time running archive sync or history expired -> Full/Initial Sync
+                return await this.syncGmailArchiveInitial(account);
+            }
+        }
+        catch (error) {
+            console.error(`Archive sync failed for user ${userId}:`, error);
+            // Check for history expired error to trigger full sync next time/now
+            if (error.message === 'HISTORY_EXPIRED') {
+                console.log('History expired, clearing lastHistoryId to force full sync next time');
+                await this.emailModel.updateEmailAccount(account.id, { lastHistoryId: undefined });
+                // Optionally retry immediately
+                return await this.syncGmailArchiveInitial(account);
+            }
+            throw error;
+        }
+    }
+    async syncGmailArchiveInitial(account) {
+        console.log(`Performing INITIAL archive sync for ${account.email}`);
+        let processed = 0;
+        let errors = 0;
+        let pageToken = undefined;
+        let newHistoryId = undefined;
+        // Fetch pages (limit to a few pages to avoid timeouts in this implementation, 
+        // real world might use background jobs)
+        const MAX_PAGES = 5;
+        let pageCount = 0;
+        do {
+            const result = await this.connectorService.fetchArchivedGmailEmails(account, 50, pageToken);
+            const messages = result.messages;
+            pageToken = result.nextPageToken;
+            if (result.newHistoryId)
+                newHistoryId = result.newHistoryId;
+            for (const msg of messages) {
+                try {
+                    await this.processSingleEmail(account, msg);
+                    // Explicitly ensure ARCHIVE label is set in DB since we fetched it via archive query
+                    // processSingleEmail might not set it if it just relies on Gmail labels and "ARCHIVE" isn't a real label
+                    await this.ensureArchiveStatus(msg.id, account.userId);
+                    processed++;
+                }
+                catch (err) {
+                    console.error(`Error processing archived email ${msg.id}:`, err);
+                    errors++;
+                }
+            }
+            pageCount++;
+        } while (pageToken && pageCount < MAX_PAGES);
+        // Update account with new history ID
+        if (newHistoryId) {
+            await this.emailModel.updateEmailAccount(account.id, {
+                lastHistoryId: newHistoryId,
+                lastSyncAt: new Date()
+            });
+        }
+        return { processed, errors };
+    }
+    async syncGmailHistory(account) {
+        console.log(`Performing INCREMENTAL history sync for ${account.email} from ID ${account.lastHistoryId}`);
+        let processed = 0;
+        let errors = 0;
+        const { history, newHistoryId } = await this.connectorService.fetchGmailHistory(account, account.lastHistoryId);
+        if (!history || history.length === 0) {
+            console.log('No new history changes found.');
+            // Still update history ID to the latest
+            if (newHistoryId) {
+                await this.emailModel.updateEmailAccount(account.id, {
+                    lastHistoryId: newHistoryId,
+                    lastSyncAt: new Date()
+                });
+            }
+            return { processed: 0, errors: 0 };
+        }
+        for (const record of history) {
+            // 1. Handle Messages Added (New emails)
+            if (record.messagesAdded) {
+                for (const item of record.messagesAdded) {
+                    try {
+                        const messageId = item.message.id;
+                        // Check if we already have it
+                        const existing = await this.emailModel.findEmailByMessageId(messageId);
+                        if (!existing) {
+                            // Fetch full details
+                            const fullMsg = await this.connectorService.fetchGmailMessageDetails(account.id, messageId);
+                            await this.processSingleEmail(account, fullMsg);
+                            // Check if it should be archived
+                            const labels = fullMsg.labelIds || [];
+                            if (!labels.includes('INBOX') && !labels.includes('SPAM') && !labels.includes('TRASH')) {
+                                await this.ensureArchiveStatus(messageId, account.userId);
+                            }
+                            processed++;
+                        }
+                    }
+                    catch (err) {
+                        console.error(`Error processing history messageAdded:`, err);
+                        errors++;
+                    }
+                }
+            }
+            // 2. Handle Labels Removed (e.g. Inbox label removed -> Archived)
+            if (record.labelsRemoved) {
+                for (const item of record.labelsRemoved) {
+                    try {
+                        // item has message { id, threadId } and labelIds (removed labels)
+                        if (item.labelIds && item.labelIds.includes('INBOX')) {
+                            console.log(`Message ${item.message.id} archived (INBOX label removed)`);
+                            await this.emailModel.archiveEmail(item.message.id, account.userId);
+                            processed++;
+                        }
+                    }
+                    catch (err) {
+                        errors++;
+                    }
+                }
+            }
+            // 3. Handle Labels Added (e.g. Inbox label added -> Unarchived)
+            if (record.labelsAdded) {
+                for (const item of record.labelsAdded) {
+                    try {
+                        if (item.labelIds && item.labelIds.includes('INBOX')) {
+                            console.log(`Message ${item.message.id} unarchived (INBOX label added)`);
+                            await this.emailModel.unarchiveEmail(item.message.id, account.userId);
+                            processed++;
+                        }
+                    }
+                    catch (err) {
+                        errors++;
+                    }
+                }
+            }
+        }
+        // Update to new history ID
+        if (newHistoryId) {
+            await this.emailModel.updateEmailAccount(account.id, {
+                lastHistoryId: newHistoryId,
+                lastSyncAt: new Date()
+            });
+        }
+        return { processed, errors };
+    }
+    // Helper to force set isArchived/label
+    async ensureArchiveStatus(emailId, userId) {
+        // We can reuse archiveEmail logic which adds 'ARCHIVE' label and removes 'INBOX'
+        await this.emailModel.archiveEmail(emailId, userId);
     }
 }
 exports.EmailService = EmailService;

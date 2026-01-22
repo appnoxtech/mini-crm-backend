@@ -58,6 +58,9 @@ const enhancedGmailService_1 = require("./modules/email/services/enhancedGmailSe
 const emailTrackingService_1 = require("./modules/email/services/emailTrackingService");
 const errorHandlingService_1 = require("./modules/email/services/errorHandlingService");
 const bulkEmailService_1 = require("./modules/email/services/bulkEmailService");
+// Import instant notification services
+const imapIdleService_1 = require("./modules/email/services/imapIdleService");
+const gmailPushService_1 = require("./modules/email/services/gmailPushService");
 // Import controllers
 const authController_1 = require("./modules/auth/controllers/authController");
 const leadController_1 = require("./modules/leads/controllers/leadController");
@@ -82,6 +85,7 @@ const organizationRoutes_1 = require("./modules/management/organisations/routes/
 const personRoutes_1 = require("./modules/management/persons/routes/personRoutes");
 const labelRoutes_1 = require("./modules/pipelines/routes/labelRoutes");
 const profileRoutes_1 = require("./modules/management/persons/routes/profileRoutes");
+const emailWebhookRoutes_1 = require("./modules/email/routes/emailWebhookRoutes");
 // Import summarization services
 const summarizationController_1 = require("./modules/email/controllers/summarizationController");
 const labelService_1 = require("./modules/pipelines/services/labelService");
@@ -171,6 +175,9 @@ configService.initializeSystem().then(result => {
 }).catch(error => {
     console.error('Failed to initialize enhanced mail system:', error);
 });
+// Initialize instant notification services
+imapIdleService_1.imapIdleService.initialize(emailService, notificationService);
+gmailPushService_1.gmailPushService.initialize(emailService, notificationService);
 // Initialize controllers
 const authController = new authController_1.AuthController(authService, userModel);
 const leadController = new leadController_1.LeadController(leadService);
@@ -223,6 +230,8 @@ app.use('/api/calls', (0, callRoutes_1.createCallRoutes)(callController));
 app.use('/api/webhooks/twilio', (0, webhookRoutes_1.createWebhookRoutes)(webhookController));
 // Import module routes
 app.use('/api/import', (0, import_1.createImportRoutes)(importController));
+// Email webhook routes (Gmail Pub/Sub push notifications)
+app.use('/api/webhooks/email', (0, emailWebhookRoutes_1.createEmailWebhookRoutes)());
 // Health check endpoint
 app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', timestamp: new Date().toISOString() });
@@ -275,6 +284,57 @@ try {
 catch (error) {
     console.warn('⚠️ RunPod job processor failed to start:', error);
 }
+// Start instant email notification services
+// Helper function to get all active email accounts
+const getActiveEmailAccounts = async () => {
+    const accounts = db.prepare(`
+    SELECT * FROM email_accounts WHERE isActive = 1
+  `).all();
+    return accounts.map((row) => ({
+        id: row.id,
+        userId: row.userId,
+        email: row.email,
+        provider: row.provider,
+        accessToken: row.accessToken,
+        refreshToken: row.refreshToken,
+        imapConfig: row.imapConfig ? JSON.parse(row.imapConfig) : undefined,
+        smtpConfig: row.smtpConfig ? JSON.parse(row.smtpConfig) : undefined,
+        isActive: Boolean(row.isActive),
+        lastSyncAt: row.lastSyncAt ? new Date(row.lastSyncAt) : undefined,
+        createdAt: new Date(row.createdAt),
+        updatedAt: new Date(row.updatedAt),
+    }));
+};
+// Start IMAP IDLE for all IMAP accounts (instant notifications)
+imapIdleService_1.imapIdleService.startMonitoringAllAccounts(getActiveEmailAccounts).then(() => {
+    console.log('📧 IMAP IDLE instant notifications started');
+}).catch(error => {
+    console.warn('⚠️ IMAP IDLE failed to start:', error);
+});
+// Start Gmail Push notifications (if GMAIL_PUBSUB_TOPIC is configured)
+if (process.env.GMAIL_PUBSUB_TOPIC) {
+    gmailPushService_1.gmailPushService.startWatchingAllAccounts(getActiveEmailAccounts).then(() => {
+        console.log('📧 Gmail Push instant notifications started');
+    }).catch(error => {
+        console.warn('⚠️ Gmail Push failed to start:', error);
+    });
+}
+else {
+    console.log('ℹ️  Gmail Push disabled (set GMAIL_PUBSUB_TOPIC to enable)');
+}
+// Graceful shutdown handler for instant notification services
+process.on('SIGTERM', async () => {
+    console.log('SIGTERM received, shutting down gracefully...');
+    await imapIdleService_1.imapIdleService.stopAll();
+    await gmailPushService_1.gmailPushService.stopAll();
+    process.exit(0);
+});
+process.on('SIGINT', async () => {
+    console.log('SIGINT received, shutting down gracefully...');
+    await imapIdleService_1.imapIdleService.stopAll();
+    await gmailPushService_1.gmailPushService.stopAll();
+    process.exit(0);
+});
 // Optional: Also try to start Redis-based queue if available
 // try {
 //   const summarizationScheduler = startSummarizationScheduler(DB_PATH);

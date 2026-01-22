@@ -58,13 +58,37 @@ class ImportModel {
         FOREIGN KEY (userId) REFERENCES users(id)
       )
     `);
+        // Create import_records table to track created entries for rollback
+        this.db.exec(`
+      CREATE TABLE IF NOT EXISTS import_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        importId INTEGER NOT NULL,
+        entityId INTEGER NOT NULL,
+        action TEXT NOT NULL, -- 'created' or 'updated'
+        createdAt TEXT NOT NULL,
+        FOREIGN KEY (importId) REFERENCES imports(id) ON DELETE CASCADE
+      )
+    `);
         // Create indexes
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_imports_userId ON imports(userId)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_imports_status ON imports(status)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_imports_createdAt ON imports(createdAt)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_import_errors_importId ON import_errors(importId)');
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_import_records_importId ON import_records(importId)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_import_templates_userId ON import_templates(userId)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_import_templates_entityType ON import_templates(entityType)');
+        // Create import_staging table
+        this.db.exec(`
+      CREATE TABLE IF NOT EXISTS import_staging (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        importId INTEGER NOT NULL,
+        data TEXT NOT NULL, -- JSON data
+        rowNumber INTEGER NOT NULL,
+        createdAt TEXT NOT NULL,
+        FOREIGN KEY (importId) REFERENCES imports(id) ON DELETE CASCADE
+      )
+    `);
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_import_staging_importId ON import_staging(importId)');
     }
     rowToImportJob(row) {
         return {
@@ -118,7 +142,7 @@ class ImportModel {
     }
     updateStatus(id, status, errorSummary) {
         const now = new Date().toISOString();
-        const completedAt = ['completed', 'failed', 'cancelled'].includes(status) ? now : null;
+        const completedAt = ['completed', 'failed', 'cancelled', 'rolled_back'].includes(status) ? now : null;
         const stmt = this.db.prepare(`
       UPDATE imports 
       SET status = ?, updatedAt = ?, completedAt = COALESCE(?, completedAt), errorSummary = ?
@@ -158,6 +182,42 @@ class ImportModel {
         const stmt = this.db.prepare('DELETE FROM imports WHERE id = ?');
         const result = stmt.run(id);
         return result.changes > 0;
+    }
+    // Staging methods
+    addStagedRecord(importId, data, rowNumber) {
+        const now = new Date().toISOString();
+        const stmt = this.db.prepare('INSERT INTO import_staging (importId, data, rowNumber, createdAt) VALUES (?, ?, ?, ?)');
+        stmt.run(importId, JSON.stringify(data), rowNumber, now);
+    }
+    getStagedRecords(importId) {
+        const stmt = this.db.prepare('SELECT data, rowNumber FROM import_staging WHERE importId = ? ORDER BY rowNumber');
+        const rows = stmt.all(importId);
+        return rows.map(row => ({
+            data: JSON.parse(row.data),
+            rowNumber: row.rowNumber,
+        }));
+    }
+    clearStagedRecords(importId) {
+        this.db.prepare('DELETE FROM import_staging WHERE importId = ?').run(importId);
+    }
+    // Import Actions tracking (for rollback)
+    addRecord(importId, entityId, action) {
+        if (action !== 'created')
+            return; // We only strictly rollback created records for now
+        const now = new Date().toISOString();
+        const stmt = this.db.prepare(`
+      INSERT INTO import_records (importId, entityId, action, createdAt)
+      VALUES (?, ?, ?, ?)
+    `);
+        stmt.run(importId, entityId, action, now);
+    }
+    getCreatedEntityIds(importId) {
+        const stmt = this.db.prepare(`
+      SELECT entityId FROM import_records 
+      WHERE importId = ? AND action = 'created'
+    `);
+        const rows = stmt.all(importId);
+        return rows.map(r => r.entityId);
     }
     // Import errors methods
     addError(importId, error) {

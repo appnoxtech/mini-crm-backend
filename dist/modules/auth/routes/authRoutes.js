@@ -17,6 +17,10 @@ function createAuthRoutes(authController) {
     router.get('/profile', auth_1.authMiddleware, (req, res) => authController.getProfile(req, res));
     router.put('/profile', auth_1.authMiddleware, (req, res) => authController.updateProfile(req, res));
     router.put('/change-password', auth_1.authMiddleware, (0, validate_1.default)(authValidation_1.changePasswordSchema), (req, res) => authController.changePassword(req, res));
+    // search users
+    router.get('/search', auth_1.authMiddleware, (req, res) => authController.searchByPersonName(req, res));
+    // role routes
+    router.put('/change-account-role', auth_1.authMiddleware, (req, res) => authController.changeAccountRole(req, res));
     return router;
 }
 //# sourceMappingURL=authRoutes.js.map
