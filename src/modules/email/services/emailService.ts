@@ -168,16 +168,22 @@ export class EmailService {
 
   async processIncomingEmails(
     account: EmailAccount
-  ): Promise<{ processed: number; errors: number }> {
+  ): Promise<{ processed: number; errors: number; newEmails: number }> {
     const provider = account.provider;
     let rawEmails: any[] = [];
     let processed = 0;
     let errors = 0;
+    let newEmails = 0;
 
     try {
       console.log(
         `Processing incoming emails for ${provider} account: ${account.email}`
       );
+
+      // Notify user that sync is in progress
+      if (this.notificationService) {
+        this.notificationService.notifySyncStatus(account.userId, account.id, 'starting');
+      }
 
       if (provider === "gmail") {
         // Fetch up to 100 emails for better sync coverage
@@ -202,8 +208,9 @@ export class EmailService {
 
       for (const rawEmail of rawEmails) {
         try {
-          await this.processSingleEmail(account, rawEmail);
+          const isNew = await this.processSingleEmail(account, rawEmail);
           processed++;
+          if (isNew) newEmails++;
         } catch (error: any) {
           console.error("Error processing individual email:", error);
           errors++;
@@ -217,14 +224,31 @@ export class EmailService {
       });
 
       console.log(
-        `Email processing completed. Processed: ${processed}, Errors: ${errors}`
+        `Email processing completed. Processed: ${processed}, New: ${newEmails}, Errors: ${errors}`
       );
-      return { processed, errors };
+
+      // Notify user about sync completion
+      if (this.notificationService) {
+        this.notificationService.notifySyncStatus(account.userId, account.id, 'completed', {
+          processed,
+          newEmails,
+          errors
+        });
+      }
+
+      return { processed, errors, newEmails };
     } catch (error: any) {
       console.error(
         `Error processing emails for account ${account.id}:`,
         error
       );
+
+      if (this.notificationService) {
+        this.notificationService.notifySyncStatus(account.userId, account.id, 'failed', {
+          error: error.message
+        });
+      }
+
       throw new Error(`Email processing failed: ${error.message}`);
     }
   }
@@ -232,14 +256,17 @@ export class EmailService {
   private async processSingleEmail(
     account: EmailAccount,
     rawEmail: any
-  ): Promise<void> {
+  ): Promise<boolean> {
     const parsed = await this.parseRawEmail(rawEmail, account.provider);
 
     // Check if email already exists
     const existing = await this.emailModel.findEmailByMessageId(
       parsed.messageId!
     );
-    if (existing) return;
+    if (existing) {
+      // console.log(`Email ${parsed.messageId} already exists, skipping notification.`);
+      return false;
+    }
 
     // Match with CRM entities
     const { contactIds, dealIds, accountEntityIds } =
@@ -247,6 +274,7 @@ export class EmailService {
 
     // Determine if email is incoming or outgoing
     const isIncoming = this.determineEmailDirection(parsed, account, rawEmail);
+    console.log(`Email ${parsed.messageId} direction: ${isIncoming ? 'INCOMING' : 'OUTGOING'}`);
 
     const email: Email = {
       id: parsed.messageId!,
@@ -278,6 +306,7 @@ export class EmailService {
     if (parsed.labelIds) email.labelIds = parsed.labelIds;
 
     await this.emailModel.createEmail(email);
+    console.log(`Created database record for email: ${email.subject}`);
 
     // Create activity records for matched deals
     if (dealIds.length > 0 && this.activityModel) {
@@ -308,15 +337,18 @@ export class EmailService {
     }
 
     // Notify user about new incoming email
-    if (this.notificationService) {
+    if (this.notificationService && isIncoming) {
       console.log(
-        "🔔 Sending WebSocket notification for new email:",
-        email.subject
+        `🔔 Triggering WebSocket notification for: ${email.subject} (User: ${account.userId})`
       );
       this.notificationService.notifyNewEmail(account.userId, email);
-    } else {
-      console.log("⚠️ Notification service not available");
+    } else if (this.notificationService && !isIncoming) {
+      console.log(`ℹ️ Not an incoming email (${email.subject}), skipping notification.`);
+    } else if (!this.notificationService) {
+      console.log("⚠️ Notification service (this.notificationService) is MISSING in EmailService");
     }
+
+    return true;
   }
 
   private async parseRawEmail(rawEmail: any, provider: string): Promise<Partial<Email>> {
