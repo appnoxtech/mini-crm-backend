@@ -115,19 +115,92 @@ export class RealTimeNotificationService {
   }
 
   // Specific notification methods
-  notifyNewEmail(userId: string, email: Email): void {
+  notifyNewEmail(userId: string, email: Email, accountInfo?: { id: string; email: string }): void {
+    // Parse sender name from "John Doe <john@example.com>" format
+    const senderName = this.extractSenderName(email.from);
+    const senderEmail = this.extractEmailAddress(email.from);
+
+    // Clean snippet: remove HTML tags and extra whitespace
+    const cleanSnippet = this.cleanEmailSnippet(email.body || '');
+
     this.notifyUser(userId, {
       type: 'new_email',
       data: {
+        // Email identifiers
         id: email.id,
+        messageId: email.messageId,
+        threadId: email.threadId,
+
+        // Account info (which inbox)
+        accountId: email.accountId || accountInfo?.id,
+        accountEmail: accountInfo?.email,
+
+        // Sender info (for display)
         from: email.from,
-        subject: email.subject,
+        senderName: senderName,
+        senderEmail: senderEmail,
+
+        // Email content
+        subject: email.subject || '(No Subject)',
+        snippet: cleanSnippet,
+
+        // Metadata
         receivedAt: email.receivedAt,
         isRead: email.isRead,
-        snippet: email.body ? (email.body.substring(0, 100) + (email.body.length > 100 ? '...' : '')) : ''
+        hasAttachments: email.attachments && email.attachments.length > 0,
+        attachmentCount: email.attachments?.length || 0,
+
+        // CRM context (if matched)
+        dealIds: email.dealIds || [],
+        contactIds: email.contactIds || []
       },
       timestamp: new Date()
     });
+  }
+
+  /**
+   * Extract sender name from "Name <email>" format
+   */
+  private extractSenderName(fromAddress: string): string {
+    if (!fromAddress) return 'Unknown';
+    const match = fromAddress.match(/^(.+?)\s*<[^>]+>$/);
+    if (match && match[1]) {
+      return match[1].trim().replace(/^["']|["']$/g, ''); // Remove quotes
+    }
+    // If no angle brackets, extract name from email
+    const emailMatch = fromAddress.match(/([^@]+)@/);
+    return emailMatch && emailMatch[1] ? emailMatch[1] : fromAddress;
+  }
+
+  /**
+   * Extract email address from "Name <email>" format
+   */
+  private extractEmailAddress(fromAddress: string): string {
+    if (!fromAddress) return '';
+    const match = fromAddress.match(/<([^>]+)>/);
+    return match && match[1] ? match[1] : fromAddress;
+  }
+
+  /**
+   * Clean email snippet by removing HTML and extra whitespace
+   */
+  private cleanEmailSnippet(body: string, maxLength: number = 150): string {
+    if (!body) return '';
+
+    // Remove HTML tags
+    let clean = body.replace(/<[^>]*>/g, ' ');
+    // Decode common HTML entities
+    clean = clean.replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"');
+    // Remove extra whitespace
+    clean = clean.replace(/\s+/g, ' ').trim();
+    // Truncate
+    return clean.length > maxLength
+      ? clean.substring(0, maxLength) + '...'
+      : clean;
   }
 
   notifyEmailSent(userId: string, messageId: string, to: string[], subject: string): void {
