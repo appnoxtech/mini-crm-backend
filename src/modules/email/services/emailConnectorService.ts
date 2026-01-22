@@ -499,6 +499,25 @@ export class EmailConnectorService {
         }
       }
 
+      // 6. Identify and Fetch from Archive Folder
+      const archiveBox = mailboxes.find((box: any) =>
+        (box.specialUse === '\\Archive' || box.name.toLowerCase() === 'archive' || box.name.toLowerCase() === 'archived' || box.name.toLowerCase() === 'archives')
+      );
+      if (archiveBox) {
+        try {
+          await client.mailboxOpen(archiveBox.path);
+          for await (const message of client.fetch(searchCriteria, {
+            envelope: true,
+            bodyStructure: true,
+            source: true
+          })) {
+            messages.push({ ...message, folder: 'ARCHIVE' });
+          }
+        } catch (err) {
+          console.warn(`Failed to fetch from Archive folder (${archiveBox.path}):`, err);
+        }
+      }
+
     } catch (err) {
       console.error('Error during IMAP fetch:', err);
       throw err;
