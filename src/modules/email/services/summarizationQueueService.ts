@@ -6,7 +6,7 @@ const RUNPOD_API_URL = process.env.RUNPOD_API_URL || 'https://api.runpod.ai/v2/2
 const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY || '';
 
 // Queue configuration
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+const REDIS_URL = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
 const MAX_CONCURRENT_JOBS = parseInt(process.env.MAX_CONCURRENT_JOBS || '3');
 
 interface SummarizationJobData {
