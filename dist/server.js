@@ -88,6 +88,8 @@ const labelService_1 = require("./modules/pipelines/services/labelService");
 const Label_1 = require("./modules/pipelines/models/Label");
 const labelController_1 = require("./modules/pipelines/controllers/labelController");
 const OrganizationService_1 = require("./modules/management/organisations/services/OrganizationService");
+// Import data import module
+const import_1 = require("./modules/import");
 const app = (0, express_1.default)();
 const server = (0, http_1.createServer)(app);
 const io = new socket_io_1.Server(server, {
@@ -131,6 +133,9 @@ personModel.initialize();
 labelModel.initialize();
 productModel.initialize();
 callModel.initialize();
+// Initialize import model
+const importModel = new import_1.ImportModel(db);
+importModel.initialize();
 // Initialize services
 const authService = new authService_1.AuthService(userModel);
 const leadService = new leadService_1.LeadService(leadModel);
@@ -179,6 +184,9 @@ const organizationController = new OrganizationController_1.OrganizationControll
 const personController = new PersonController_1.PersonController(personService);
 const labelController = new labelController_1.LabelController(labelService);
 const profileController = new profileController_1.ProfileController(profileService);
+// Initialize import service and controller
+const importService = new import_1.ImportService(db);
+const importController = new import_1.ImportController(importService);
 // Initialize call controllers
 const callController = new callController_1.CallController(callService);
 const webhookController = new webhookController_1.WebhookController(callService);
@@ -213,6 +221,8 @@ app.use('/api/profile', (0, profileRoutes_1.createProfileRoutes)(profileControll
 // Call module routes
 app.use('/api/calls', (0, callRoutes_1.createCallRoutes)(callController));
 app.use('/api/webhooks/twilio', (0, webhookRoutes_1.createWebhookRoutes)(webhookController));
+// Import module routes
+app.use('/api/import', (0, import_1.createImportRoutes)(importController));
 // Health check endpoint
 app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', timestamp: new Date().toISOString() });
