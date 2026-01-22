@@ -123,6 +123,13 @@ export class AuthService {
       return false;
     }
   }
+
+  async searchByPersonName(searchTerm: string): Promise<any> {
+    if (!searchTerm || !searchTerm.trim()) {
+      return;
+    }
+    return this.userModel.searchByPersonName(searchTerm.trim());
+  }
 }
 
 // Export individual functions for backward compatibility

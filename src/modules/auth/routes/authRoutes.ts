@@ -18,6 +18,9 @@ export function createAuthRoutes(authController: AuthController): Router {
   router.put('/change-password', authMiddleware, validate(changePasswordSchema), (req: any, res: any) => authController.changePassword(req, res));
 
 
+  // search users
+  router.get('/search', authMiddleware, (req: any, res: any) => authController.searchByPersonName(req, res));
+
   // role routes
   router.put('/change-account-role', authMiddleware, (req: any, res: any) => authController.changeAccountRole(req, res));
 

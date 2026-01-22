@@ -48,6 +48,9 @@ export class DealService {
             description?: string;
             expectedCloseDate?: string;
             probability?: number;
+
+            ownerIds?: number[],
+            isVisibleToAll?: boolean,
             assignedTo?: number;
             source?: string;
             labelIds?: number[];
@@ -170,6 +173,8 @@ export class DealService {
             isRotten: false,
             source: data.source,
             labelIds: data.labelIds,
+            ownerIds: data.ownerIds,
+            isVisibleToAll: data.isVisibleToAll,
             customFields: data.customFields ? JSON.stringify(data.customFields) : undefined
         });
 
@@ -214,21 +219,38 @@ export class DealService {
         return response;
     }
 
-    async searchDeals(search: string): Promise<{ deals: Deal[], pipeline: searchResult[], stage: searchResult[], person: Person[], organization: searchOrgResult[] }> {
+    async searchDeals(
+        userId: number,
+        search: string,
+        includeDeleted: boolean = false
+    ): Promise<{
+        deals: Deal[];
+        pipeline: searchResult[];
+        stage: searchResult[];
+        person: Person[];
+        organization: searchOrgResult[]
+    }> {
+        // Trim and validate search term
+        const searchTerm = search.trim();
 
-        const deals = this.dealModel.searchDeals(search);
+        if (!searchTerm) {
+            return {
+                deals: [],
+                pipeline: [],
+                stage: [],
+                person: [],
+                organization: []
+            };
+        }
 
-        const pipeline = this.pipelineModel.searchByPipelineName(search);
-
-        const stage = this.stageModel.searchByStageName(search);
-
-
-
-        const person = this.personModel.searchByPersonName(search);
-
-
-
-        const organization = this.organizationModel.searchByOrganizationName(search);
+        // Execute all searches in parallel for better performance
+        const [deals, pipeline, stage, person, organization] = await Promise.all([
+            this.dealModel.searchDeals(userId, searchTerm, includeDeleted),
+            this.pipelineModel.searchByPipelineName(searchTerm),
+            this.stageModel.searchByStageName(searchTerm),
+            this.personModel.searchByPersonName(searchTerm),
+            this.organizationModel.searchByOrganizationName(searchTerm)
+        ]);
 
         return {
             deals,
