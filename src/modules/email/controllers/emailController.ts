@@ -1113,12 +1113,33 @@ export class EmailController {
 
       }
 
-      const { limit, offset, folder, search, unreadOnly, accountId } = req.query;
+      const { limit, offset, folder, search, unreadOnly, accountId, emailAddress } = req.query;
+
+      let effectiveAccountId = accountId as string;
+
+      // Resolve emailAddress to accountId if provided
+      if (emailAddress && !effectiveAccountId) {
+        try {
+          const accounts = await this.emailService.getEmailAccounts(req.user.id.toString());
+          const matchingAccount = accounts.find(acc => acc.email.toLowerCase() === (emailAddress as string).toLowerCase());
+
+          if (matchingAccount) {
+            effectiveAccountId = matchingAccount.id;
+            console.log(`Resolved emailAddress ${emailAddress} to accountId: ${effectiveAccountId}`);
+          } else {
+            console.log(`No matching account found for emailAddress: ${emailAddress}`);
+            // If emailAddress was specified but not found, return empty results
+            return ResponseHandler.success(res, { emails: [], total: 0 }, "No accounts found for the specified email address");
+          }
+        } catch (error) {
+          console.error("Error resolving emailAddress to accountId:", error);
+        }
+      }
 
       // Handle on-demand sync before fetching from database
-      if (accountId) {
+      if (effectiveAccountId) {
         try {
-          const account = await this.emailService.getEmailAccountById(accountId as string);
+          const account = await this.emailService.getEmailAccountById(effectiveAccountId);
           if (account && account.userId === req.user.id.toString()) {
             // Trigger sync if never synced or synced > 2 minutes ago
             const syncInterval = 2 * 60 * 1000; // 2 minutes
@@ -1164,7 +1185,7 @@ export class EmailController {
           folder: (folder as string) || "inbox",
           search: search as string,
           unreadOnly: unreadOnly === "true",
-          accountId: accountId as string,
+          accountId: effectiveAccountId,
         }
       );
 
