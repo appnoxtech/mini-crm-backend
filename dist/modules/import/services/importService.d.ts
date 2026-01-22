@@ -29,6 +29,10 @@ export declare class ImportService {
         duplicateHandling: DuplicateHandling;
     }): Promise<ImportResult>;
     /**
+     * Merge staged import data into actual tables
+     */
+    mergeImport(userId: number, importId: number): Promise<ImportResult>;
+    /**
      * Get import job by ID
      */
     getImportJob(userId: number, importId: number): ImportJob | undefined;
@@ -47,6 +51,13 @@ export declare class ImportService {
      * Cancel/delete import
      */
     cancelImport(userId: number, importId: number): boolean;
+    /**
+     * Rollback import (undo created records)
+     */
+    rollbackImport(userId: number, importId: number): {
+        success: boolean;
+        count: number;
+    };
     /**
      * Save import template
      */

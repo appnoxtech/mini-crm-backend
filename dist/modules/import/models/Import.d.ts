@@ -24,6 +24,14 @@ export declare class ImportModel {
     updateProgress(id: number, processedRows: number, successCount: number, errorCount: number, skippedCount: number): void;
     getFilePath(id: number): string | undefined;
     delete(id: number): boolean;
+    addStagedRecord(importId: number, data: any, rowNumber: number): void;
+    getStagedRecords(importId: number): {
+        data: any;
+        rowNumber: number;
+    }[];
+    clearStagedRecords(importId: number): void;
+    addRecord(importId: number, entityId: number, action: 'created' | 'updated'): void;
+    getCreatedEntityIds(importId: number): number[];
     addError(importId: number, error: ImportError): void;
     addErrors(importId: number, errors: ImportError[]): void;
     getErrors(importId: number, limit?: number): ImportError[];

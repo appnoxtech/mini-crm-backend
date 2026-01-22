@@ -163,6 +163,42 @@ class AuthController {
             return responses_1.ResponseHandler.internalError(res, 'Failed to change password');
         }
     }
+    async changeAccountRole(req, res) {
+        try {
+            if (!req.user) {
+                res.status(401).json({ error: 'User not authenticated' });
+                return;
+            }
+            const { role } = req.body;
+            const success = await this.authService.changeAccountRole(req.user.id, role);
+            if (!success) {
+                return responses_1.ResponseHandler.error(res, 'Failed to change account role', 401);
+            }
+            return responses_1.ResponseHandler.success(res, 'Account role updated successfully');
+        }
+        catch (error) {
+            console.error('Account role change error:', error);
+            return responses_1.ResponseHandler.internalError(res, 'Failed to change account role');
+        }
+    }
+    async searchByPersonName(req, res) {
+        try {
+            if (!req.user) {
+                res.status(401).json({ error: 'User not authenticated' });
+                return;
+            }
+            const search = typeof req.query.search === 'string'
+                ? req.query.search
+                : '';
+            console.log('user search:', search);
+            const users = await this.authService.searchByPersonName(search);
+            return responses_1.ResponseHandler.success(res, users, "Successfully Search");
+        }
+        catch (error) {
+            console.error('Error searching users:', error);
+            res.status(500).json({ error: 'Failed to search users' });
+        }
+    }
 }
 exports.AuthController = AuthController;
 //# sourceMappingURL=authController.js.map

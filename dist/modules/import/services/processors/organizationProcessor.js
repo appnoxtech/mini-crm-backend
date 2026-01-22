@@ -271,6 +271,12 @@ class OrganizationProcessor {
             { name: 'linkedinProfile', type: 'string', required: false, aliases: ['linkedin', 'linkedin profile', 'linkedin url'] },
         ];
     }
+    /**
+     * Delete organization
+     */
+    delete(id) {
+        return this.orgModel.hardDelete(id);
+    }
 }
 exports.OrganizationProcessor = OrganizationProcessor;
 //# sourceMappingURL=organizationProcessor.js.map

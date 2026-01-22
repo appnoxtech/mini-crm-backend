@@ -40,6 +40,16 @@ export declare class ImportController {
      */
     cancelImport: (req: AuthenticatedRequest, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
     /**
+     * Rollback import
+     * POST /api/import/:id/rollback
+     */
+    rollbackImport: (req: AuthenticatedRequest, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+    /**
+     * Merge staged import
+     * POST /api/import/:id/merge
+     */
+    mergeImport: (req: AuthenticatedRequest, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+    /**
      * Get field definitions for entity type
      * GET /api/import/fields/:entityType
      */

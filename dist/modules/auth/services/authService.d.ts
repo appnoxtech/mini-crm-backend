@@ -15,6 +15,8 @@ export declare class AuthService {
         email: string;
     }>): Promise<AuthUser | null>;
     changePassword(id: number, currentPassword: string, newPassword: string): Promise<boolean>;
+    changeAccountRole(id: number, role: string): Promise<boolean>;
+    searchByPersonName(searchTerm: string): Promise<any>;
 }
 export declare function hashPassword(password: string): Promise<string>;
 export declare function comparePassword(password: string, hash: string): Promise<boolean>;

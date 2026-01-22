@@ -727,6 +727,20 @@ class EmailController {
             return responses_1.ResponseHandler.internalError(res, "Failed to trigger email sync");
         }
     }
+    async triggerArchiveSync(req, res) {
+        try {
+            if (!req.user) {
+                return responses_1.ResponseHandler.unauthorized(res, "User not authenticated");
+            }
+            console.log(`Manual archive sync triggered for user ${req.user.id}`);
+            const result = await this.emailService.syncArchivedEmails(req.user.id.toString());
+            return responses_1.ResponseHandler.success(res, result, "Archive sync completed");
+        }
+        catch (error) {
+            console.error("Error triggering archive sync:", error);
+            return responses_1.ResponseHandler.internalError(res, "Failed to sync archives: " + error.message);
+        }
+    }
     async getQueueStatus(req, res) {
         try {
             if (!req.user) {
@@ -769,11 +783,31 @@ class EmailController {
             if (!req.user) {
                 return responses_1.ResponseHandler.unauthorized(res, "User not authenticated");
             }
-            const { limit, offset, folder, search, unreadOnly, accountId } = req.query;
-            // Handle on-demand sync before fetching from database
-            if (accountId) {
+            const { limit, offset, folder, search, unreadOnly, accountId, emailAddress } = req.query;
+            let effectiveAccountId = accountId;
+            // Resolve emailAddress to accountId if provided
+            if (emailAddress && !effectiveAccountId) {
                 try {
-                    const account = await this.emailService.getEmailAccountById(accountId);
+                    const accounts = await this.emailService.getEmailAccounts(req.user.id.toString());
+                    const matchingAccount = accounts.find(acc => acc.email.toLowerCase() === emailAddress.toLowerCase());
+                    if (matchingAccount) {
+                        effectiveAccountId = matchingAccount.id;
+                        console.log(`Resolved emailAddress ${emailAddress} to accountId: ${effectiveAccountId}`);
+                    }
+                    else {
+                        console.log(`No matching account found for emailAddress: ${emailAddress}`);
+                        // If emailAddress was specified but not found, return empty results
+                        return responses_1.ResponseHandler.success(res, { emails: [], total: 0 }, "No accounts found for the specified email address");
+                    }
+                }
+                catch (error) {
+                    console.error("Error resolving emailAddress to accountId:", error);
+                }
+            }
+            // Handle on-demand sync before fetching from database
+            if (effectiveAccountId) {
+                try {
+                    const account = await this.emailService.getEmailAccountById(effectiveAccountId);
                     if (account && account.userId === req.user.id.toString()) {
                         // Trigger sync if never synced or synced > 2 minutes ago
                         const syncInterval = 2 * 60 * 1000; // 2 minutes
@@ -813,7 +847,7 @@ class EmailController {
                 folder: folder || "inbox",
                 search: search,
                 unreadOnly: unreadOnly === "true",
-                accountId: accountId,
+                accountId: effectiveAccountId,
             });
             return responses_1.ResponseHandler.success(res, emails, "Emails Fetched Successfully");
         }
@@ -896,6 +930,50 @@ class EmailController {
             console.error("Error marking email as read:", error);
             return responses_1.ResponseHandler.internalError(res, "Failed to mark email as read");
         }
+    }
+    async archiveEmail(req, res) {
+        try {
+            if (!req.user) {
+                return responses_1.ResponseHandler.unauthorized(res, "User not authenticated");
+            }
+            const { emailId } = req.params;
+            if (!emailId) {
+                return responses_1.ResponseHandler.error(res, "Email ID is required");
+            }
+            const success = await this.emailService.archiveEmail(emailId, req.user.id.toString());
+            if (!success) {
+                return responses_1.ResponseHandler.notFound(res, "Email not found");
+            }
+            return responses_1.ResponseHandler.success(res, "Email archived successfully");
+        }
+        catch (error) {
+            console.error("Error archiving email:", error);
+            return responses_1.ResponseHandler.internalError(res, "Failed to archive email");
+        }
+    }
+    async unarchiveEmail(req, res) {
+        try {
+            if (!req.user) {
+                return responses_1.ResponseHandler.unauthorized(res, "User not authenticated");
+            }
+            const { emailId } = req.params;
+            if (!emailId) {
+                return responses_1.ResponseHandler.error(res, "Email ID is required");
+            }
+            const success = await this.emailService.unarchiveEmail(emailId, req.user.id.toString());
+            if (!success) {
+                return responses_1.ResponseHandler.notFound(res, "Email not found");
+            }
+            return responses_1.ResponseHandler.success(res, "Email unarchived successfully");
+        }
+        catch (error) {
+            console.error("Error unarchiving email:", error);
+            return responses_1.ResponseHandler.internalError(res, "Failed to unarchive email");
+        }
+    }
+    async getArchive(req, res) {
+        req.query.folder = 'archive';
+        return this.getEmails(req, res);
     }
 }
 exports.EmailController = EmailController;

@@ -59,5 +59,9 @@ export declare class PersonProcessor {
         required: boolean;
         aliases: string[];
     }[];
+    /**
+     * Delete person
+     */
+    delete(id: number): boolean;
 }
 //# sourceMappingURL=personProcessor.d.ts.map

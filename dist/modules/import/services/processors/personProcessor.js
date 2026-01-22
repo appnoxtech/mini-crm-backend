@@ -276,6 +276,12 @@ class PersonProcessor {
             { name: 'country', type: 'string', required: false, aliases: ['country', 'nation', 'country name'] },
         ];
     }
+    /**
+     * Delete person
+     */
+    delete(id) {
+        return this.personModel.hardDelete(id);
+    }
 }
 exports.PersonProcessor = PersonProcessor;
 //# sourceMappingURL=personProcessor.js.map

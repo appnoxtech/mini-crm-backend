@@ -1,5 +1,5 @@
 export type ImportEntityType = 'person' | 'organization' | 'deal' | 'lead' | 'note' | 'activity';
-export type ImportStatus = 'pending' | 'validating' | 'mapping' | 'processing' | 'completed' | 'failed' | 'cancelled';
+export type ImportStatus = 'pending' | 'validating' | 'mapping' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'rolled_back' | 'staged';
 export type ImportFileFormat = 'csv' | 'xlsx' | 'json';
 export type DuplicateHandling = 'skip' | 'update' | 'create' | 'error';
 export interface ImportJob {

@@ -179,6 +179,50 @@ class ImportController {
         }
     };
     /**
+     * Rollback import
+     * POST /api/import/:id/rollback
+     */
+    rollbackImport = async (req, res) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) {
+                return res.status(401).json({ success: false, error: 'Unauthorized' });
+            }
+            const importId = parseInt(req.params.id);
+            if (isNaN(importId)) {
+                return res.status(400).json({ success: false, error: 'Invalid import ID' });
+            }
+            const result = this.importService.rollbackImport(userId, importId);
+            res.json({ success: true, data: result });
+        }
+        catch (error) {
+            console.error('Rollback import error:', error);
+            res.status(400).json({ success: false, error: error.message });
+        }
+    };
+    /**
+     * Merge staged import
+     * POST /api/import/:id/merge
+     */
+    mergeImport = async (req, res) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) {
+                return res.status(401).json({ success: false, error: 'Unauthorized' });
+            }
+            const importId = parseInt(req.params.id);
+            if (isNaN(importId)) {
+                return res.status(400).json({ success: false, error: 'Invalid import ID' });
+            }
+            const result = await this.importService.mergeImport(userId, importId);
+            res.json({ success: true, data: result });
+        }
+        catch (error) {
+            console.error('Merge import error:', error);
+            res.status(400).json({ success: false, error: error.message });
+        }
+    };
+    /**
      * Get field definitions for entity type
      * GET /api/import/fields/:entityType
      */

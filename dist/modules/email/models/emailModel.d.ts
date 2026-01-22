@@ -41,6 +41,8 @@ export declare class EmailModel {
         total: number;
     }>;
     getEmailById(emailId: string, userId: string): Promise<Email | null>;
+    archiveEmail(emailId: string, userId: string): Promise<boolean>;
+    unarchiveEmail(emailId: string, userId: string): Promise<boolean>;
     markEmailAsRead(emailId: string, userId: string, isRead: boolean): Promise<boolean>;
 }
 //# sourceMappingURL=emailModel.d.ts.map

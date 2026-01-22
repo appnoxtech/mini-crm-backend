@@ -64,5 +64,9 @@ export declare class OrganizationProcessor {
         required: boolean;
         aliases: string[];
     }[];
+    /**
+     * Delete organization
+     */
+    delete(id: number): boolean;
 }
 //# sourceMappingURL=organizationProcessor.d.ts.map

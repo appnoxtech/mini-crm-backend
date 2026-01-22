@@ -219,21 +219,9 @@ class ImportService {
                     result.errors.push(...validationErrors);
                     continue;
                 }
-                // Process the record
-                const processResult = processor.process(mappedData, userId, options.duplicateHandling);
-                if (processResult.status === 'created') {
-                    result.summary.success++;
-                    if (processResult.id) {
-                        result.createdEntityIds.push(processResult.id);
-                    }
-                }
-                else if (processResult.status === 'updated') {
-                    result.summary.success++;
-                }
-                else if (processResult.status === 'skipped') {
-                    result.summary.skipped++;
-                    result.summary.duplicates++;
-                }
+                // Stage the record
+                this.importModel.addStagedRecord(importId, mappedData, i + 2);
+                result.summary.success++;
             }
             catch (error) {
                 result.summary.errors++;
@@ -249,8 +237,23 @@ class ImportService {
             }
         }
         // Finalize
-        result.status = 'completed';
-        this.importModel.updateStatus(importId, 'completed', result.summary.errors > 0 ? `${result.summary.errors} errors occurred` : undefined);
+        // If we have successful staged records, status is 'staged', else 'failed' or 'completed' (if 0 rows)
+        if (result.summary.success > 0) {
+            result.status = 'staged';
+            this.importModel.updateStatus(importId, 'staged', result.summary.errors > 0 ? `${result.summary.errors} errors occurred during staging` : undefined);
+        }
+        else {
+            // If everything failed validation, we mark as failed (or completed with errors)
+            // But for now let's use 'failed' if 0 success, implies nothing to merge
+            if (result.summary.errors > 0 || result.summary.total > 0) {
+                result.status = 'failed';
+                this.importModel.updateStatus(importId, 'failed', 'No valid records to merge');
+            }
+            else {
+                result.status = 'completed'; // 0 rows total?
+                this.importModel.updateStatus(importId, 'completed');
+            }
+        }
         // Save any remaining errors (limit to 1000)
         if (result.errors.length > 0) {
             this.importModel.addErrors(importId, result.errors.slice(0, 1000));
@@ -264,6 +267,98 @@ class ImportService {
         }
         // Limit returned errors
         result.errors = result.errors.slice(0, 100);
+        return result;
+    }
+    /**
+     * Merge staged import data into actual tables
+     */
+    async mergeImport(userId, importId) {
+        const job = this.importModel.findById(importId);
+        if (!job)
+            throw new Error('Import job not found');
+        if (job.userId !== userId)
+            throw new Error('Unauthorized');
+        if (job.status !== 'staged') {
+            throw new Error(`Cannot merge import with status: ${job.status}`);
+        }
+        this.importModel.updateStatus(importId, 'processing');
+        // Get processor
+        const processor = this.processors.get(job.entityType);
+        if (!processor)
+            throw new Error(`Unsupported entity type: ${job.entityType}`);
+        // Get staged records
+        const stagedRecords = this.importModel.getStagedRecords(importId);
+        const duplicateHandling = job.duplicateHandling || 'skip';
+        const result = {
+            importId,
+            status: 'processing',
+            summary: {
+                total: stagedRecords.length,
+                success: 0,
+                errors: 0,
+                skipped: 0,
+                duplicates: 0,
+            },
+            errors: [],
+            createdEntityIds: [],
+        };
+        // Process each staged record
+        for (let i = 0; i < stagedRecords.length; i++) {
+            const record = stagedRecords[i];
+            if (!record)
+                continue;
+            const { data, rowNumber } = record;
+            try {
+                // Process the record (duplicate check and write)
+                const processResult = processor.process(data, userId, duplicateHandling);
+                if (processResult.status === 'created') {
+                    result.summary.success++;
+                    if (processResult.id) {
+                        result.createdEntityIds.push(processResult.id);
+                        // Track created record for rollback
+                        this.importModel.addRecord(importId, processResult.id, 'created');
+                    }
+                }
+                else if (processResult.status === 'updated') {
+                    result.summary.success++;
+                    if (processResult.id) {
+                        this.importModel.addRecord(importId, processResult.id, 'updated');
+                    }
+                }
+                else if (processResult.status === 'skipped') {
+                    result.summary.skipped++;
+                    result.summary.duplicates++;
+                }
+            }
+            catch (error) {
+                result.summary.errors++;
+                result.errors.push({
+                    row: rowNumber,
+                    errorType: 'system',
+                    message: error.message,
+                });
+                // Log error to DB
+                this.importModel.addError(importId, {
+                    row: rowNumber,
+                    errorType: 'system',
+                    message: error.message
+                });
+            }
+            // Update progress every 10 rows
+            if ((i + 1) % 10 === 0 || i === stagedRecords.length - 1) {
+                this.importModel.updateProgress(importId, i + 1, // We are re-using processedRows to count merged rows
+                result.summary.success, result.summary.errors + (job.errorCount || 0), // Accumulate
+                result.summary.skipped);
+            }
+        }
+        // Finalize
+        result.status = 'completed';
+        const totalErrors = result.summary.errors + (job.errorCount || 0); // Include validation errors from staging phase?
+        // Actually, validation errors were filtered out during staging. Staged records shouldn't have validation errors.
+        // But processing errors (e.g. DB constraints) are new.
+        this.importModel.updateStatus(importId, 'completed', totalErrors > 0 ? `${totalErrors} errors occurred` : undefined);
+        // Clear staged data
+        this.importModel.clearStagedRecords(importId);
         return result;
     }
     /**
@@ -305,6 +400,44 @@ class ImportService {
             fs.unlinkSync(filePath);
         }
         return this.importModel.delete(importId);
+    }
+    /**
+     * Rollback import (undo created records)
+     */
+    rollbackImport(userId, importId) {
+        const job = this.importModel.findById(importId);
+        if (!job || job.userId !== userId) {
+            throw new Error('Import job not found');
+        }
+        if (job.status === 'rolled_back') {
+            throw new Error('Import is already rolled back');
+        }
+        // Get processor
+        const processor = this.processors.get(job.entityType);
+        if (!processor)
+            throw new Error(`Unsupported entity type: ${job.entityType}`);
+        // Get created entity IDs
+        const createdIds = this.importModel.getCreatedEntityIds(importId);
+        let deletedCount = 0;
+        // Delete each entity
+        // We do this one by one for now, as processors expose single delete
+        // In a more optimized version, we could add bulk delete to processors
+        for (const id of createdIds) {
+            try {
+                if (processor.delete(id)) {
+                    deletedCount++;
+                }
+            }
+            catch (error) {
+                console.error(`Failed to rollback entity ${id}:`, error);
+            }
+        }
+        // Update status
+        this.importModel.updateStatus(importId, 'rolled_back', `Rolled back: Deleted ${deletedCount} records`);
+        return {
+            success: true,
+            count: deletedCount,
+        };
     }
     /**
      * Save import template

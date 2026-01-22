@@ -25,9 +25,9 @@ class DealController {
             if (!req.user) {
                 return responses_1.ResponseHandler.unauthorized(res, 'User not authenticated');
             }
-            const { search } = req.query;
-            console.log(search);
-            const result = await this.dealService.searchDeals(search);
+            const search = req.query.search || '';
+            const includeDeleted = req.query.includeDeleted === 'true';
+            const result = await this.dealService.searchDeals(req.user.id, search.trim(), includeDeleted);
             return responses_1.ResponseHandler.success(res, result, 'Deals fetched successfully');
         }
         catch (error) {
@@ -243,6 +243,24 @@ class DealController {
         catch (error) {
             console.error('Error in uploadDealFiles:', error);
             return responses_1.ResponseHandler.internalError(res, 'Failed to handle file upload');
+        }
+    }
+    async removeLabelFromDeal(req, res) {
+        try {
+            if (!req.user) {
+                return responses_1.ResponseHandler.unauthorized(res, 'User not authenticated');
+            }
+            const { dealId } = req.params;
+            const { labelId } = req.body;
+            const deal = await this.dealService.removeLabelFromDeal(Number(dealId), Number(labelId));
+            if (!deal) {
+                return responses_1.ResponseHandler.notFound(res, 'Deal not found');
+            }
+            return responses_1.ResponseHandler.success(res, deal, 'Label removed from deal successfully');
+        }
+        catch (error) {
+            console.error('Error removing label from deal:', error);
+            return responses_1.ResponseHandler.internalError(res, 'Failed to remove label from deal');
         }
     }
 }

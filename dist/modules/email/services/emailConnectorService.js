@@ -225,16 +225,8 @@ class EmailConnectorService {
             // Batch fetch messages for better performance
             for (const message of messageIds) {
                 try {
-                    const fullMessage = await this.gmailClient.users.messages.get({
-                        userId: 'me',
-                        id: message.id,
-                        format: 'full'
-                    });
-                    messages.push({
-                        ...fullMessage.data,
-                        provider: 'gmail',
-                        accountId: account.id
-                    });
+                    const fullMessage = await this.fetchGmailMessageDetails(account.id, message.id);
+                    messages.push(fullMessage);
                 }
                 catch (error) {
                     console.error(`Failed to fetch Gmail message ${message.id}:`, error);
@@ -253,6 +245,101 @@ class EmailConnectorService {
             }
             throw new Error(`Gmail email fetch failed: ${error.message}`);
         }
+    }
+    /**
+     * Fetch specific archived emails (NOT INBOX, SPAM, TRASH)
+     * This is used for initial sync or full resync of archives
+     */
+    async fetchArchivedGmailEmails(account, maxResults = 50, pageToken) {
+        try {
+            await this.connectGmail(account);
+            // Query for archived emails: Not in Inbox, Spam, or Trash
+            const query = '-in:inbox -in:spam -in:trash';
+            console.log(`Fetching Archived Gmail emails with query: ${query}, maxResults: ${maxResults}`);
+            const response = await this.gmailClient.users.messages.list({
+                userId: 'me',
+                q: query,
+                maxResults,
+                pageToken
+            });
+            const messages = [];
+            const messageList = response.data.messages || [];
+            // Capture the current history ID from the list response to use for future incremental syncs
+            // Getting it from list response is an approximation; ideally, we get profile, but this is often enough
+            // To be safer, we can get profile history ID separate if needed, but list response usually doesn't return historyId directly
+            // So let's get profile to be sure about the current state/checkpoint
+            const profile = await this.gmailClient.users.getProfile({ userId: 'me' });
+            const newHistoryId = profile.data.historyId;
+            // Batch fetch messages
+            for (const message of messageList) {
+                try {
+                    const fullMessage = await this.fetchGmailMessageDetails(account.id, message.id);
+                    // Double check locally that it doesn't have INBOX label (API q should handle it, but good to be safe)
+                    const labelIds = fullMessage.labelIds || [];
+                    if (!labelIds.includes('INBOX') && !labelIds.includes('SPAM') && !labelIds.includes('TRASH')) {
+                        messages.push(fullMessage);
+                    }
+                }
+                catch (error) {
+                    console.error(`Failed to fetch Archived Gmail message ${message.id}:`, error);
+                }
+            }
+            console.log(`Successfully fetched ${messages.length} archived Gmail messages`);
+            return {
+                messages,
+                nextPageToken: response.data.nextPageToken,
+                newHistoryId
+            };
+        }
+        catch (error) {
+            console.error('Failed to fetch Archived Gmail emails:', error);
+            throw error;
+        }
+    }
+    /**
+     * Fetch Gmail History (Incremental Sync)
+     * Returns list of changes (added messages, label changes) since startHistoryId
+     */
+    async fetchGmailHistory(account, startHistoryId) {
+        try {
+            await this.connectGmail(account);
+            console.log(`Fetching Gmail history starting from ${startHistoryId}`);
+            const response = await this.gmailClient.users.history.list({
+                userId: 'me',
+                startHistoryId,
+                historyTypes: ['messageAdded', 'labelAdded', 'labelRemoved']
+            });
+            const history = response.data.history || [];
+            const newHistoryId = response.data.historyId; // The ID of the most recent change in this list
+            console.log(`Fetched ${history.length} history records. New History ID: ${newHistoryId}`);
+            return {
+                history,
+                newHistoryId
+            };
+        }
+        catch (error) {
+            // 404 error for historyId means it's too old -> requires full sync
+            if (error.code === 404 || (error.message && error.message.includes('historyId'))) {
+                throw new Error('HISTORY_EXPIRED');
+            }
+            console.error('Failed to fetch Gmail history:', error);
+            throw error;
+        }
+    }
+    /**
+     * Helper to fetch full details of a single Gmail message
+     */
+    async fetchGmailMessageDetails(accountId, messageId) {
+        const fullMessage = await this.gmailClient.users.messages.get({
+            userId: 'me',
+            id: messageId,
+            format: 'full'
+        });
+        return {
+            ...fullMessage.data,
+            provider: 'gmail',
+            accountId: accountId
+        };
     }
     async fetchOutlookEmails(account, lastSyncTime, maxResults = 50) {
         try {
@@ -381,6 +468,23 @@ class EmailConnectorService {
                 }
                 catch (err) {
                     console.warn(`Failed to fetch from Trash folder (${trashBox.path}):`, err);
+                }
+            }
+            // 6. Identify and Fetch from Archive Folder
+            const archiveBox = mailboxes.find((box) => (box.specialUse === '\\Archive' || box.name.toLowerCase() === 'archive' || box.name.toLowerCase() === 'archived' || box.name.toLowerCase() === 'archives'));
+            if (archiveBox) {
+                try {
+                    await client.mailboxOpen(archiveBox.path);
+                    for await (const message of client.fetch(searchCriteria, {
+                        envelope: true,
+                        bodyStructure: true,
+                        source: true
+                    })) {
+                        messages.push({ ...message, folder: 'ARCHIVE' });
+                    }
+                }
+                catch (err) {
+                    console.warn(`Failed to fetch from Archive folder (${archiveBox.path}):`, err);
                 }
             }
         }

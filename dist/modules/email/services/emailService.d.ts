@@ -49,6 +49,7 @@ export declare class EmailService {
     processIncomingEmails(account: EmailAccount): Promise<{
         processed: number;
         errors: number;
+        newEmails: number;
     }>;
     private processSingleEmail;
     private parseRawEmail;
@@ -90,5 +91,18 @@ export declare class EmailService {
     }>;
     getEmailById(emailId: string, userId: string): Promise<Email | null>;
     markEmailAsRead(emailId: string, userId: string, isRead: boolean): Promise<boolean>;
+    archiveEmail(emailId: string, userId: string): Promise<boolean>;
+    unarchiveEmail(emailId: string, userId: string): Promise<boolean>;
+    /**
+     * Sync archived emails for a user from Gmail
+     * Uses history API for incremental sync if available
+     */
+    syncArchivedEmails(userId: string): Promise<{
+        processed: number;
+        errors: number;
+    }>;
+    private syncGmailArchiveInitial;
+    private syncGmailHistory;
+    private ensureArchiveStatus;
 }
 //# sourceMappingURL=emailService.d.ts.map

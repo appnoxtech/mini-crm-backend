@@ -54,6 +54,8 @@ function createImportRoutes(controller) {
     router.get('/:id/errors', controller.getImportErrors);
     router.post('/:id/validate', controller.validateMapping);
     router.post('/:id/start', controller.startImport);
+    router.post('/:id/rollback', controller.rollbackImport);
+    router.post('/:id/merge', controller.mergeImport);
     router.delete('/:id', controller.cancelImport);
     return router;
 }
