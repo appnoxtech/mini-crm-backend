@@ -94,6 +94,9 @@ import { LabelModel } from './modules/pipelines/models/Label';
 import { LabelController } from './modules/pipelines/controllers/labelController';
 import { OrganizationService } from './modules/management/organisations/services/OrganizationService';
 
+// Import data import module
+import { ImportModel, ImportService, ImportController, createImportRoutes } from './modules/import';
+
 
 const app = express();
 const server = createServer(app);
@@ -144,6 +147,10 @@ personModel.initialize();
 labelModel.initialize();
 productModel.initialize();
 callModel.initialize();
+
+// Initialize import model
+const importModel = new ImportModel(db);
+importModel.initialize();
 
 
 
@@ -207,6 +214,10 @@ const personController = new PersonController(personService);
 const labelController = new LabelController(labelService);
 const profileController = new ProfileController(profileService);
 
+// Initialize import service and controller
+const importService = new ImportService(db);
+const importController = new ImportController(importService);
+
 // Initialize call controllers
 const callController = new CallController(callService);
 const webhookController = new WebhookController(callService);
@@ -251,6 +262,9 @@ app.use('/api/profile', createProfileRoutes(profileController));
 // Call module routes
 app.use('/api/calls', createCallRoutes(callController));
 app.use('/api/webhooks/twilio', createWebhookRoutes(webhookController));
+
+// Import module routes
+app.use('/api/import', createImportRoutes(importController));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
