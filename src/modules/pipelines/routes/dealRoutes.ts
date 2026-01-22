@@ -26,6 +26,9 @@ export function createDealRoutes(controller: DealController): Router {
     router.patch('/re-open/:dealId', (req, res) => controller.resetDeal(req, res));
     router.get("/deal-history/:dealId", (req, res) => controller.getDealHistory(req, res));
 
+
+    router.delete('/remove-label/:dealId', (req, res) => controller.removeLabelFromDeal(req, res));
+
     // File upload route
     router.post('/upload/:dealId', ...fileUploadMiddleware, (req: Request, res: Response) => controller.uploadDealFiles(req, res));
 

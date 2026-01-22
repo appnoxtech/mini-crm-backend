@@ -17,8 +17,12 @@ export interface Deal extends BaseEntity {
     expectedCloseDate?: string;
     actualCloseDate?: string;
     probability: number;
+
     userId: number;
     assignedTo?: number;
+    ownerIds?: number[];
+    isVisibleToAll?: boolean;
+
     status: 'OPEN' | 'WON' | 'LOST' | 'DELETED';
     lostReason?: string;
     lastActivityAt?: string;
@@ -27,6 +31,7 @@ export interface Deal extends BaseEntity {
     source?: string;
     labels?: string;
     customFields?: string;
+    deletedAt?: string; // Soft delete timestamp
 }
 
 export class DealModel {
@@ -59,6 +64,7 @@ export class DealModel {
     isRotten BOOLEAN DEFAULT 0,
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL,
+    deletedAt TEXT,
 
     FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (pipelineId) REFERENCES pipelines(id) ON DELETE RESTRICT,
@@ -73,7 +79,10 @@ export class DealModel {
             { name: 'organizationId', definition: 'INTEGER' },
             { name: 'source', definition: 'TEXT' },
             { name: 'labelIds', definition: 'TEXT' },
-            { name: 'customFields', definition: 'TEXT' }
+            { name: 'customFields', definition: 'TEXT' },
+            { name: 'ownerIds', definition: 'TEXT' },
+            { name: 'isVisibleToAll', definition: 'BOOLEAN DEFAULT 1' },
+            { name: 'deletedAt', definition: 'TEXT' }
         ];
 
         for (const column of columnsToAdd) {
@@ -85,10 +94,6 @@ export class DealModel {
             }
         }
 
-        // Add foreign key constraints if columns were just added
-        // Note: SQLite doesn't support adding foreign keys to existing tables,
-        // so we handle this gracefully
-
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_userId ON deals(userId)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_pipelineId ON deals(pipelineId)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_stageId ON deals(stageId)');
@@ -96,6 +101,8 @@ export class DealModel {
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_expectedCloseDate ON deals(expectedCloseDate)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_personId ON deals(personId)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_organizationId ON deals(organizationId)');
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_isVisibleToAll ON deals(isVisibleToAll)');
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_deletedAt ON deals(deletedAt)');
     }
 
     create(data: Omit<Deal, 'id' | 'createdAt' | 'updatedAt'>): Deal {
@@ -106,12 +113,11 @@ export class DealModel {
     title, value, currency, pipelineId, stageId,
     personId, organizationId,
     email, phone, description, expectedCloseDate, actualCloseDate, probability,
-    userId, assignedTo, status, lostReason, lastActivityAt, isRotten, source,
-    labelIds, customFields, createdAt, updatedAt
+    userId, assignedTo, ownerIds, isVisibleToAll, status, lostReason, lastActivityAt, isRotten, source,
+    labelIds, customFields, createdAt, updatedAt, deletedAt
   )
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
-
 
         const result = stmt.run(
             data.title,
@@ -129,6 +135,8 @@ export class DealModel {
             data.probability,
             data.userId,
             data.assignedTo || null,
+            data.ownerIds ? JSON.stringify(data.ownerIds) : null,
+            data.isVisibleToAll ? 1 : 0,
             data.status.toUpperCase(),
             data.lostReason || null,
             data.lastActivityAt || now,
@@ -137,15 +145,36 @@ export class DealModel {
             data.labelIds ? JSON.stringify(data.labelIds) : null,
             data.customFields || null,
             now,
-            now
+            now,
+            null // deletedAt
         );
 
         return this.findById(result.lastInsertRowid as number)!;
     }
-    findById(id: number): Deal | null {
-        const stmt = this.db.prepare('SELECT * FROM deals WHERE id = ?');
+
+    // Helper method to check if user can access deal
+    private canUserAccessDeal(deal: any, userId: number): boolean {
+        if (deal.isVisibleToAll === 1) return true;
+        if (deal.userId === userId) return true;
+
+        const ownerIds = deal.ownerIds ? JSON.parse(deal.ownerIds) : [];
+        return ownerIds.includes(userId);
+    }
+
+    findById(id: number, userId?: number, includeDeleted: boolean = false): Deal | null {
+        let query = 'SELECT * FROM deals WHERE id = ?';
+        if (!includeDeleted) {
+            query += ' AND deletedAt IS NULL';
+        }
+
+        const stmt = this.db.prepare(query);
         const result = stmt.get(id) as any;
         if (!result) return null;
+
+        // Check permissions if userId is provided
+        if (userId !== undefined && !this.canUserAccessDeal(result, userId)) {
+            return null;
+        }
 
         const labelIds = result.labelIds ? JSON.parse(result.labelIds) : [];
 
@@ -165,11 +194,11 @@ export class DealModel {
             email: result.email ? JSON.parse(result.email) : null,
             phone: result.phone ? JSON.parse(result.phone) : null,
             labelIds,
-            labels
+            labels,
+            isVisibleToAll: Boolean(result.isVisibleToAll),
+            ownerIds: result.ownerIds ? JSON.parse(result.ownerIds) : []
         };
     }
-
-
 
     findByUserId(userId: number, filters: {
         pipelineId?: number;
@@ -178,9 +207,23 @@ export class DealModel {
         search?: string;
         limit?: number;
         offset?: number;
+        includeDeleted?: boolean;
     } = {}): { deals: Deal[]; total: number } {
-        let query = 'SELECT * FROM deals WHERE userId = ?';
-        const params: any[] = [userId];
+        let query = `SELECT * FROM deals WHERE (
+            isVisibleToAll = 1 
+            OR userId = ? 
+            OR EXISTS (
+                SELECT 1 FROM json_each(ownerIds) 
+                WHERE json_each.value = ?
+            )
+        )`;
+
+        const params: any[] = [userId, userId];
+
+        // Exclude soft deleted by default
+        if (!filters.includeDeleted) {
+            query += ' AND deletedAt IS NULL';
+        }
 
         if (filters.pipelineId) {
             query += ' AND pipelineId = ?';
@@ -198,9 +241,9 @@ export class DealModel {
         }
 
         if (filters.search) {
-            query += ' AND (title LIKE ? OR personName LIKE ? OR organizationName LIKE ? OR description LIKE ?)';
+            query += ' AND (title LIKE ? OR description LIKE ?)';
             const searchTerm = `%${filters.search}%`;
-            params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+            params.push(searchTerm, searchTerm);
         }
 
         query += ' ORDER BY createdAt DESC';
@@ -226,6 +269,8 @@ export class DealModel {
                 email: r.email ? JSON.parse(r.email) : null,
                 phone: r.phone ? JSON.parse(r.phone) : null,
                 labelIds: r.labelIds ? JSON.parse(r.labelIds) : null,
+                ownerIds: r.ownerIds ? JSON.parse(r.ownerIds) : [],
+                isVisibleToAll: Boolean(r.isVisibleToAll)
             })),
             total: countResult.count
         };
@@ -236,23 +281,21 @@ export class DealModel {
         userId: number,
         data: Partial<Omit<Deal, 'id' | 'userId' | 'createdAt' | 'updatedAt'>>
     ): Deal | null {
-        const deal = this.findById(id);
-        if (!deal || deal.userId !== userId) {
-            return null;
-        }
+        const deal = this.findById(id, userId);
+        if (!deal) return null;
 
         const now = new Date().toISOString();
         const updates: string[] = [];
         const values: any[] = [];
 
         Object.entries(data).forEach(([key, value]) => {
-            if (value === undefined) return; // 🔥 THIS is important
+            if (value === undefined) return;
 
-            if (key === 'isRotten') {
+            if (key === 'isRotten' || key === 'isVisibleToAll') {
                 updates.push(`${key} = ?`);
                 values.push(value ? 1 : 0);
             }
-            else if (key === 'labelIds' && Array.isArray(value)) {
+            else if ((key === 'labelIds' || key === 'ownerIds') && Array.isArray(value)) {
                 updates.push(`${key} = ?`);
                 values.push(JSON.stringify(value));
             }
@@ -260,11 +303,7 @@ export class DealModel {
                 updates.push(`${key} = ?`);
                 values.push(value.toUpperCase());
             }
-            else if (key === 'email' && typeof value === 'object') {
-                updates.push(`${key} = ?`);
-                values.push(JSON.stringify(value));
-            }
-            else if (key === 'phone' && typeof value === 'object') {
+            else if ((key === 'email' || key === 'phone') && typeof value === 'object') {
                 updates.push(`${key} = ?`);
                 values.push(JSON.stringify(value));
             }
@@ -280,42 +319,116 @@ export class DealModel {
 
         updates.push('updatedAt = ?');
         values.push(now);
-
         values.push(id);
 
         const stmt = this.db.prepare(`
-    UPDATE deals 
-    SET ${updates.join(', ')}
-    WHERE id = ? 
-  `);
+            UPDATE deals 
+            SET ${updates.join(', ')}
+            WHERE id = ? AND deletedAt IS NULL
+        `);
 
         stmt.run(...values);
-        return this.findById(id) || null;
+        return this.findById(id, userId);
     }
 
+    // Soft delete
     delete(id: number, userId: number): boolean {
-        const deal = this.findById(id);
-        if (!deal || deal.userId !== userId) {
-            return false;
-        }
+        const deal = this.findById(id, userId);
+        if (!deal) return false;
 
-        const stmt = this.db.prepare('DELETE FROM deals WHERE id = ? AND userId = ?');
-        const result = stmt.run(id, userId);
+        const now = new Date().toISOString();
+        const stmt = this.db.prepare('UPDATE deals SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL');
+        const result = stmt.run(now, now, id);
         return result.changes > 0;
     }
 
+    // Hard delete (permanent)
+    hardDelete(id: number, userId: number): boolean {
+        const deal = this.findById(id, userId, true);
+        if (!deal) return false;
+
+        // Check permissions
+        if (!this.canUserAccessDeal(deal, userId)) {
+            return false;
+        }
+
+        const stmt = this.db.prepare('DELETE FROM deals WHERE id = ?');
+        const result = stmt.run(id);
+        return result.changes > 0;
+    }
+
+    // Restore soft deleted deal
+    restore(id: number, userId: number): Deal | null {
+        const deal = this.findById(id, userId, true);
+        if (!deal || !deal.deletedAt) return null;
+
+        const now = new Date().toISOString();
+        const stmt = this.db.prepare('UPDATE deals SET deletedAt = NULL, updatedAt = ? WHERE id = ?');
+        stmt.run(now, id);
+        return this.findById(id, userId);
+    }
+
+    // Get all deleted deals
+    getDeletedDeals(userId: number, filters: {
+        limit?: number;
+        offset?: number;
+    } = {}): { deals: Deal[]; total: number } {
+        let query = `SELECT * FROM deals WHERE deletedAt IS NOT NULL AND (
+            isVisibleToAll = 1 
+            OR userId = ? 
+            OR EXISTS (
+                SELECT 1 FROM json_each(ownerIds) 
+                WHERE json_each.value = ?
+            )
+        )`;
+
+        const params: any[] = [userId, userId];
+
+        query += ' ORDER BY deletedAt DESC';
+
+        // Get total count
+        const countQuery = query.replace('SELECT *', 'SELECT COUNT(*) as count');
+        const countResult = this.db.prepare(countQuery).get(...params) as { count: number };
+
+        // Add pagination
+        if (filters.limit) {
+            query += ' LIMIT ? OFFSET ?';
+            params.push(filters.limit, filters.offset || 0);
+        }
+
+        const stmt = this.db.prepare(query);
+        const results = stmt.all(...params) as any[];
+
+        return {
+            deals: results.map(r => ({
+                ...r,
+                isRotten: Boolean(r.isRotten),
+                status: r.status.toUpperCase(),
+                email: r.email ? JSON.parse(r.email) : null,
+                phone: r.phone ? JSON.parse(r.phone) : null,
+                labelIds: r.labelIds ? JSON.parse(r.labelIds) : null,
+                ownerIds: r.ownerIds ? JSON.parse(r.ownerIds) : [],
+                isVisibleToAll: Boolean(r.isVisibleToAll)
+            })),
+            total: countResult.count
+        };
+    }
+
     updateRottenStatus(dealId: number, isRotten: boolean): void {
-        this.db.prepare('UPDATE deals SET isRotten = ? WHERE id = ?').run(isRotten ? 1 : 0, dealId);
+        this.db.prepare('UPDATE deals SET isRotten = ? WHERE id = ? AND deletedAt IS NULL').run(isRotten ? 1 : 0, dealId);
     }
 
     getRottenDeals(userId: number, pipelineId?: number): Deal[] {
         let query = `
-      SELECT d.*, p.rottenDays, ps.rottenDays as stageRottenDays
-      FROM deals d
-      JOIN pipelines p ON d.pipelineId = p.id
-      JOIN pipeline_stages ps ON d.stageId = ps.id
-      WHERE d.userId = ? AND d.status = 'open' AND p.dealRotting = 1
-    `;
+            SELECT d.*, p.rottenDays, ps.rottenDays as stageRottenDays
+            FROM deals d
+            JOIN pipelines p ON d.pipelineId = p.id
+            JOIN pipeline_stages ps ON d.stageId = ps.id
+            WHERE d.deletedAt IS NULL
+            AND (d.isVisibleToAll = 1 OR d.userId = ?) 
+            AND d.status = 'OPEN' 
+            AND p.dealRotting = 1
+        `;
         const params: any[] = [userId];
 
         if (pipelineId) {
@@ -328,6 +441,7 @@ export class DealModel {
 
         return results
             .filter(deal => {
+                if (!this.canUserAccessDeal(deal, userId)) return false;
                 if (!deal.lastActivityAt) return false;
 
                 const rottenDays = deal.stageRottenDays || deal.rottenDays;
@@ -338,33 +452,43 @@ export class DealModel {
             })
             .map(r => ({
                 ...r,
-                isRotten: Boolean(r.isRotten)
+                isRotten: Boolean(r.isRotten),
+                ownerIds: r.ownerIds ? JSON.parse(r.ownerIds) : [],
+                isVisibleToAll: Boolean(r.isVisibleToAll)
             }));
     }
 
-    searchDeals(search: string): Deal[] {
-        const query = `
-      SELECT * FROM deals
-      WHERE (title LIKE ? OR description LIKE ? OR source LIKE ?)
-    `;
-        const params = [`%${search}%`, `%${search}%`, `%${search}%`];
+    searchDeals(userId: number, search: string, includeDeleted: boolean = false): Deal[] {
+        let query = `
+            SELECT * FROM deals
+            WHERE (title LIKE ? OR description LIKE ? OR source LIKE ?)
+            AND (isVisibleToAll = 1 OR userId = ?)
+        `;
+
+        if (!includeDeleted) {
+            query += ' AND deletedAt IS NULL';
+        }
+
+        const params = [`%${search}%`, `%${search}%`, `%${search}%`, userId];
 
         const results = this.db.prepare(query).all(...params) as any[];
-        return results.map(r => ({
-            ...r,
-            isRotten: Boolean(r.isRotten),
-            status: r.status.toUpperCase(),
-            email: r.email ? JSON.parse(r.email) : null,
-            phone: r.phone ? JSON.parse(r.phone) : null,
-            labelIds: r.labelIds ? JSON.parse(r.labelIds) : null,
-        }));
 
-
+        return results
+            .filter(deal => this.canUserAccessDeal(deal, userId))
+            .map(r => ({
+                ...r,
+                isRotten: Boolean(r.isRotten),
+                status: r.status.toUpperCase(),
+                email: r.email ? JSON.parse(r.email) : null,
+                phone: r.phone ? JSON.parse(r.phone) : null,
+                labelIds: r.labelIds ? JSON.parse(r.labelIds) : null,
+                ownerIds: r.ownerIds ? JSON.parse(r.ownerIds) : [],
+                isVisibleToAll: Boolean(r.isVisibleToAll)
+            }));
     }
 
-    // for make deal as won return updated deal
     makeDealAsWon(dealId: number): Deal | null {
-        this.db.prepare('UPDATE deals SET status = ? WHERE id = ?').run('WON', dealId);
+        this.db.prepare('UPDATE deals SET status = ? WHERE id = ? AND deletedAt IS NULL').run('WON', dealId);
         return this.findById(dealId);
     }
 
@@ -376,8 +500,8 @@ export class DealModel {
 
         this.db.prepare(
             `UPDATE deals 
-         SET status = ?, customFields = ?, updatedAt = ? 
-         WHERE id = ?`
+             SET status = ?, customFields = ?, updatedAt = ? 
+             WHERE id = ? AND deletedAt IS NULL`
         ).run(
             'LOST',
             customFields,
@@ -388,14 +512,25 @@ export class DealModel {
         return this.findById(dealId);
     }
 
-
-
     resetDeal(dealId: number): Deal | null {
         this.db.prepare(
-            'UPDATE deals SET status = ?, lostReason = ?, customFields = ? WHERE id = ?'
+            'UPDATE deals SET status = ?, lostReason = ?, customFields = ? WHERE id = ? AND deletedAt IS NULL'
         ).run('OPEN', null, null, dealId);
 
         return this.findById(dealId);
     }
 
+    removeLabelFromDeal(dealId: number, labelId: number): Deal | null {
+        const deal = this.findById(dealId);
+        if (!deal) return null;
+
+        const labelIds = deal.labelIds || [];
+        const updatedLabelIds = labelIds.filter(id => id !== labelId);
+
+        this.db.prepare(
+            'UPDATE deals SET labelIds = ? WHERE id = ? AND deletedAt IS NULL'
+        ).run(JSON.stringify(updatedLabelIds), dealId);
+
+        return this.findById(dealId);
+    }
 }
