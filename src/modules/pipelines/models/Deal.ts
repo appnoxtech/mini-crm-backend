@@ -154,11 +154,15 @@ export class DealModel {
 
     // Helper method to check if user can access deal
     private canUserAccessDeal(deal: any, userId: number): boolean {
-        if (deal.isVisibleToAll === 1) return true;
-        if (deal.userId === userId) return true;
+        const dealOwnerIds = deal.ownerIds ? JSON.parse(deal.ownerIds) : [];
+        if (deal.userId !== userId && !dealOwnerIds.includes(userId)) return false;
 
-        const ownerIds = deal.ownerIds ? JSON.parse(deal.ownerIds) : [];
-        return ownerIds.includes(userId);
+        // Check pipeline access
+        const pipeline = this.db.prepare('SELECT userId, ownerIds FROM pipelines WHERE id = ?').get(deal.pipelineId) as any;
+        if (!pipeline) return false;
+
+        const pipelineOwnerIds = pipeline.ownerIds ? JSON.parse(pipeline.ownerIds) : [];
+        return pipeline.userId === userId || pipelineOwnerIds.includes(userId);
     }
 
     findById(id: number, userId?: number, includeDeleted: boolean = false): Deal | null {
@@ -195,7 +199,6 @@ export class DealModel {
             phone: result.phone ? JSON.parse(result.phone) : null,
             labelIds,
             labels,
-            isVisibleToAll: Boolean(result.isVisibleToAll),
             ownerIds: result.ownerIds ? JSON.parse(result.ownerIds) : []
         };
     }
@@ -209,39 +212,41 @@ export class DealModel {
         offset?: number;
         includeDeleted?: boolean;
     } = {}): { deals: Deal[]; total: number } {
-        let query = `SELECT * FROM deals WHERE (
-            isVisibleToAll = 1 
-            OR userId = ? 
-            OR EXISTS (
-                SELECT 1 FROM json_each(ownerIds) 
+        let query = `SELECT d.* FROM deals d
+            JOIN pipelines p ON d.pipelineId = p.id
+            WHERE (d.userId = ? OR EXISTS (
+                SELECT 1 FROM json_each(d.ownerIds) 
                 WHERE json_each.value = ?
-            )
-        )`;
+            ))
+            AND (p.userId = ? OR EXISTS (
+                SELECT 1 FROM json_each(p.ownerIds) 
+                WHERE json_each.value = ?
+            ))`;
 
-        const params: any[] = [userId, userId];
+        const params: any[] = [userId, userId, userId, userId];
 
         // Exclude soft deleted by default
         if (!filters.includeDeleted) {
-            query += ' AND deletedAt IS NULL';
+            query += ' AND d.deletedAt IS NULL';
         }
 
         if (filters.pipelineId) {
-            query += ' AND pipelineId = ?';
+            query += ' AND d.pipelineId = ?';
             params.push(filters.pipelineId);
         }
 
         if (filters.stageId) {
-            query += ' AND stageId = ?';
+            query += ' AND d.stageId = ?';
             params.push(filters.stageId);
         }
 
         if (filters.status) {
-            query += ' AND status = ?';
+            query += ' AND d.status = ?';
             params.push(filters.status);
         }
 
         if (filters.search) {
-            query += ' AND (title LIKE ? OR description LIKE ?)';
+            query += ' AND (d.title LIKE ? OR d.description LIKE ?)';
             const searchTerm = `%${filters.search}%`;
             params.push(searchTerm, searchTerm);
         }
@@ -269,8 +274,7 @@ export class DealModel {
                 email: r.email ? JSON.parse(r.email) : null,
                 phone: r.phone ? JSON.parse(r.phone) : null,
                 labelIds: r.labelIds ? JSON.parse(r.labelIds) : null,
-                ownerIds: r.ownerIds ? JSON.parse(r.ownerIds) : [],
-                isVisibleToAll: Boolean(r.isVisibleToAll)
+                ownerIds: r.ownerIds ? JSON.parse(r.ownerIds) : []
             })),
             total: countResult.count
         };
@@ -373,16 +377,19 @@ export class DealModel {
         limit?: number;
         offset?: number;
     } = {}): { deals: Deal[]; total: number } {
-        let query = `SELECT * FROM deals WHERE deletedAt IS NOT NULL AND (
-            isVisibleToAll = 1 
-            OR userId = ? 
-            OR EXISTS (
-                SELECT 1 FROM json_each(ownerIds) 
+        let query = `SELECT d.* FROM deals d
+            JOIN pipelines p ON d.pipelineId = p.id
+            WHERE d.deletedAt IS NOT NULL 
+            AND (d.userId = ? OR EXISTS (
+                SELECT 1 FROM json_each(d.ownerIds) 
                 WHERE json_each.value = ?
-            )
-        )`;
+            ))
+            AND (p.userId = ? OR EXISTS (
+                SELECT 1 FROM json_each(p.ownerIds) 
+                WHERE json_each.value = ?
+            ))`;
 
-        const params: any[] = [userId, userId];
+        const params: any[] = [userId, userId, userId, userId];
 
         query += ' ORDER BY deletedAt DESC';
 
@@ -407,8 +414,7 @@ export class DealModel {
                 email: r.email ? JSON.parse(r.email) : null,
                 phone: r.phone ? JSON.parse(r.phone) : null,
                 labelIds: r.labelIds ? JSON.parse(r.labelIds) : null,
-                ownerIds: r.ownerIds ? JSON.parse(r.ownerIds) : [],
-                isVisibleToAll: Boolean(r.isVisibleToAll)
+                ownerIds: r.ownerIds ? JSON.parse(r.ownerIds) : []
             })),
             total: countResult.count
         };
@@ -425,11 +431,18 @@ export class DealModel {
             JOIN pipelines p ON d.pipelineId = p.id
             JOIN pipeline_stages ps ON d.stageId = ps.id
             WHERE d.deletedAt IS NULL
-            AND (d.isVisibleToAll = 1 OR d.userId = ?) 
+            AND (d.userId = ? OR EXISTS (
+                SELECT 1 FROM json_each(d.ownerIds) 
+                WHERE json_each.value = ?
+            ))
+            AND (p.userId = ? OR EXISTS (
+                SELECT 1 FROM json_each(p.ownerIds) 
+                WHERE json_each.value = ?
+            ))
             AND d.status = 'OPEN' 
             AND p.dealRotting = 1
         `;
-        const params: any[] = [userId];
+        const params: any[] = [userId, userId, userId, userId];
 
         if (pipelineId) {
             query += ' AND d.pipelineId = ?';
@@ -453,23 +466,30 @@ export class DealModel {
             .map(r => ({
                 ...r,
                 isRotten: Boolean(r.isRotten),
-                ownerIds: r.ownerIds ? JSON.parse(r.ownerIds) : [],
-                isVisibleToAll: Boolean(r.isVisibleToAll)
+                ownerIds: r.ownerIds ? JSON.parse(r.ownerIds) : []
             }));
     }
 
     searchDeals(userId: number, search: string, includeDeleted: boolean = false): Deal[] {
         let query = `
-            SELECT * FROM deals
-            WHERE (title LIKE ? OR description LIKE ? OR source LIKE ?)
-            AND (isVisibleToAll = 1 OR userId = ?)
+            SELECT d.* FROM deals d
+            JOIN pipelines p ON d.pipelineId = p.id
+            WHERE (d.title LIKE ? OR d.description LIKE ? OR d.source LIKE ?)
+            AND (d.userId = ? OR EXISTS (
+                SELECT 1 FROM json_each(d.ownerIds) 
+                WHERE json_each.value = ?
+            ))
+            AND (p.userId = ? OR EXISTS (
+                SELECT 1 FROM json_each(p.ownerIds) 
+                WHERE json_each.value = ?
+            ))
         `;
 
         if (!includeDeleted) {
-            query += ' AND deletedAt IS NULL';
+            query += ' AND d.deletedAt IS NULL';
         }
 
-        const params = [`%${search}%`, `%${search}%`, `%${search}%`, userId];
+        const params = [`%${search}%`, `%${search}%`, `%${search}%`, userId, userId, userId, userId];
 
         const results = this.db.prepare(query).all(...params) as any[];
 
@@ -482,8 +502,7 @@ export class DealModel {
                 email: r.email ? JSON.parse(r.email) : null,
                 phone: r.phone ? JSON.parse(r.phone) : null,
                 labelIds: r.labelIds ? JSON.parse(r.labelIds) : null,
-                ownerIds: r.ownerIds ? JSON.parse(r.ownerIds) : [],
-                isVisibleToAll: Boolean(r.isVisibleToAll)
+                ownerIds: r.ownerIds ? JSON.parse(r.ownerIds) : []
             }));
     }
 

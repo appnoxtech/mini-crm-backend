@@ -80,7 +80,7 @@ export class DealService {
         }
 
         // Verify pipeline exists and belongs to user
-        const pipeline = this.pipelineModel.findById(data.pipelineId);
+        const pipeline = this.pipelineModel.findById(data.pipelineId, userId);
         if (!pipeline) {
             throw new Error('Pipeline not found');
         }
@@ -153,6 +153,8 @@ export class DealService {
         console.log(data);
 
 
+        const ownerIds = Array.from(new Set([...(data.ownerIds || []), userId]));
+
         const deal = this.dealModel.create({
             title: data.title.trim(),
             value: data.value || 0,
@@ -167,18 +169,18 @@ export class DealService {
             expectedCloseDate: data.expectedCloseDate,
             probability: data.probability || stage.probability,
             userId,
-            assignedTo: data.assignedTo,
             status: 'OPEN',
             lastActivityAt: new Date().toISOString(),
             isRotten: false,
             source: data.source,
             labelIds: data.labelIds,
-            ownerIds: data.ownerIds,
-            isVisibleToAll: data.isVisibleToAll,
+            ownerIds,
             customFields: data.customFields ? JSON.stringify(data.customFields) : undefined
         });
 
-
+        if (deal && deal.ownerIds) {
+            this.pipelineModel.addOwnersToPipeline(deal.pipelineId, deal.ownerIds);
+        }
         // create Product 
         let products: Product[] = [];
 
@@ -285,7 +287,7 @@ export class DealService {
 
         // Enrich each deal with related data
         const enrichedDeals = result.deals.map(deal => {
-            const pipeline = this.pipelineModel.findById(deal.pipelineId);
+            const pipeline = this.pipelineModel.findById(deal.pipelineId, userId);
             const stage = this.stageModel.findById(deal.stageId);
 
             let person = null;
@@ -328,14 +330,14 @@ export class DealService {
     }
 
     async getDealById(id: number, userId: number): Promise<any | null> {
-        const deal = this.dealModel.findById(id);
+        const deal = this.dealModel.findById(id, userId);
 
-        if (!deal || deal.userId !== userId) {
+        if (!deal) {
             return null;
         }
 
         // Get pipeline and stage info
-        const pipeline = this.pipelineModel.findById(deal.pipelineId);
+        const pipeline = this.pipelineModel.findById(deal.pipelineId, userId);
         const stage = this.stageModel.findById(deal.stageId);
 
         // Get person info if personId exists
@@ -388,9 +390,20 @@ export class DealService {
     }
 
     async updateDeal(dealId: number, userId: number, data: Partial<Deal>): Promise<Deal | null> {
+        const oldDeal = this.dealModel.findById(dealId, userId);
+        if (!oldDeal) return null;
+
         const updateData = this.dealModel.update(dealId, userId, data);
 
         if (updateData) {
+            // Recalculate owners if ownerIds or pipelineId changed
+            if (data.ownerIds || data.pipelineId) {
+                this.pipelineModel.recalculatePipelineOwners(updateData.pipelineId);
+                if (data.pipelineId && data.pipelineId !== oldDeal.pipelineId) {
+                    this.pipelineModel.recalculatePipelineOwners(oldDeal.pipelineId);
+                }
+            }
+
             this.historyModel.create({
                 dealId: updateData.id,
                 userId,
@@ -404,13 +417,16 @@ export class DealService {
         return updateData;
     }
 
-    async makeDealAsWon(dealId: number): Promise<Deal | null> {
+    async makeDealAsWon(dealId: number, userId: number): Promise<Deal | null> {
+        const deal = this.dealModel.findById(dealId, userId);
+        if (!deal) return null;
+
         const data = this.dealModel.makeDealAsWon(dealId);
 
         if (data) {
             this.historyModel.create({
                 dealId: data.id,
-                userId: data.userId,
+                userId,
                 toValue: "Won",
                 eventType: `won deal ${data.title}`,
                 toStageId: data.stageId,
@@ -421,14 +437,17 @@ export class DealService {
         return data;
     }
 
-    async makeDealAsLost(dealId: number, info: { reason?: string, comment?: string }): Promise<Deal | null> {
+    async makeDealAsLost(dealId: number, userId: number, info: { reason?: string, comment?: string }): Promise<Deal | null> {
+        const deal = this.dealModel.findById(dealId, userId);
+        if (!deal) return null;
+
         console.log("log from service", info);
         const data = this.dealModel.makeDealAsLost(dealId, info);
 
         if (data) {
             this.historyModel.create({
                 dealId: data.id,
-                userId: data.userId,
+                userId,
                 toValue: "Lost",
                 eventType: `lost deal ${data.title}`,
                 toStageId: data.stageId,
@@ -439,13 +458,16 @@ export class DealService {
         return data;
     }
 
-    async resetDeal(dealId: number): Promise<Deal | null> {
+    async resetDeal(dealId: number, userId: number): Promise<Deal | null> {
+        const deal = this.dealModel.findById(dealId, userId);
+        if (!deal) return null;
+
         const data = this.dealModel.resetDeal(dealId);
 
         if (data) {
             this.historyModel.create({
                 dealId: data.id,
-                userId: data.userId,
+                userId,
                 toValue: "Reopened",
                 eventType: `reset deal ${data.title}`,
                 toStageId: data.stageId,
@@ -547,9 +569,13 @@ export class DealService {
     }
 
     async deleteDeal(dealId: number, userId: number): Promise<boolean> {
+        const deal = this.dealModel.findById(dealId, userId);
+        if (!deal) return false;
+
         const data = this.dealModel.delete(dealId, userId);
 
         if (data) {
+            this.pipelineModel.recalculatePipelineOwners(deal.pipelineId);
             this.historyModel.create({
                 dealId: dealId,
                 userId,
@@ -568,7 +594,7 @@ export class DealService {
 
         // Enrich each deal with related data
         return deals.map(deal => {
-            const pipeline = this.pipelineModel.findById(deal.pipelineId);
+            const pipeline = this.pipelineModel.findById(deal.pipelineId, userId);
             const stage = this.stageModel.findById(deal.stageId);
 
             let person = null;
@@ -598,7 +624,10 @@ export class DealService {
         });
     }
 
-    async removeLabelFromDeal(dealId: number, labelId: number): Promise<Deal | null> {
+    async removeLabelFromDeal(dealId: number, labelId: number, userId: number): Promise<Deal | null> {
+        const deal = this.dealModel.findById(dealId, userId);
+        if (!deal) return null;
+
         return this.dealModel.removeLabelFromDeal(dealId, labelId);
     }
 }
