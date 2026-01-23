@@ -14,6 +14,7 @@ export interface DealHistory {
 
   metadata?: any;
   createdAt: string;
+  leftAt?: string;
 }
 
 export class DealHistoryModel {
@@ -34,16 +35,30 @@ export class DealHistoryModel {
         toValue TEXT,
         fromStageId INTEGER,
         toStageId INTEGER,
-        stageDuration INTEGER,
+        stageDuration REAL,
         description TEXT,
         metadata TEXT,
         createdAt TEXT NOT NULL,
+        leftAt TEXT,
         FOREIGN KEY (dealId) REFERENCES deals(id) ON DELETE CASCADE,
         FOREIGN KEY (userId) REFERENCES users(id) ON DELETE SET NULL,
         FOREIGN KEY (fromStageId) REFERENCES pipeline_stages(id) ON DELETE SET NULL,
         FOREIGN KEY (toStageId) REFERENCES pipeline_stages(id) ON DELETE SET NULL
       )
     `);
+
+    try {
+      this.db.exec('ALTER TABLE deal_history ADD COLUMN leftAt TEXT');
+    } catch (e) {
+      // Column already exists
+    }
+
+    // Change stageDuration to REAL if it was INTEGER before (for partial days)
+    try {
+      this.db.exec('ALTER TABLE deal_history MODIFY COLUMN stageDuration REAL');
+    } catch (e) {
+      // Skip if not supported or already REAL
+    }
 
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_deal_history_dealId ON deal_history(dealId)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_deal_history_userId ON deal_history(userId)');
@@ -55,9 +70,9 @@ export class DealHistoryModel {
     const stmt = this.db.prepare(`
       INSERT INTO deal_history (
         dealId, userId, eventType, fromValue, toValue, fromStageId, toStageId,
-        stageDuration, description, metadata, createdAt
+        stageDuration, description, metadata, createdAt, leftAt
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -70,8 +85,9 @@ export class DealHistoryModel {
       data.toStageId || null,
       data.stageDuration || null,
       data.description || null,
-      data.metadata || null,
-      data.createdAt
+      data.metadata ? JSON.stringify(data.metadata) : null,
+      data.createdAt,
+      data.leftAt || null
     );
 
     return this.findById(result.lastInsertRowid as number)!;
@@ -138,6 +154,73 @@ export class DealHistoryModel {
 
     const results = stmt.all(dealId, eventType) as any[];
     return results.map(r => this.formatHistory(r));
+  }
+
+  /**
+   * Closes the current open stage record for a deal.
+   * Calculations are in days.
+   */
+  closeOpenStageRecord(dealId: number): void {
+    const now = new Date().toISOString();
+    const openRecords = this.db.prepare(`
+      SELECT * FROM deal_history 
+      WHERE dealId = ? AND eventType = 'stage_change' AND leftAt IS NULL
+    `).all(dealId) as any[];
+
+    for (const record of openRecords) {
+      const created = new Date(record.createdAt);
+      const left = new Date(now);
+      const durationInDays = (left.getTime() - created.getTime()) / (1000 * 60 * 60 * 24);
+
+      this.db.prepare(`
+        UPDATE deal_history 
+        SET leftAt = ?, stageDuration = ? 
+        WHERE id = ?
+      `).run(now, durationInDays, record.id);
+    }
+  }
+
+  /**
+   * Returns total time spent in each stage for a deal.
+   * Sums historical durations + live duration for active stage.
+   */
+  getStageDurations(dealId: number): Array<{ stageId: number; stageName: string; totalDuration: number }> {
+    const records = this.db.prepare(`
+      SELECT 
+        dh.toStageId as stageId,
+        ps.name as stageName,
+        dh.stageDuration,
+        dh.createdAt,
+        dh.leftAt
+      FROM deal_history dh
+      LEFT JOIN pipeline_stages ps ON dh.toStageId = ps.id
+      WHERE dh.dealId = ? AND dh.eventType = 'stage_change'
+    `).all(dealId) as any[];
+
+    const stageMap = new Map<number, { name: string; total: number }>();
+    const now = new Date();
+
+    for (const record of records) {
+      if (!record.stageId) continue;
+
+      let duration = record.stageDuration || 0;
+
+      // If still in this stage, add current live time
+      if (!record.leftAt) {
+        const created = new Date(record.createdAt);
+        duration += (now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24);
+      }
+
+      const existing = stageMap.get(record.stageId) || { name: record.stageName, total: 0 };
+      existing.total += duration;
+      stageMap.set(record.stageId, existing);
+    }
+
+    return Array.from(stageMap.entries()).map(([id, data]) => ({
+      stageId: id,
+      stageName: data.name,
+      totalDuration: Math.round(data.total * 100) / 100 // Round to 2 decimals
+    }));
   }
 
   getTimeInStages(dealId: number): Array<{ stageId: number; stageName: string; duration: number }> {

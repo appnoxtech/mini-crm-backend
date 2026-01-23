@@ -25,6 +25,7 @@ export function createDealRoutes(controller: DealController): Router {
     router.put('/make-lost/:dealId', (req, res) => controller.makeDealAsLost(req, res));
     router.patch('/re-open/:dealId', (req, res) => controller.resetDeal(req, res));
     router.get("/deal-history/:dealId", (req, res) => controller.getDealHistory(req, res));
+    router.get("/stage-durations/:dealId", (req, res) => controller.getDealStageDurations(req, res));
 
 
     router.delete('/remove-label/:dealId', (req, res) => controller.removeLabelFromDeal(req, res));

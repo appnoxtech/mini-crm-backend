@@ -322,4 +322,19 @@ export class DealController {
             return ResponseHandler.internalError(res, 'Failed to remove label from deal');
         }
     }
+    async getDealStageDurations(req: AuthenticatedRequest, res: Response): Promise<void> {
+        try {
+            if (!req.user) {
+                return ResponseHandler.unauthorized(res, 'User not authenticated');
+            }
+
+            const { dealId } = req.params;
+            const durations = await this.dealService.getDealStageDurations(Number(dealId));
+
+            return ResponseHandler.success(res, durations, 'Deal stage durations fetched successfully');
+        } catch (error: any) {
+            console.error('Error fetching deal stage durations:', error);
+            return ResponseHandler.internalError(res, 'Failed to fetch deal stage durations');
+        }
+    }
 }
