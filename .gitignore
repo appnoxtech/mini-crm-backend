@@ -8,6 +8,7 @@ yarn-error.log*
 
 # Environment variables
 .env
+ecosystem.config.js
 .env.local
 .env.development.local
 .env.test.local
