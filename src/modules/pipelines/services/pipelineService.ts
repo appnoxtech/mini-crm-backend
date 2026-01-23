@@ -40,7 +40,8 @@ export class PipelineService {
             isDefault: data.isDefault || false,
             isActive: true,
             dealRotting: data.dealRotting || false,
-            rottenDays: data.rottenDays || 30
+            rottenDays: data.rottenDays || 30,
+            ownerIds: [userId]
         });
 
         // Use provided stages or create default stages
@@ -91,9 +92,9 @@ export class PipelineService {
     }
 
     async getPipelineById(id: number, userId: number): Promise<any | null> {
-        const pipeline = this.pipelineModel.findById(id);
+        const pipeline = this.pipelineModel.findById(id, userId);
 
-        if (!pipeline || pipeline.userId !== userId) {
+        if (!pipeline) {
             return null;
         }
 
@@ -208,7 +209,7 @@ export class PipelineService {
 
     async deletePipeline(id: number, userId: number): Promise<{ success: boolean; dealsAffected: number }> {
 
-        const pipeline = this.pipelineModel.findById(id);
+        const pipeline = this.pipelineModel.findById(id, userId);
 
         if (!pipeline) {
             throw new Error('Pipeline not found');
