@@ -8,6 +8,7 @@ export interface Pipeline extends BaseEntity {
     isDefault: boolean;
     isActive: boolean;
     dealRotting: boolean;
+    ownerIds: number[];
     rottenDays: number;
 }
 
@@ -37,56 +38,167 @@ export class PipelineModel {
         isActive BOOLEAN DEFAULT 1,
         dealRotting BOOLEAN DEFAULT 0,
         rottenDays INTEGER DEFAULT 30,
+        ownerIds TEXT,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL,
         FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
 
+
+        const columnsToAdd = [
+            { name: 'ownerIds', definition: 'TEXT' }
+        ];
+
+        for (const column of columnsToAdd) {
+            try {
+                this.db.exec(`ALTER TABLE pipelines ADD COLUMN ${column.name} ${column.definition}`);
+                console.log(`Added ${column.name} column to pipelines table`);
+            } catch (error) {
+                // Column already exists, ignore error
+            }
+        }
+
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_pipelines_userId ON pipelines(userId)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_pipelines_isActive ON pipelines(isActive)');
     }
 
-    create(data: Omit<Pipeline, 'id' | 'createdAt' | 'updatedAt'>): Pipeline {
+    create(data: Omit<Pipeline, 'id' | 'createdAt' | 'updatedAt' | 'ownerIds'> & { ownerIds: number[] }): Pipeline {
         const now = new Date().toISOString();
 
-        // If this is set as default, unset other defaults for this user
+        // If this is set as default, unset other defaults for these users
         if (data.isDefault) {
-            this.db.prepare('UPDATE pipelines SET isDefault = 0 WHERE userId = ?').run(data.userId);
+            // Unset for any user who is an owner of this pipeline (approximation since we don't have a reliable per-user default table yet, keeping current logic but scoped to these owners)
+            const placeholders = data.ownerIds.map(() => '?').join(',');
+            this.db.prepare(`UPDATE pipelines SET isDefault = 0 WHERE EXISTS (SELECT 1 FROM json_each(ownerIds) WHERE json_each.value IN (${placeholders}))`).run(...data.ownerIds);
         }
 
         const stmt = this.db.prepare(`
-      INSERT INTO pipelines (name, description, userId, isDefault, isActive, dealRotting, rottenDays, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO pipelines (name, description, userId, isDefault, isActive, dealRotting, rottenDays, ownerIds, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
         const result = stmt.run(
             data.name,
             data.description || null,
-            data.userId,
+            data.ownerIds[0] || 0, // Keep userId for schema compatibility, use first owner
             data.isDefault ? 1 : 0,
             data.isActive ? 1 : 0,
             data.dealRotting ? 1 : 0,
             data.rottenDays,
+            JSON.stringify(data.ownerIds),
             now,
             now
         );
 
-        return this.findById(result.lastInsertRowid as number)!;
+        return this.findById(result.lastInsertRowid as number, data.ownerIds[0] || 0)!;
     }
 
-    findById(id: number): Pipeline | undefined {
-        const stmt = this.db.prepare('SELECT * FROM pipelines WHERE id = ?');
-        const result = stmt.get(id) as any;
+
+    findAccessiblePipelines(userId: number): Pipeline[] {
+        const rows = this.db.prepare(`
+        SELECT * FROM pipelines
+        WHERE userId = ? OR EXISTS (
+            SELECT 1 FROM json_each(ownerIds)
+            WHERE json_each.value = ?
+        )
+    `).all(userId, userId) as any[];
+
+        return rows.map(r => ({
+            ...r,
+            isDefault: Boolean(r.isDefault),
+            isActive: Boolean(r.isActive),
+            dealRotting: Boolean(r.dealRotting),
+            ownerIds: r.ownerIds ? JSON.parse(r.ownerIds) : []
+        }));
+    }
+
+    findById(pipelineId: number, userId: number): Pipeline | undefined {
+        const stmt = this.db.prepare(`
+        SELECT * FROM pipelines
+        WHERE id = ?
+    `);
+
+        const result = stmt.get(pipelineId) as any;
         if (!result) return undefined;
+
+        const ownerIds = result.ownerIds ? JSON.parse(result.ownerIds) : [];
+        if (result.userId !== userId && !ownerIds.includes(userId)) return undefined;
 
         return {
             ...result,
             isDefault: Boolean(result.isDefault),
             isActive: Boolean(result.isActive),
-            dealRotting: Boolean(result.dealRotting)
+            dealRotting: Boolean(result.dealRotting),
+            ownerIds
         };
     }
+
+
+    canUserAccessPipeline(pipelineId: number, userId: number): boolean {
+        const pipeline = this.db
+            .prepare(`SELECT ownerIds FROM pipelines WHERE id = ?`)
+            .get(pipelineId) as any;
+
+        if (!pipeline?.ownerIds) return false;
+
+        const ownerIds = JSON.parse(pipeline.ownerIds);
+        return ownerIds.includes(userId);
+    }
+
+    addOwnersToPipeline(pipelineId: number, dealOwnerIds: number[]) {
+        const pipeline = this.db
+            .prepare(`SELECT ownerIds FROM pipelines WHERE id = ?`)
+            .get(pipelineId) as any;
+
+        const existingOwners = pipeline?.ownerIds
+            ? JSON.parse(pipeline.ownerIds)
+            : [];
+
+        const mergedOwners = Array.from(
+            new Set([...existingOwners, ...dealOwnerIds])
+        );
+
+        this.db.prepare(`
+            UPDATE pipelines
+            SET ownerIds = ?, updatedAt = ?
+            WHERE id = ?
+        `).run(
+            JSON.stringify(mergedOwners),
+            new Date().toISOString(),
+            pipelineId
+        );
+    }
+
+    recalculatePipelineOwners(pipelineId: number) {
+        const deals = this.db.prepare(`
+        SELECT ownerIds
+        FROM deals
+        WHERE pipelineId = ? AND deletedAt IS NULL
+    `).all(pipelineId) as any[];
+
+        const ownerSet = new Set<number>();
+
+        for (const deal of deals) {
+            if (!deal.ownerIds) continue;
+            JSON.parse(deal.ownerIds).forEach((id: number) =>
+                ownerSet.add(id)
+            );
+        }
+
+        this.db.prepare(`
+        UPDATE pipelines
+        SET ownerIds = ?, updatedAt = ?
+        WHERE id = ?
+    `).run(
+            JSON.stringify([...ownerSet]),
+            new Date().toISOString(),
+            pipelineId
+        );
+    }
+
+
+
 
     searchByPipelineName(name: string): searchResult[] {
         const stmt = this.db.prepare('SELECT * FROM pipelines WHERE name LIKE ?');
@@ -100,26 +212,12 @@ export class PipelineModel {
     }
 
     findByUserId(userId: number, includeInactive: boolean = false): Pipeline[] {
-        let query = 'SELECT * FROM pipelines WHERE userId = ?';
-        if (!includeInactive) {
-            query += ' AND isActive = 1';
-        }
-        query += ' ORDER BY isDefault DESC, name';
-
-        const stmt = this.db.prepare(query);
-        const results = stmt.all(userId) as any[];
-
-        return results.map(r => ({
-            ...r,
-            isDefault: Boolean(r.isDefault),
-            isActive: Boolean(r.isActive),
-            dealRotting: Boolean(r.dealRotting)
-        }));
+        return this.findAccessiblePipelines(userId).filter(p => includeInactive || p.isActive);
     }
 
-    update(id: number, userId: number, data: Partial<Omit<Pipeline, 'id' | 'userId' | 'createdAt' | 'updatedAt'>>): Pipeline | null {
-        const pipeline = this.findById(id);
-        if (!pipeline || pipeline.userId !== userId) {
+    update(id: number, userId: number, data: Partial<Omit<Pipeline, 'id' | 'createdAt' | 'updatedAt' | 'ownerIds'>>): Pipeline | null {
+        const pipeline = this.findById(id, userId);
+        if (!pipeline) {
             return null;
         }
 
@@ -136,9 +234,9 @@ export class PipelineModel {
             values.push(data.description);
         }
         if (data.isDefault !== undefined) {
-            // If setting as default, unset other defaults
             if (data.isDefault) {
-                this.db.prepare('UPDATE pipelines SET isDefault = 0 WHERE userId = ?').run(userId);
+                const placeholders = pipeline.ownerIds.map(() => '?').join(',');
+                this.db.prepare(`UPDATE pipelines SET isDefault = 0 WHERE EXISTS (SELECT 1 FROM json_each(ownerIds) WHERE json_each.value IN (${placeholders}))`).run(...pipeline.ownerIds);
             }
             updates.push('isDefault = ?');
             values.push(data.isDefault ? 1 : 0);
@@ -162,32 +260,32 @@ export class PipelineModel {
 
         updates.push('updatedAt = ?');
         values.push(now);
-        values.push(id, userId);
+        values.push(id);
 
         const stmt = this.db.prepare(`
       UPDATE pipelines 
       SET ${updates.join(', ')}
-      WHERE id = ? AND userId = ?
+      WHERE id = ?
     `);
 
         stmt.run(...values);
-        return this.findById(id) || null;
+        return this.findById(id, userId) || null;
     }
 
     delete(id: number, userId: number): boolean {
-        const pipeline = this.findById(id);
-        if (!pipeline || pipeline.userId !== userId) {
+        const pipeline = this.findById(id, userId);
+        if (!pipeline) {
             return false;
         }
 
         // Check if pipeline has deals
-        const dealCount = this.db.prepare('SELECT COUNT(*) as count FROM deals WHERE pipelineId = ?').get(id) as { count: number };
+        const dealCount = this.db.prepare('SELECT COUNT(*) as count FROM deals WHERE pipelineId = ? AND deletedAt IS NULL').get(id) as { count: number };
         if (dealCount.count > 0) {
             throw new Error('Cannot delete pipeline with existing deals');
         }
 
-        const stmt = this.db.prepare('DELETE FROM pipelines WHERE id = ? AND userId = ?');
-        const result = stmt.run(id, userId);
+        const stmt = this.db.prepare('DELETE FROM pipelines WHERE id = ?');
+        const result = stmt.run(id);
         return result.changes > 0;
     }
 

@@ -14,7 +14,7 @@ export class PipelineStageService {
         rottenDays?: number;
     }): Promise<PipelineStage> {
         // Verify pipeline ownership
-        const pipeline = this.pipelineModel.findById(pipelineId);
+        const pipeline = this.pipelineModel.findById(pipelineId, userId);
 
         if (!pipeline) {
             throw new Error('Pipeline not found');
@@ -51,8 +51,8 @@ export class PipelineStageService {
 
     async getStages(pipelineId: number, userId: number): Promise<any[]> {
         // Verify pipeline ownership
-        const pipeline = this.pipelineModel.findById(pipelineId);
-        if (!pipeline || pipeline.userId !== userId) {
+        const pipeline = this.pipelineModel.findById(pipelineId, userId);
+        if (!pipeline) {
             throw new Error('Pipeline not found');
         }
 
@@ -66,8 +66,8 @@ export class PipelineStageService {
     }): Promise<PipelineStage | null> {
         // Verify pipeline ownership
 
-        const pipeline = this.pipelineModel.findById(pipelineId);
-        if (!pipeline || pipeline.userId !== userId) {
+        const pipeline = this.pipelineModel.findById(pipelineId, userId);
+        if (!pipeline) {
             throw new Error('Pipeline not found');
         }
 
@@ -96,8 +96,8 @@ export class PipelineStageService {
 
     async reorderStages(pipelineId: number, userId: number, stageOrder: number[]): Promise<PipelineStage[]> {
         // Verify pipeline ownership
-        const pipeline = this.pipelineModel.findById(pipelineId);
-        if (!pipeline || pipeline.userId !== userId) {
+        const pipeline = this.pipelineModel.findById(pipelineId, userId);
+        if (!pipeline) {
             throw new Error('Pipeline not found');
         }
 
@@ -122,8 +122,8 @@ export class PipelineStageService {
 
     async deleteStage(pipelineId: number, stageId: number, userId: number, moveDealsToStageId?: number): Promise<{ success: boolean; dealsMoved: number }> {
         // Verify pipeline ownership
-        
-        const pipeline = this.pipelineModel.findById(pipelineId);
+
+        const pipeline = this.pipelineModel.findById(pipelineId, userId);
         if (!pipeline) {
             throw new Error('Pipeline not found');
         }

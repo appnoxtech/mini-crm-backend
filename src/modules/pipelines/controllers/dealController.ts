@@ -208,7 +208,7 @@ export class DealController {
 
             const { dealId } = req.params;
 
-            const deal = await this.dealService.makeDealAsWon(Number(dealId));
+            const deal = await this.dealService.makeDealAsWon(Number(dealId), req.user.id);
 
             if (!deal) {
                 return ResponseHandler.notFound(res, 'Deal not found');
@@ -230,7 +230,7 @@ export class DealController {
             const { dealId } = req.params;
             const info = req.body;
             console.log("log from controller", info);
-            const deal = await this.dealService.makeDealAsLost(Number(dealId), info);
+            const deal = await this.dealService.makeDealAsLost(Number(dealId), req.user.id, info);
 
             if (!deal) {
                 return ResponseHandler.notFound(res, 'Deal not found');
@@ -251,7 +251,7 @@ export class DealController {
 
             const { dealId } = req.params;
 
-            const deal = await this.dealService.resetDeal(Number(dealId));
+            const deal = await this.dealService.resetDeal(Number(dealId), req.user.id);
 
             if (!deal) {
                 return ResponseHandler.notFound(res, 'Deal not found');
@@ -310,7 +310,7 @@ export class DealController {
             const { dealId } = req.params;
             const { labelId } = req.body;
 
-            const deal = await this.dealService.removeLabelFromDeal(Number(dealId), Number(labelId));
+            const deal = await this.dealService.removeLabelFromDeal(Number(dealId), Number(labelId), req.user.id);
 
             if (!deal) {
                 return ResponseHandler.notFound(res, 'Deal not found');
