@@ -32,7 +32,7 @@ export class EmailModel {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS emails (
         id TEXT PRIMARY KEY,
-        messageId TEXT UNIQUE NOT NULL,
+        messageId TEXT NOT NULL,
         threadId TEXT,
         accountId TEXT NOT NULL,
         from_address TEXT NOT NULL,
@@ -55,6 +55,7 @@ export class EmailModel {
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL,
         labelIds TEXT,
+        UNIQUE(messageId, accountId),
         FOREIGN KEY (accountId) REFERENCES email_accounts(id)
       )
     `);
@@ -88,15 +89,78 @@ export class EmailModel {
     } catch (error) {
       // Column already exists, ignore error
     }
+
+    // Add attachments column if it doesn't exist
+    try {
+      this.db.exec("ALTER TABLE emails ADD COLUMN attachments TEXT");
+      console.log("Added attachments column to emails table");
+    } catch (error) {
+      // Column already exists, ignore error
+    }
+
+    // Migration for multi-user email support: remove global UNIQUE constraint on messageId
+    // and replace it with composite UNIQUE(messageId, accountId)
+    try {
+      const schema = this.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='emails'").get() as any;
+      if (schema && schema.sql && schema.sql.includes('messageId TEXT UNIQUE')) {
+        console.log("Migrating emails table to support multi-user messages...");
+        this.db.transaction(() => {
+          this.db.exec("DROP TABLE IF EXISTS emails_old");
+          this.db.exec("ALTER TABLE emails RENAME TO emails_old");
+          this.db.exec(`
+            CREATE TABLE emails (
+              id TEXT PRIMARY KEY,
+              messageId TEXT NOT NULL,
+              threadId TEXT,
+              accountId TEXT NOT NULL,
+              from_address TEXT NOT NULL,
+              to_addresses TEXT NOT NULL,
+              cc_addresses TEXT,
+              bcc_addresses TEXT,
+              subject TEXT NOT NULL,
+              body TEXT NOT NULL,
+              htmlBody TEXT,
+              isRead BOOLEAN DEFAULT 0,
+              isIncoming BOOLEAN DEFAULT 1,
+              sentAt TEXT NOT NULL,
+              receivedAt TEXT,
+              contactIds TEXT,
+              dealIds TEXT,
+              accountEntityIds TEXT,
+              trackingPixelId TEXT,
+              opens INTEGER DEFAULT 0,
+              clicks INTEGER DEFAULT 0,
+              createdAt TEXT NOT NULL,
+              updatedAt TEXT NOT NULL,
+              labelIds TEXT,
+              attachments TEXT,
+              UNIQUE(messageId, accountId),
+              FOREIGN KEY (accountId) REFERENCES email_accounts(id)
+            )
+          `);
+          // Note: When migrating old data, attachments column will be null, which is fine
+          this.db.exec("INSERT INTO emails SELECT id, messageId, threadId, accountId, from_address, to_addresses, cc_addresses, bcc_addresses, subject, body, htmlBody, isRead, isIncoming, sentAt, receivedAt, contactIds, dealIds, accountEntityIds, trackingPixelId, opens, clicks, createdAt, updatedAt, labelIds, NULL FROM emails_old");
+          this.db.exec("DROP TABLE emails_old");
+
+          // Re-create indexes
+          this.db.exec("CREATE INDEX IF NOT EXISTS idx_emails_accountId ON emails(accountId)");
+          this.db.exec("CREATE INDEX IF NOT EXISTS idx_emails_messageId ON emails(messageId)");
+          this.db.exec("CREATE INDEX IF NOT EXISTS idx_emails_sentAt ON emails(sentAt)");
+        })();
+        console.log("Migration successful!");
+      }
+    } catch (error: any) {
+      console.error("Migration to multi-user emails failed:", error.message);
+    }
   }
 
-  async createEmail(email: Email): Promise<Email> {
+  createEmail(email: Email): Email {
     const stmt = this.db.prepare(`
       INSERT INTO emails (
         id, messageId, threadId, accountId, from_address, to_addresses, cc_addresses, bcc_addresses,
         subject, body, htmlBody, isRead, isIncoming, sentAt, receivedAt, contactIds, dealIds,
-        accountEntityIds, trackingPixelId, opens, clicks, createdAt, updatedAt, labelIds
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        accountEntityIds, trackingPixelId, opens, clicks, createdAt, updatedAt, labelIds, attachments
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -123,15 +187,19 @@ export class EmailModel {
       email.clicks,
       email.createdAt.toISOString(),
       email.updatedAt.toISOString(),
-      email.labelIds ? JSON.stringify(email.labelIds) : null
+      email.labelIds ? JSON.stringify(email.labelIds) : null,
+      email.attachments ? JSON.stringify(email.attachments) : null
     );
 
     return email;
   }
 
-  async findEmailByMessageId(messageId: string): Promise<Email | null> {
-    const stmt = this.db.prepare("SELECT * FROM emails WHERE messageId = ?");
-    const row = stmt.get(messageId) as any;
+  findEmailByMessageId(messageId: string, accountId?: string): Email | null {
+    const query = accountId
+      ? "SELECT * FROM emails WHERE messageId = ? AND accountId = ?"
+      : "SELECT * FROM emails WHERE messageId = ?"
+    const stmt = this.db.prepare(query);
+    const row = accountId ? stmt.get(messageId, accountId) : stmt.get(messageId) as any;
 
     if (!row) return null;
 
@@ -158,6 +226,8 @@ export class EmailModel {
       clicks: Number(row.clicks) || 0,
       createdAt: new Date(row.createdAt),
       updatedAt: new Date(row.updatedAt),
+      attachments: row.attachments ? JSON.parse(row.attachments) : [],
+      labelIds: row.labelIds ? JSON.parse(row.labelIds) : [],
     };
 
     if (row.receivedAt) {
@@ -167,7 +237,7 @@ export class EmailModel {
     return email;
   }
 
-  async getEmailAccountById(accountId: string): Promise<EmailAccount | null> {
+  getEmailAccountById(accountId: string): EmailAccount | null {
     const stmt = this.db.prepare(
       "SELECT * FROM email_accounts WHERE id = ? AND isActive = 1"
     );
@@ -195,7 +265,7 @@ export class EmailModel {
     return account;
   }
 
-  async getEmailAccountByUserId(userId: string): Promise<EmailAccount | null> {
+  getEmailAccountByUserId(userId: string): EmailAccount | null {
     const stmt = this.db.prepare(
       "SELECT * FROM email_accounts WHERE userId = ? AND isActive = 1 LIMIT 1"
     );
@@ -222,7 +292,7 @@ export class EmailModel {
     return account;
   }
 
-  async getEmailAccountByEmail(email: string): Promise<EmailAccount | null> {
+  getEmailAccountByEmail(email: string): EmailAccount | null {
     const stmt = this.db.prepare(
       "SELECT * FROM email_accounts WHERE email = ? AND isActive = 1 LIMIT 1"
     );
@@ -249,7 +319,7 @@ export class EmailModel {
     return account;
   }
 
-  async createEmailAccount(account: EmailAccount): Promise<EmailAccount> {
+  createEmailAccount(account: EmailAccount): EmailAccount {
     const stmt = this.db.prepare(`
       INSERT INTO email_accounts (
         id, userId, email, provider, accessToken, refreshToken, imapConfig, smtpConfig, 
@@ -276,10 +346,10 @@ export class EmailModel {
     return account;
   }
 
-  async updateEmailAccount(
+  updateEmailAccount(
     accountId: string,
     updates: Partial<EmailAccount>
-  ): Promise<void> {
+  ): void {
     const fields: string[] = [];
     const values: any[] = [];
 
@@ -330,7 +400,7 @@ export class EmailModel {
     stmt.run(...values);
   }
 
-  async getAllActiveAccounts(): Promise<EmailAccount[]> {
+  getAllActiveAccounts(): EmailAccount[] {
     const stmt = this.db.prepare(
       "SELECT * FROM email_accounts WHERE isActive = 1"
     );
@@ -357,7 +427,7 @@ export class EmailModel {
     });
   }
 
-  async getEmailAccounts(userId: string): Promise<EmailAccount[]> {
+  getEmailAccounts(userId: string): EmailAccount[] {
     console.log(`Getting email accounts for userId: ${userId}`);
     const stmt = this.db.prepare(
       "SELECT * FROM email_accounts WHERE userId = ? AND isActive = 1 ORDER BY createdAt DESC"
@@ -386,12 +456,12 @@ export class EmailModel {
     });
   }
 
-  async findContactsByEmails(emails: string[]): Promise<Contact[]> {
+  findContactsByEmails(emails: string[]): Contact[] {
     // Mock implementation
     return [];
   }
 
-  async saveThreadSummary(threadId: string, summary: string): Promise<void> {
+  saveThreadSummary(threadId: string, summary: string): void {
     const stmt = this.db.prepare(`
     INSERT INTO thread_summaries (threadId, summary, lastSummarizedAt)
     VALUES (?, ?, ?)
@@ -402,9 +472,9 @@ export class EmailModel {
     stmt.run(threadId, summary, new Date().toISOString());
   }
 
-  async getThreadSummary(
+  getThreadSummary(
     threadId: string
-  ): Promise<{ summary: string; lastSummarizedAt: Date } | null> {
+  ): { summary: string; lastSummarizedAt: Date } | null {
     const stmt = this.db.prepare(
       "SELECT * FROM thread_summaries WHERE threadId = ?"
     );
@@ -415,7 +485,7 @@ export class EmailModel {
       lastSummarizedAt: new Date(row.lastSummarizedAt),
     };
   }
-  async getThreadsNeedingSummary(): Promise<string[]> {
+  getThreadsNeedingSummary(): string[] {
     const stmt = this.db.prepare(`
     SELECT DISTINCT threadId 
     FROM emails 
@@ -426,24 +496,24 @@ export class EmailModel {
     return rows.map((r) => r.threadId);
   }
 
-  async findDealsByContactIds(contactIds: string[]): Promise<Deal[]> {
+  findDealsByContactIds(contactIds: string[]): Deal[] {
     // Mock implementation
     return [];
   }
 
-  async getEmailsForContact(contactId: string): Promise<Email[]> {
+  getEmailsForContact(contactId: string): Email[] {
     // Mock implementation
     return [];
   }
 
-  async getEmailsForDeal(dealId: string): Promise<Email[]> {
+  getEmailsForDeal(dealId: string): Email[] {
     // Mock implementation
     return [];
   }
 
-  async getAllEmails(
+  getAllEmails(
     options: { limit?: number } = {}
-  ): Promise<{ emails: Email[]; total: number }> {
+  ): { emails: Email[]; total: number } {
     const { limit = 1000 } = options;
     const stmt = this.db.prepare(`SELECT * FROM emails LIMIT ?`);
     const rows = stmt.all(limit) as any[];
@@ -481,7 +551,7 @@ export class EmailModel {
   }
 
   // Get emails for a user with filtering options
-  async getEmailsForUser(
+  getEmailsForUser(
     userId: string,
     options: {
       limit?: number;
@@ -491,7 +561,7 @@ export class EmailModel {
       unreadOnly?: boolean;
       accountId?: string;
     } = {}
-  ): Promise<{ emails: Email[]; total: number }> {
+  ): { emails: Email[]; total: number } {
     const {
       limit = 50,
       offset = 0,
@@ -584,7 +654,7 @@ export class EmailModel {
       subject: row.subject,
       body: row.body,
       htmlBody: row.htmlBody,
-      attachments: row.attachments ? JSON.parse(row.attachments) : undefined,
+      attachments: row.attachments ? JSON.parse(row.attachments) : [],
       isRead: Boolean(row.isRead),
       isIncoming: Boolean(row.isIncoming),
       sentAt: new Date(row.sentAt),
@@ -599,14 +669,14 @@ export class EmailModel {
       clicks: row.clicks || 0,
       createdAt: new Date(row.createdAt),
       updatedAt: new Date(row.updatedAt),
-      labelIds: row.labelIds ? JSON.parse(row.labelIds) : undefined,
+      labelIds: row.labelIds ? JSON.parse(row.labelIds) : [],
     }));
 
     return { emails, total };
   }
 
   // Get a specific email by ID
-  async getEmailById(emailId: string, userId: string): Promise<Email | null> {
+  getEmailById(emailId: string, userId: string): Email | null {
     const stmt = this.db.prepare(`
       SELECT e.*, ea.email as accountEmail 
       FROM emails e 
@@ -629,7 +699,7 @@ export class EmailModel {
       subject: row.subject,
       body: row.body,
       htmlBody: row.htmlBody,
-      attachments: row.attachments ? JSON.parse(row.attachments) : undefined,
+      attachments: row.attachments ? JSON.parse(row.attachments) : [],
       isRead: Boolean(row.isRead),
       isIncoming: Boolean(row.isIncoming),
       sentAt: new Date(row.sentAt),
@@ -644,11 +714,12 @@ export class EmailModel {
       clicks: row.clicks || 0,
       createdAt: new Date(row.createdAt),
       updatedAt: new Date(row.updatedAt),
+      labelIds: row.labelIds ? JSON.parse(row.labelIds) : [],
     };
   }
 
-  async archiveEmail(emailId: string, userId: string): Promise<boolean> {
-    const email = await this.getEmailById(emailId, userId);
+  archiveEmail(emailId: string, userId: string): boolean {
+    const email = this.getEmailById(emailId, userId);
     if (!email) return false;
 
     let labels = email.labelIds || [];
@@ -669,8 +740,8 @@ export class EmailModel {
     return result.changes > 0;
   }
 
-  async unarchiveEmail(emailId: string, userId: string): Promise<boolean> {
-    const email = await this.getEmailById(emailId, userId);
+  unarchiveEmail(emailId: string, userId: string): boolean {
+    const email = this.getEmailById(emailId, userId);
     if (!email) return false;
 
     let labels = email.labelIds || [];
@@ -695,11 +766,11 @@ export class EmailModel {
   }
 
   // Mark email as read/unread
-  async markEmailAsRead(
+  markEmailAsRead(
     emailId: string,
     userId: string,
     isRead: boolean
-  ): Promise<boolean> {
+  ): boolean {
     const stmt = this.db.prepare(`
       UPDATE emails 
       SET isRead = ?, updatedAt = ? 

@@ -122,6 +122,53 @@ export class EmailService {
 
     await this.emailModel.createEmail(email);
 
+    // --- INTERNAL NOTIFICATION LOGIC ---
+    // Check if any recipients (to, cc, bcc) are also platform users/accounts
+    // This allows real-time notifications even before the receiver's next sync
+    const allRecipients = [
+      ...emailData.to,
+      ...(emailData.cc || []),
+      ...(emailData.bcc || [])
+    ];
+
+    for (const recipientEmail of allRecipients) {
+      try {
+        const recipientAccount = await this.emailModel.getEmailAccountByEmail(recipientEmail);
+
+        if (recipientAccount && recipientAccount.userId !== account.userId) {
+          console.log(`🎯 Internal recipient found: ${recipientEmail} (User: ${recipientAccount.userId})`);
+
+          // 1. Create a database record for the recipient immediately
+          // This ensures they see the email even before sync
+          const recipientEmailRecord: Email = {
+            ...email,
+            id: `${messageId}_${recipientAccount.id}`, // Unique ID for this account's copy
+            accountId: recipientAccount.id,
+            isIncoming: true,
+            isRead: false,
+            // Directional metadata
+            receivedAt: new Date(),
+          };
+
+          // Check if recipient already has this email (unlikely if just sent, but safe)
+          const existingForRecipient = await this.emailModel.findEmailByMessageId(messageId, recipientAccount.id);
+          if (!existingForRecipient) {
+            await this.emailModel.createEmail(recipientEmailRecord);
+            console.log(`✅ Created incoming record for recipient ${recipientEmail}`);
+          }
+
+          // 2. Trigger real-time notification for the recipient
+          if (this.notificationService) {
+            this.notificationService.notifyNewEmail(recipientAccount.userId, recipientEmailRecord);
+            console.log(`🔔 Sent WebSocket notification to user ${recipientAccount.userId}`);
+          }
+        }
+      } catch (internalNotifyError) {
+        console.error('Error in internal email notification:', internalNotifyError);
+        // Don't fail the main send process
+      }
+    }
+    // --- END INTERNAL NOTIFICATION LOGIC ---
 
     // Create history entry if dealId is provided
     if (emailData.dealId && this.activityModel) {
@@ -153,7 +200,7 @@ export class EmailService {
       }
     }
 
-    // Notify user about email sent
+    // Notify sender about email sent
     if (this.notificationService) {
       this.notificationService.notifyEmailSent(
         account.userId,
@@ -259,12 +306,13 @@ export class EmailService {
   ): Promise<boolean> {
     const parsed = await this.parseRawEmail(rawEmail, account.provider);
 
-    // Check if email already exists
+    // Check if email already exists for THIS account
     const existing = await this.emailModel.findEmailByMessageId(
-      parsed.messageId!
+      parsed.messageId!,
+      account.id
     );
     if (existing) {
-      // console.log(`Email ${parsed.messageId} already exists, skipping notification.`);
+      // console.log(`Email ${parsed.messageId} already exists for account ${account.id}, skipping.`);
       return false;
     }
 
@@ -538,6 +586,7 @@ export class EmailService {
       receivedAt: new Date(parseInt(message.internalDate)),
       // Store labelIds for direction detection
       labelIds: message.labelIds || [],
+      attachments: this.extractAttachmentsFromGmailPayload(message.payload),
     } as any;
   }
 
@@ -558,6 +607,22 @@ export class EmailService {
       isRead: !!message.isRead,
       sentAt: new Date(message.sentDateTime),
       receivedAt: new Date(message.receivedDateTime),
+      attachments: (message.attachments || []).map((att: any) => {
+        const contentType = att.contentType || 'application/octet-stream';
+        const attachment: EmailAttachment = {
+          id: att.id,
+          filename: att.name,
+          contentType: contentType,
+          size: att.size,
+          contentId: att.contentId || undefined
+        };
+        if (att.contentBytes) {
+          attachment.content = att.contentBytes;
+          attachment.url = `data:${contentType};base64,${att.contentBytes}`;
+          attachment.encoding = 'base64';
+        }
+        return attachment;
+      }),
     } as any;
   }
 
@@ -581,12 +646,20 @@ export class EmailService {
 
         // Parse attachments (same structure as Gmail)
         if (parsed.attachments && parsed.attachments.length > 0) {
-          attachments = parsed.attachments.map((att: any) => ({
-            filename: att.filename || 'attachment',
-            mimeType: att.contentType || 'application/octet-stream',
-            size: att.size || 0,
-            contentId: att.contentId || undefined,
-          }));
+          attachments = parsed.attachments.map((att: any, index: number) => {
+            const base64Content = att.content ? att.content.toString('base64') : '';
+            const contentType = att.contentType || 'application/octet-stream';
+            return {
+              id: att.contentId || `att_${Date.now()}_${index}`,
+              filename: att.filename || 'attachment',
+              contentType: contentType,
+              size: att.size || 0,
+              contentId: att.contentId || undefined,
+              url: base64Content ? `data:${contentType};base64,${base64Content}` : undefined,
+              content: base64Content || undefined,
+              encoding: 'base64'
+            };
+          });
         }
 
         console.log(`IMAP Email Parsed - text len: ${body.length}, html len: ${htmlBody?.length || 0}, attachments: ${attachments?.length || 0}`);
@@ -670,6 +743,50 @@ export class EmailService {
       if (html) return html;
     }
     return undefined;
+  }
+
+  private extractAttachmentsFromGmailPayload(payload: any): EmailAttachment[] {
+    const attachments: EmailAttachment[] = [];
+
+    if (!payload || !payload.parts) return attachments;
+
+    const walk = (parts: any[]) => {
+      for (const part of parts) {
+        if (part.filename && part.filename.length > 0) {
+          const contentType = part.mimeType || 'application/octet-stream';
+          const attachmentId = part.body?.attachmentId || `att_${Date.now()}_${attachments.length}`;
+
+          const attachment: EmailAttachment = {
+            id: attachmentId,
+            filename: part.filename,
+            contentType: contentType,
+            size: part.body?.size || 0,
+            contentId: this.getGmailHeader(part.headers || [], 'content-id')
+          };
+
+          // If content is directly in the part (rare for large files, but possible for small ones/inline)
+          if (part.body?.data) {
+            const base64Content = part.body.data.replace(/-/g, '+').replace(/_/g, '/');
+            attachment.content = base64Content;
+            attachment.url = `data:${contentType};base64,${base64Content}`;
+            attachment.encoding = 'base64';
+          }
+
+          attachments.push(attachment);
+        }
+        if (part.parts) {
+          walk(part.parts);
+        }
+      }
+    };
+
+    walk(payload.parts);
+    return attachments;
+  }
+
+  private getGmailHeader(headers: any[], name: string): string | undefined {
+    const header = headers.find(h => h.name.toLowerCase() === name.toLowerCase());
+    return header ? header.value : undefined;
   }
 
   private async matchEmailWithCRMEntities(email: Partial<Email>): Promise<{

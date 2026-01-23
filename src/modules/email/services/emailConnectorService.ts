@@ -673,7 +673,7 @@ export class EmailConnectorService {
       throw new Error(`SMTP connection failed: ${error.message}`);
     }
 
-    const mailOptions = {
+    const mailOptions: any = {
       from: account.email,
       to: emailData.to.join(', '),
       cc: emailData.cc?.join(', '),
@@ -681,10 +681,33 @@ export class EmailConnectorService {
       subject: emailData.subject,
       text: emailData.body,
       html: emailData.htmlBody,
-      attachments: emailData.attachments?.map(att => ({
-        filename: att.filename,
-        path: att.url
-      }))
+      attachments: emailData.attachments?.map(att => {
+        // Common properties
+        const attachment: any = {
+          filename: att.filename,
+          contentType: att.contentType
+        };
+
+        // Only add CID if it is explicitly provided and not empty
+        if (att.contentId && att.contentId.trim().length > 0) {
+          attachment.cid = att.contentId;
+        }
+
+        // Support both URL-based and base64-encoded attachments
+        if (att.content) {
+          // Base64 encoded content
+          attachment.content = att.content;
+          attachment.encoding = att.encoding || 'base64';
+        } else if (att.url) {
+          // URL-based attachment (fetch from S3, etc.)
+          attachment.path = att.url;
+        } else {
+          // Skip invalid attachments
+          return undefined;
+        }
+
+        return attachment;
+      }).filter((att): att is NonNullable<typeof att> => att !== undefined)
     };
 
     console.log('Sending email with options:', {
@@ -750,7 +773,7 @@ export class EmailConnectorService {
         throw new Error(`SMTP connection failed: ${verifyError.message}`);
       }
 
-      const mailOptions = {
+      const mailOptions: any = {
         from: account.email,
         to: emailData.to.join(', '),
         cc: emailData.cc?.join(', '),
@@ -758,10 +781,30 @@ export class EmailConnectorService {
         subject: emailData.subject,
         text: emailData.body,
         html: emailData.htmlBody,
-        attachments: emailData.attachments?.map(att => ({
-          filename: att.filename,
-          path: att.url
-        }))
+        attachments: emailData.attachments?.map(att => {
+          // Common properties
+          const attachment: any = {
+            filename: att.filename,
+            contentType: att.contentType
+          };
+
+          // Only add CID if it is explicitly provided and not empty
+          if (att.contentId && att.contentId.trim().length > 0) {
+            attachment.cid = att.contentId;
+          }
+
+          // Support both URL-based and base64-encoded attachments (same as Gmail API)
+          if (att.content) {
+            attachment.content = att.content;
+            attachment.encoding = att.encoding || 'base64';
+          } else if (att.url) {
+            attachment.path = att.url;
+          } else {
+            return undefined;
+          }
+
+          return attachment;
+        }).filter((att): att is NonNullable<typeof att> => att !== undefined)
       };
 
       const result = await transporter.sendMail(mailOptions);
