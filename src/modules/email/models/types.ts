@@ -3,8 +3,10 @@ export interface EmailAttachment {
   filename: string;
   contentType: string;
   size: number;
-  contentId?: string;
-  url: string;
+  contentId?: string;      // For inline images (CID references)
+  url?: string;            // URL to fetch the file from (S3, etc.)
+  content?: string;        // Base64 encoded content (same as Gmail)
+  encoding?: 'base64';     // Encoding type
 }
 
 export interface Email {

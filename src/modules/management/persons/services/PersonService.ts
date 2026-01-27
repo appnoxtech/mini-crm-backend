@@ -7,6 +7,26 @@ export class PersonService {
         private organizationModel?: OrganizationModel
     ) { }
 
+    private async populateOrganizations(persons: Person[]): Promise<Person[]> {
+        if (!this.organizationModel) return persons;
+
+        const organizationIds = Array.from(new Set(
+            persons
+                .map(p => p.organizationId)
+                .filter((id): id is number => !!id)
+        ));
+
+        if (organizationIds.length === 0) return persons;
+
+        const organizations = this.organizationModel.findByIds(organizationIds);
+        const orgMap = new Map(organizations.map(org => [org.id, org]));
+
+        return persons.map(person => ({
+            ...person,
+            organization: person.organizationId ? orgMap.get(person.organizationId) || null : null
+        }));
+    }
+
     async createPerson(data: CreatePersonData): Promise<Person> {
         // Validate organization exists if provided
         if (data.organizationId && this.organizationModel) {
@@ -20,11 +40,13 @@ export class PersonService {
     }
 
     async searchPersons(search?: string): Promise<Person[]> {
-        return this.personModel.searchByPersonName(search || '');
+        const persons = await this.personModel.searchByPersonName(search || '');
+        return this.populateOrganizations(persons);
     }
 
     async getPersonsByOrganization(organizationId: number): Promise<Person[]> {
-        return this.personModel.findByorganizationId(organizationId);
+        const persons = await this.personModel.findByorganizationId(organizationId);
+        return this.populateOrganizations(persons);
     }
 
     async updatePerson(id: number, data: UpdatePersonData): Promise<Person | null> {
@@ -54,21 +76,15 @@ export class PersonService {
     }
 
 
-    async getPersonById(id: number, includeDeleted = false): Promise<(Person & { organization?: Organization | null }) | null> {
+    async getPersonById(id: number, includeDeleted = false): Promise<Person | null> {
         const person = this.personModel.findById(id, includeDeleted);
 
         if (!person) {
             return null;
         }
 
-        const organization = person.organizationId && this.organizationModel
-            ? this.organizationModel.findById(person.organizationId)
-            : null;
-
-        return {
-            ...person,
-            organization: organization || null
-        };
+        const populated = await this.populateOrganizations([person]);
+        return populated[0] || null;
     }
 
     async getAllPersons(options: {
@@ -78,7 +94,9 @@ export class PersonService {
         offset?: number;
         includeDeleted?: boolean;
     } = {}): Promise<{ persons: Person[]; count: number }> {
-        return this.personModel.findAll(options);
+        const { persons, count } = await this.personModel.findAll(options);
+        const populatedPersons = await this.populateOrganizations(persons);
+        return { persons: populatedPersons, count };
     }
 
     async deletePerson(id: number): Promise<boolean> {
