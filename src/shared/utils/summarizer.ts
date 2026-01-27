@@ -13,8 +13,7 @@ interface RunPodResponse {
 
 export async function summarizeThreadWithVLLM(threadText: string): Promise<string> {
   try {
-    console.log('Calling RunPod service...');
-    console.log('Thread text:', threadText);
+
 
     const response = await fetch(RUNPOD_API_URL, {
       method: 'POST',
@@ -34,7 +33,7 @@ export async function summarizeThreadWithVLLM(threadText: string): Promise<strin
     }
 
     const data: RunPodResponse = await response.json();
-    console.log('RunPod response:', data);
+
 
     // RunPod returns a job ID for async processing
     // You may need to poll for the result using the status endpoint

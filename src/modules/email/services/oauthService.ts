@@ -13,10 +13,7 @@ export class OAuthService {
     this.encryptionKey = process.env.TOKEN_ENCRYPTION_KEY || 'default-key-change-in-production';
 
     // DEBUG: Log Env Vars to PM2 Logs
-    console.log('--- OAuthService Config Check ---');
-    console.log('GOOGLE_CLIENT_ID:', process.env.GOOGLE_CLIENT_ID ? 'Present' : 'MISSING');
-    console.log('GOOGLE_CLIENT_SECRET:', process.env.GOOGLE_CLIENT_SECRET ? 'Present' : 'MISSING');
-    console.log('GOOGLE_REDIRECT_URI:', process.env.GOOGLE_REDIRECT_URI || 'MISSING');
+
 
     // Check if Google OAuth credentials are configured
     if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET || !process.env.GOOGLE_REDIRECT_URI) {
@@ -329,11 +326,11 @@ export class OAuthService {
     // Always try to refresh the token to ensure it's valid
     // This is more reliable than trying to validate the token first
     try {
-      console.log(`Validating and refreshing tokens for ${account.provider} account: ${account.email}`);
+
 
       const refreshResult = await this.refreshTokenIfNeeded(account);
       if (refreshResult) {
-        console.log(`Successfully refreshed tokens for ${account.provider} account`);
+
         return refreshResult.accessToken;
       }
 
@@ -357,7 +354,7 @@ export class OAuthService {
       ip: 'unknown' // In production, you'd get this from the request
     };
 
-    console.log('OAuth Activity:', JSON.stringify(logEntry));
+
     // In production, you'd store this in a secure audit log
   }
 }

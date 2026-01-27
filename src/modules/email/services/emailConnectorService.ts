@@ -74,7 +74,7 @@ export class EmailConnectorService {
     password: string;
   }): Promise<{ success: boolean; message: string }> {
     try {
-      console.log(`Testing SMTP connection to ${smtpConfig.host}:${smtpConfig.port}`);
+
 
       const finalSmtpConfig = { ...smtpConfig };
       if (finalSmtpConfig.port === 465) {
@@ -95,7 +95,7 @@ export class EmailConnectorService {
       });
 
       await transporter.verify();
-      console.log('SMTP connection test successful');
+
 
       return {
         success: true,
@@ -136,7 +136,7 @@ export class EmailConnectorService {
     let client: ImapFlow | null = null;
 
     try {
-      console.log(`Testing IMAP connection to ${imapConfig.host}:${imapConfig.port}`);
+
 
       client = new ImapFlow({
         host: imapConfig.host,
@@ -150,7 +150,7 @@ export class EmailConnectorService {
       });
 
       await client.connect();
-      console.log('IMAP connection test successful');
+
 
       // Logout cleanly
       await client.logout();
@@ -209,7 +209,7 @@ export class EmailConnectorService {
         query = `after:${thirtyDaysAgo}`;
       }
 
-      console.log(`Fetching Gmail emails with query: ${query}, maxResults: ${maxResults}`);
+
 
       const response = await this.gmailClient.users.messages.list({
         userId: 'me',
@@ -231,7 +231,7 @@ export class EmailConnectorService {
         }
       }
 
-      console.log(`Successfully fetched ${messages.length} Gmail messages`);
+
       return messages;
     } catch (error: any) {
       console.error('Failed to fetch Gmail emails:', error);
@@ -257,7 +257,7 @@ export class EmailConnectorService {
       // Query for archived emails: Not in Inbox, Spam, or Trash
       const query = '-in:inbox -in:spam -in:trash';
 
-      console.log(`Fetching Archived Gmail emails with query: ${query}, maxResults: ${maxResults}`);
+
 
       const response = await this.gmailClient.users.messages.list({
         userId: 'me',
@@ -290,7 +290,7 @@ export class EmailConnectorService {
         }
       }
 
-      console.log(`Successfully fetched ${messages.length} archived Gmail messages`);
+
 
       return {
         messages,
@@ -311,7 +311,7 @@ export class EmailConnectorService {
     try {
       await this.connectGmail(account);
 
-      console.log(`Fetching Gmail history starting from ${startHistoryId}`);
+
 
       const response = await this.gmailClient.users.history.list({
         userId: 'me',
@@ -322,7 +322,7 @@ export class EmailConnectorService {
       const history = response.data.history || [];
       const newHistoryId = response.data.historyId; // The ID of the most recent change in this list
 
-      console.log(`Fetched ${history.length} history records. New History ID: ${newHistoryId}`);
+
 
       return {
         history,
@@ -364,7 +364,7 @@ export class EmailConnectorService {
         filter = `receivedDateTime ge ${lastSyncTime.toISOString()}`;
       }
 
-      console.log(`Fetching Outlook emails with filter: ${filter || 'none'}`);
+
 
       let query = this.outlookClient.api('/me/messages').top(maxResults);
       if (filter) {
@@ -378,7 +378,7 @@ export class EmailConnectorService {
         accountId: account.id
       }));
 
-      console.log(`Successfully fetched ${messages.length} Outlook messages`);
+
       return messages;
     } catch (error: any) {
       console.error('Failed to fetch Outlook emails:', error);
@@ -412,7 +412,7 @@ export class EmailConnectorService {
 
       if (sentBox) {
         sentFolder = sentBox.path;
-        console.log(`Identified Sent folder as: ${sentFolder}`);
+
 
         try {
           await client.mailboxOpen(sentFolder);
@@ -553,11 +553,11 @@ export class EmailConnectorService {
 
       if (useQuickSync) {
         // Quick sync: only INBOX and SENT folders
-        console.log(`🚀 Starting quick parallel IMAP sync for ${account.email}`);
+
         result = await parallelSync.quickSync(account, lastSyncTime);
       } else {
         // Full sync: all folders
-        console.log(`🚀 Starting full parallel IMAP sync for ${account.email}`);
+
         result = await parallelSync.syncEmails(account, {
           maxConnections: 3,
           batchSize: 100,
@@ -569,7 +569,7 @@ export class EmailConnectorService {
         console.warn(`⚠️ Parallel sync completed with ${result.errors.length} errors:`, result.errors);
       }
 
-      console.log(`✅ Parallel sync completed: ${result.totalFetched} emails in ${(result.duration / 1000).toFixed(2)}s`);
+
 
       return result.messages;
     } catch (error: any) {
@@ -590,7 +590,7 @@ export class EmailConnectorService {
 
         const refreshResult = await this.oauthService.refreshTokenIfNeeded(account);
         if (refreshResult) {
-          console.log('OAuth tokens validated successfully');
+
           return true;
         }
         return false;
@@ -623,7 +623,7 @@ export class EmailConnectorService {
         const gmail = google.gmail({ version: 'v1', auth });
         await gmail.users.getProfile({ userId: 'me' });
 
-        console.log('OAuth tokens verified successfully via API call');
+
         return true;
       } catch (error) {
         console.error('OAuth token verification failed:', error);
@@ -689,7 +689,7 @@ export class EmailConnectorService {
       throw new Error('SMTP configuration is missing for this email account');
     }
 
-    console.log(`Attempting to send email via ${account.smtpConfig.host}:${account.smtpConfig.port}`);
+
 
     const smtpConfig = { ...account.smtpConfig };
 
@@ -717,7 +717,7 @@ export class EmailConnectorService {
     // Verify SMTP connection
     try {
       await transporter.verify();
-      console.log('SMTP connection verified successfully');
+
     } catch (error: any) {
       console.error('SMTP connection verification failed:', error);
       throw new Error(`SMTP connection failed: ${error.message}`);
@@ -760,15 +760,11 @@ export class EmailConnectorService {
       }).filter((att): att is NonNullable<typeof att> => att !== undefined)
     };
 
-    console.log('Sending email with options:', {
-      from: mailOptions.from,
-      to: mailOptions.to,
-      subject: mailOptions.subject
-    });
+
 
     try {
       const result = await transporter.sendMail(mailOptions);
-      console.log('Email sent successfully:', result.messageId);
+
       return result.messageId as string;
     } catch (error: any) {
       console.error('Failed to send email:', error);
@@ -785,21 +781,15 @@ export class EmailConnectorService {
     htmlBody?: string;
     attachments?: EmailAttachment[];
   }): Promise<string> {
-    console.log('Sending Gmail email via SMTP with OAuth2...');
+
 
     try {
       // Debug token information
       const decryptedRefreshToken = this.decryptTokenIfNeeded(account.refreshToken || '');
       const decryptedAccessToken = this.decryptTokenIfNeeded(account.accessToken || '');
 
-      console.log('Token debug info:', {
-        hasRefreshToken: !!account.refreshToken,
-        hasAccessToken: !!account.accessToken,
-        refreshTokenLength: decryptedRefreshToken?.length || 0,
-        accessTokenLength: decryptedAccessToken?.length || 0,
-        refreshTokenStart: decryptedRefreshToken?.substring(0, 10) + '...',
-        accessTokenStart: decryptedAccessToken?.substring(0, 10) + '...'
-      });
+
+
 
       const transporter = nodemailer.createTransport({
         service: 'gmail',
@@ -814,10 +804,10 @@ export class EmailConnectorService {
       });
 
       // Test the SMTP connection before sending
-      console.log('Testing SMTP connection...');
+
       try {
         await transporter.verify();
-        console.log('SMTP connection verified successfully');
+
       } catch (verifyError: any) {
         console.error('SMTP connection verification failed:', verifyError);
         throw new Error(`SMTP connection failed: ${verifyError.message}`);
@@ -858,7 +848,7 @@ export class EmailConnectorService {
       };
 
       const result = await transporter.sendMail(mailOptions);
-      console.log('Gmail SMTP email sent successfully:', result.messageId);
+
       return result.messageId as string;
     } catch (error: any) {
       console.error('Failed to send Gmail SMTP email:', error);
@@ -871,7 +861,7 @@ export class EmailConnectorService {
 
         // Try to refresh tokens before giving up
         try {
-          console.log('Attempting to refresh OAuth tokens...');
+
           if (!this.oauthService) {
             const { OAuthService } = require('./oauthService');
             this.oauthService = new OAuthService();
@@ -879,7 +869,7 @@ export class EmailConnectorService {
 
           const refreshResult = await this.oauthService.refreshTokenIfNeeded(account);
           if (refreshResult) {
-            console.log('Tokens refreshed successfully, retrying email send...');
+
 
             // Update account with new tokens
             const { EmailService } = require('./emailService');
@@ -897,7 +887,7 @@ export class EmailConnectorService {
             });
 
             // Retry with new tokens - create a new transporter with fresh tokens
-            console.log('Retrying with refreshed tokens...');
+
             const updatedAccount = {
               ...account,
               accessToken: refreshResult.accessToken,
@@ -918,10 +908,10 @@ export class EmailConnectorService {
             });
 
             // Test the refreshed SMTP connection
-            console.log('Testing refreshed SMTP connection...');
+
             try {
               await refreshedTransporter.verify();
-              console.log('Refreshed SMTP connection verified successfully');
+
             } catch (verifyError: any) {
               console.error('Refreshed SMTP connection verification failed:', verifyError);
               throw new Error(`Refreshed SMTP connection failed: ${verifyError.message}`);
@@ -942,7 +932,7 @@ export class EmailConnectorService {
             };
 
             const result = await refreshedTransporter.sendMail(mailOptions);
-            console.log('Gmail SMTP email sent successfully with refreshed tokens:', result.messageId);
+
             return result.messageId as string;
           }
         } catch (refreshError: any) {
@@ -968,7 +958,7 @@ export class EmailConnectorService {
     htmlBody?: string;
     attachments?: EmailAttachment[];
   }): Promise<string> {
-    console.log('Sending Outlook email via SMTP with OAuth2...');
+
 
     try {
       const transporter = nodemailer.createTransport({
@@ -1000,7 +990,7 @@ export class EmailConnectorService {
       };
 
       const result = await transporter.sendMail(mailOptions);
-      console.log('Outlook SMTP email sent successfully:', result.messageId);
+
       return result.messageId as string;
     } catch (error: any) {
       console.error('Failed to send Outlook SMTP email:', error);
@@ -1044,7 +1034,7 @@ export class EmailConnectorService {
         }
       });
 
-      console.log('Gmail email sent successfully:', response.data.id);
+
       return response.data.id;
     } catch (error: any) {
       console.error('Failed to send Gmail email:', error);
@@ -1057,7 +1047,7 @@ export class EmailConnectorService {
 
         // Try to refresh tokens before giving up
         try {
-          console.log('Attempting to refresh OAuth tokens for Gmail API...');
+
           if (!this.oauthService) {
             const { OAuthService } = require('./oauthService');
             this.oauthService = new OAuthService();
@@ -1065,7 +1055,7 @@ export class EmailConnectorService {
 
           const refreshResult = await this.oauthService.refreshTokenIfNeeded(account);
           if (refreshResult) {
-            console.log('Tokens refreshed successfully, retrying Gmail API send...');
+
 
             // Update account with new tokens
             const { EmailService } = require('./emailService');
@@ -1125,7 +1115,7 @@ export class EmailConnectorService {
         saveToSentItems: true
       });
 
-      console.log('Outlook email sent successfully');
+
       return `outlook-${Date.now()}`; // Outlook doesn't return message ID in this endpoint
     } catch (error: any) {
       console.error('Failed to send Outlook email:', error);

@@ -80,11 +80,11 @@ export class SummarizationQueueService {
         for (const query of alterTableQueries) {
             try {
                 this.db.exec(query);
-                console.log(`✅ Schema update: ${query.substring(0, 50)}...`);
+
             } catch (error: any) {
                 // Column already exists, ignore
                 if (!error.message.includes('duplicate column name')) {
-                    console.log(`ℹ️  Column already exists or error: ${error.message}`);
+
                 }
             }
         }
@@ -98,7 +98,7 @@ export class SummarizationQueueService {
         }
 
         this.isInitialized = true;
-        console.log('📊 Summarization queue schema initialized');
+
     }
 
     /**
@@ -109,7 +109,7 @@ export class SummarizationQueueService {
             const { threadId, userId } = job.data;
             const startTime = Date.now();
 
-            console.log(`📧 [Queue] Processing thread: ${threadId}`);
+
             await job.progress(10);
 
             try {
@@ -118,7 +118,7 @@ export class SummarizationQueueService {
                 if (existingSummary && existingSummary.status === 'completed') {
                     const hoursSinceSummary = (Date.now() - new Date(existingSummary.lastSummarizedAt).getTime()) / (1000 * 60 * 60);
                     if (hoursSinceSummary < 24) {
-                        console.log(`⏭️  Thread ${threadId} already summarized within 24 hours`);
+
                         return { skipped: true, reason: 'recently_summarized' };
                     }
                 }
@@ -161,7 +161,7 @@ export class SummarizationQueueService {
 
                 await job.progress(100);
 
-                console.log(`✅ [Queue] Completed thread: ${threadId} in ${Date.now() - startTime}ms`);
+
                 return {
                     success: true,
                     threadId,
@@ -184,7 +184,7 @@ export class SummarizationQueueService {
      */
     private setupEventListeners(): void {
         this.queue.on('completed', (job, result) => {
-            console.log(`✅ [Queue] Job ${job.id} completed:`, result);
+
         });
 
         this.queue.on('failed', (job, err) => {
@@ -192,7 +192,7 @@ export class SummarizationQueueService {
         });
 
         this.queue.on('progress', (job, progress) => {
-            console.log(`⏳ [Queue] Job ${job.id} progress: ${progress}%`);
+
         });
 
         this.queue.on('error', (error) => {
@@ -218,7 +218,7 @@ export class SummarizationQueueService {
         this.updateSummaryStatus(data.threadId, 'queued');
 
         const job = await this.queue.add(data, jobOptions);
-        console.log(`📥 [Queue] Added thread ${data.threadId} to queue with job ID: ${job.id}`);
+
         return job;
     }
 
@@ -461,7 +461,7 @@ ${body.substring(0, 2000)}`; // Limit body length
      */
     private async callRunPodSummarization(emailContent: string, emails: Email[]): Promise<SummaryData> {
         try {
-            console.log('📤 Calling RunPod API...');
+
 
             const response = await fetch(RUNPOD_API_URL, {
                 method: 'POST',
@@ -481,7 +481,7 @@ ${body.substring(0, 2000)}`; // Limit body length
             }
 
             const data = await response.json();
-            console.log('📥 RunPod response:', JSON.stringify(data).substring(0, 500));
+
 
             // RunPod wraps handler response in 'output' field
             // Your handler returns: {status: "success", summary: "...", keyPoints?: [...], ...}
@@ -604,7 +604,7 @@ ${body.substring(0, 2000)}`; // Limit body length
     async close(): Promise<void> {
         await this.queue.close();
         this.db.close();
-        console.log('🔒 Summarization queue closed');
+
     }
 
     /**

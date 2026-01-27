@@ -64,14 +64,14 @@ export class MailSystemConfigService {
 
   async initializeSystem(): Promise<SystemInitializationOutput> {
     try {
-      console.log('Initializing mail sending system...');
+
 
       const servicesReady: string[] = [];
       let quotaAvailable = this.config.rate_limits.daily_quota_limit;
 
       // Load Google API credentials
       if (this.config.google_credentials.client_id && this.config.google_credentials.client_secret) {
-        console.log('✓ Google API credentials loaded');
+
         servicesReady.push('gmail_api');
       } else {
         console.warn('⚠ Google API credentials missing');
@@ -79,30 +79,30 @@ export class MailSystemConfigService {
 
       // Initialize authentication handlers
       if (this.initializeOAuthHandlers()) {
-        console.log('✓ OAuth handlers initialized');
+
         servicesReady.push('oauth_service');
       }
 
       // Setup quota monitoring
       this.setupQuotaMonitoring();
-      console.log('✓ Quota monitoring configured');
+
       servicesReady.push('quota_monitor');
 
       // Configure retry mechanisms
-      console.log('✓ Retry mechanisms configured');
+
 
       // Initialize logging systems
-      console.log('✓ Logging systems initialized');
+
 
       // SMTP relay initialization
       if (this.config.smtp_config.server) {
-        console.log('✓ SMTP relay configured');
+
         servicesReady.push('smtp_relay');
       }
 
       this.isInitialized = true;
-      
-      console.log(`Mail system initialized successfully. Services ready: ${servicesReady.join(', ')}`);
+
+
 
       return {
         status: 'initialized',
@@ -207,7 +207,7 @@ export class MailSystemConfigService {
       const userQuota = this.quotaTracker.get(userKey);
       const userUsed = userQuota?.used || 0;
       const userLimit = Math.floor(this.config.rate_limits.daily_quota_limit / 4); // 25% per user
-      
+
       result.user_used = userUsed;
       result.user_remaining = Math.max(0, userLimit - userUsed);
     }
@@ -239,10 +239,10 @@ export class MailSystemConfigService {
     next_available_slot: string;
   } {
     const quotaStatus = this.getQuotaStatus(userEmail);
-    
+
     let canSend = quotaStatus.daily_remaining >= estimatedUnits;
     let quotaRemaining = quotaStatus.daily_remaining;
-    
+
     if (userEmail && quotaStatus.user_remaining !== undefined) {
       canSend = canSend && quotaStatus.user_remaining >= estimatedUnits;
       quotaRemaining = Math.min(quotaRemaining, quotaStatus.user_remaining);

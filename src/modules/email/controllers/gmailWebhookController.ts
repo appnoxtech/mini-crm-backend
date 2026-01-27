@@ -23,7 +23,7 @@ export class GmailWebhookController {
      */
     async handlePushNotification(req: Request, res: Response): Promise<void> {
         try {
-            console.log('📬 Received Gmail webhook push notification');
+
 
             // Validate request
             const { message, subscription } = req.body;
@@ -65,7 +65,7 @@ export class GmailWebhookController {
      * Google may send a verification request when setting up the subscription
      */
     async verifyWebhook(req: Request, res: Response): Promise<void> {
-        console.log('Gmail webhook verification request received');
+
         res.status(200).json({
             status: 'ok',
             service: 'gmail-push-notifications',

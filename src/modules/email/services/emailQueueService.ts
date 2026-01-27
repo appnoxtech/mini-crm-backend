@@ -81,11 +81,11 @@ export class EmailQueueService {
     if (!job) return;
 
     try {
-      console.log(`Processing email sync for account: ${job.accountId}`);
+
 
       const account = await this.emailModel.getEmailAccountById(job.accountId);
       if (!account || !account.isActive) {
-        console.log(`Account ${job.accountId} not found or inactive, skipping sync`);
+
         return;
       }
 
@@ -96,7 +96,7 @@ export class EmailQueueService {
       }
 
       const result = await this.emailService.processIncomingEmails(account);
-      console.log(`Email sync completed for ${job.accountId}:`, result);
+
     } catch (error: any) {
       console.error(`Failed to sync emails for account ${job.accountId}:`, error);
 
@@ -119,11 +119,11 @@ export class EmailQueueService {
     if (!job) return;
 
     try {
-      console.log(`Processing email send for account: ${job.accountId}`);
+
 
       // For sending, we can use the accountId directly as the service handles fetching
       const messageId = await this.emailService.sendEmail(job.accountId, job.emailData);
-      console.log(`Email sent successfully: ${messageId}`);
+
     } catch (error: any) {
       console.error(`Failed to send email for account ${job.accountId}:`, error);
       // TODO: Implement retry logic for failed sends
@@ -149,12 +149,12 @@ export class EmailQueueService {
       return priorityOrder[a.priority] - priorityOrder[b.priority];
     });
 
-    console.log(`Queued email sync for account ${accountId} with priority ${priority}`);
+
   }
 
   public queueEmailSend(accountId: string, emailData: EmailSendJob['emailData']): void {
     this.sendQueue.push({ accountId, emailData });
-    console.log(`Queued email send for account ${accountId}`);
+
   }
 
   private async scheduleEmailSyncForAllAccounts(): Promise<void> {

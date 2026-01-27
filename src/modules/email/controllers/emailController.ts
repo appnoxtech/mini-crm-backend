@@ -269,9 +269,7 @@ export class EmailController {
 
     // For now, we'll skip automatic token refresh and just validate the account exists
     // This is a simpler approach that will work even without OAuth credentials configured
-    console.log(
-      `Validating OAuth account: ${emailAccount.provider} - ${emailAccount.email}`
-    );
+
 
     // Check if the account is properly configured
     if (!emailAccount.isActive) {
@@ -299,9 +297,7 @@ export class EmailController {
             updatedAt: new Date(),
           });
 
-          console.log(
-            `Successfully refreshed tokens for ${emailAccount.provider} account: ${emailAccount.email}`
-          );
+
         }
       } catch (error: any) {
         console.error(
@@ -312,9 +308,7 @@ export class EmailController {
         // This way, if the token is still valid, email sending might still work
       }
     } else {
-      console.log(
-        `OAuth credentials not configured for ${emailAccount.provider}, skipping token refresh`
-      );
+
     }
   }
 
@@ -423,7 +417,7 @@ export class EmailController {
       const { trackingId } = req.params;
 
       // TODO: Implement tracking logic
-      console.log("Email opened:", trackingId);
+
 
       const pixel = Buffer.from(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
@@ -449,7 +443,7 @@ export class EmailController {
       const { url } = req.query;
 
       // TODO: Implement tracking logic
-      console.log("Link clicked:", trackingId, url);
+
 
       const originalUrl = (url as string) || "/";
       res.redirect(originalUrl);
@@ -564,14 +558,7 @@ export class EmailController {
         state
       );
 
-      console.log("OAuth callback result:", {
-        userId: oauthResult.userId,
-        email: oauthResult.email,
-        hasAccessToken: !!oauthResult.accessToken,
-        hasRefreshToken: !!oauthResult.refreshToken,
-        accessTokenLength: oauthResult.accessToken?.length || 0,
-        refreshTokenLength: oauthResult.refreshToken?.length || 0,
-      });
+
 
       // Check if user already has THIS SPECIFIC email account
       const userAccounts = await this.emailService.getEmailAccounts(oauthResult.userId);
@@ -579,11 +566,7 @@ export class EmailController {
 
       if (existingAccount) {
         // Update existing account with new tokens (encrypt them before storing)
-        console.log("Updating existing Gmail account with new tokens:", {
-          accountId: existingAccount.id,
-          email: existingAccount.email,
-          provider: existingAccount.provider,
-        });
+
 
         await this.emailService.updateEmailAccount(existingAccount.id, {
           accessToken: this.oauthService.encryptToken(oauthResult.accessToken),
@@ -593,10 +576,10 @@ export class EmailController {
           updatedAt: new Date(),
         });
 
-        console.log("Gmail account updated successfully with new tokens");
+
       } else {
         // Create new email account from OAuth result
-        console.log("Creating new Gmail account from OAuth result");
+
         const emailAccount = this.oauthService.createEmailAccountFromOAuth(
           oauthResult.userId,
           oauthResult.email,
@@ -612,11 +595,7 @@ export class EmailController {
       // Redirect to frontend with success
       const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
 
-      console.log("Redirecting to frontend with success:", {
-        frontendUrl,
-        email: oauthResult.email,
-        userId: oauthResult.userId,
-      });
+
 
       return res.redirect(
         `${frontendUrl}/auth/callback?success=true&provider=gmail&email=${oauthResult.email}&userId=${oauthResult.userId}`
@@ -702,7 +681,7 @@ export class EmailController {
       const accounts = await this.emailService.getEmailAccounts(
         req.user.id.toString()
       );
-      console.log("📧 Email accounts for user", req.user.id, ":", accounts);
+
 
       return ResponseHandler.success(res, accounts, "Fetched Email Accounts Successfully ");
 
@@ -728,8 +707,7 @@ export class EmailController {
 
       const { smtpConfig, imapConfig } = req.body as any;
 
-      console.log("SMTP Config:", smtpConfig);
-      console.log("IMAP Config:", imapConfig);
+
       if (!smtpConfig && !imapConfig) {
         return ResponseHandler.validationError(
           res,

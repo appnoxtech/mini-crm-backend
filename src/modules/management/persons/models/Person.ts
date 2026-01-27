@@ -87,7 +87,7 @@ export class PersonModel {
         if (!hasCountry) {
             try {
                 this.db.exec('ALTER TABLE persons ADD COLUMN country TEXT');
-                console.log('Added country column to persons table');
+
             } catch (error) {
                 console.error('Error adding country column:', error);
             }

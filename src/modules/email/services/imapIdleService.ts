@@ -40,7 +40,7 @@ export class IMAPIdleService {
     ): void {
         this.emailService = emailService;
         this.notificationService = notificationService;
-        console.log('📧 IMAP IDLE Service initialized');
+
     }
 
     /**
@@ -53,12 +53,12 @@ export class IMAPIdleService {
         }
 
         if (this.connections.has(account.id)) {
-            console.log(`IMAP IDLE already active for account ${account.id}`);
+
             return true;
         }
 
         try {
-            console.log(`🔌 Starting IMAP IDLE for account: ${account.email}`);
+
 
             const client = new ImapFlow({
                 host: account.imapConfig.host,
@@ -76,7 +76,7 @@ export class IMAPIdleService {
             this.setupEventHandlers(client, account);
 
             await client.connect();
-            console.log(`✅ IMAP connected for ${account.email}`);
+
 
             // Open INBOX and start IDLE
             const lock = await client.getMailboxLock('INBOX');
@@ -109,7 +109,7 @@ export class IMAPIdleService {
     private setupEventHandlers(client: ImapFlow, account: EmailAccount): void {
         // ImapFlow emits 'exists' when new messages arrive
         client.on('exists', async (data: { path: string; count: number; prevCount: number }) => {
-            console.log(`📬 New email detected in ${data.path} for ${account.email}! Count: ${data.prevCount} -> ${data.count}`);
+
 
             const connection = this.connections.get(account.id);
             if (connection) {
@@ -122,15 +122,15 @@ export class IMAPIdleService {
 
         // Use type assertion for events that may not be in the TypeScript definitions
         (client as any).on('expunge', (data: { path: string; seq: number }) => {
-            console.log(`🗑️ Email deleted in ${data.path} for ${account.email}, seq: ${data.seq}`);
+
         });
 
         (client as any).on('flags', (data: { path: string; seq: number; uid: number; flags: Set<string> }) => {
-            console.log(`🏷️ Flags changed for email in ${data.path} for ${account.email}`);
+
         });
 
         client.on('close', () => {
-            console.log(`🔌 IMAP connection closed for ${account.email}`);
+
             if (!this.isShuttingDown) {
                 this.handleDisconnect(account);
             }
@@ -153,7 +153,7 @@ export class IMAPIdleService {
 
         try {
             connection.isIdling = true;
-            console.log(`🔄 Starting IDLE loop for ${account.email}`);
+
 
             // IDLE with timeout (must restart before IMAP server times out)
             while (this.connections.has(accountId) && !this.isShuttingDown) {
@@ -194,12 +194,12 @@ export class IMAPIdleService {
         }
 
         try {
-            console.log(`📥 Processing ${newCount} new email(s) for ${account.email}`);
+
 
             // Trigger a quick sync to fetch the new emails
             const result = await this.emailService.processIncomingEmails(account);
 
-            console.log(`✅ Processed ${result.newEmails} new emails for ${account.email}`);
+
 
             // Notifications are sent inside processIncomingEmails via notifyNewEmail
         } catch (error: any) {
@@ -240,7 +240,7 @@ export class IMAPIdleService {
             return;
         }
 
-        console.log(`🔄 Attempting to reconnect IMAP for ${account.email} (attempt ${connection.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS})`);
+
 
         await this.delay(this.RECONNECT_DELAY_MS * connection.reconnectAttempts);
 
@@ -259,7 +259,7 @@ export class IMAPIdleService {
         // Try to reconnect
         const success = await this.startListening(account);
         if (success) {
-            console.log(`✅ Successfully reconnected IMAP for ${account.email}`);
+
         }
     }
 
@@ -270,7 +270,7 @@ export class IMAPIdleService {
         const connection = this.connections.get(accountId);
         if (!connection) return;
 
-        console.log(`⏹️ Stopping IMAP IDLE for account ${accountId}`);
+
 
         try {
             if (connection.mailboxLock) {
@@ -288,7 +288,7 @@ export class IMAPIdleService {
      * Stop all IMAP connections (for graceful shutdown)
      */
     async stopAll(): Promise<void> {
-        console.log('⏹️ Stopping all IMAP IDLE connections...');
+
         this.isShuttingDown = true;
 
         const stopPromises = Array.from(this.connections.keys()).map(id =>
@@ -296,7 +296,7 @@ export class IMAPIdleService {
         );
 
         await Promise.all(stopPromises);
-        console.log('✅ All IMAP IDLE connections stopped');
+
     }
 
     /**
@@ -335,7 +335,7 @@ export class IMAPIdleService {
                 (a.provider === 'imap' || a.provider === 'custom') && a.imapConfig && a.isActive
             );
 
-            console.log(`📧 Starting IMAP IDLE monitoring for ${imapAccounts.length} accounts`);
+
 
             for (const account of imapAccounts) {
                 await this.startListening(account);

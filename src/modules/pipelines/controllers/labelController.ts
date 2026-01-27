@@ -111,7 +111,7 @@ export class LabelController {
             const data = req.body;
 
             let level = [];
-            console.log(data);
+
 
             for (let i = 0; i < data.length; i++) {
                 const label = await this.labelService.updatelabel(data[i].id, data[i]);

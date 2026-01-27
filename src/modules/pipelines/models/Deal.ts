@@ -88,7 +88,7 @@ export class DealModel {
         for (const column of columnsToAdd) {
             try {
                 this.db.exec(`ALTER TABLE deals ADD COLUMN ${column.name} ${column.definition}`);
-                console.log(`Added ${column.name} column to deals table`);
+
             } catch (error) {
                 // Column already exists, ignore error
             }

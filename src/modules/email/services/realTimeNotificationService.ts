@@ -24,7 +24,7 @@ export class RealTimeNotificationService {
     if (!this.io) return;
 
     this.io.on('connection', (socket) => {
-      console.log('New socket connection:', socket.id);
+
 
       // Handle user authentication
       socket.on('authenticate', (userId: any) => {
@@ -39,7 +39,7 @@ export class RealTimeNotificationService {
         this.userSockets.get(stringUserId)!.add(socket.id);
 
         socket.join(`user_${stringUserId}`);
-        console.log(`Socket ${socket.id} authenticated for user ${stringUserId}`);
+
 
         // Send initial connection confirmation
         socket.emit('authenticated', { userId: stringUserId, timestamp: new Date() });
@@ -47,7 +47,7 @@ export class RealTimeNotificationService {
 
       // Handle disconnection
       socket.on('disconnect', () => {
-        console.log('Socket disconnected:', socket.id);
+
 
         // Remove socket from all users
         for (const [userId, socketIds] of this.userSockets.entries()) {
@@ -56,7 +56,7 @@ export class RealTimeNotificationService {
             if (socketIds.size === 0) {
               this.userSockets.delete(userId);
             }
-            console.log(`Removed socket ${socket.id} from user ${userId}`);
+
             break;
           }
         }
@@ -71,7 +71,7 @@ export class RealTimeNotificationService {
 
   private handleEmailSyncRequest(accountId: string, userId: string): void {
     // In a real implementation, this would trigger the email queue service
-    console.log(`Email sync requested for account ${accountId} by user ${userId}`);
+
 
     // Notify user that sync is starting
     this.notifyUser(userId, {
@@ -92,14 +92,12 @@ export class RealTimeNotificationService {
     const userSockets = this.userSockets.get(stringUserId);
     const socketCount = userSockets?.size || 0;
 
-    console.log(`🔔 Attempting to notify user ${stringUserId} (${notification.type}). Connections: ${socketCount}`);
+
 
     this.io.to(`user_${stringUserId}`).emit('notification', notification);
 
     if (socketCount === 0) {
-      console.log(`⚠️ User ${stringUserId} has 0 active socket connections, but notification was sent to room user_${stringUserId}`);
-    } else {
-      console.log(`✅ Notification successfully emitted to user_${stringUserId}`);
+
     }
   }
 
@@ -111,7 +109,7 @@ export class RealTimeNotificationService {
     }
 
     this.io.emit('notification', notification);
-    console.log('Broadcast notification sent:', notification.type);
+
   }
 
   // Specific notification methods
@@ -330,6 +328,6 @@ export class RealTimeNotificationService {
     }
 
     this.userSockets.delete(userId);
-    console.log(`Disconnected all sockets for user ${userId}`);
+
   }
 }

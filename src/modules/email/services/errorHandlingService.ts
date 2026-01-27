@@ -74,7 +74,7 @@ export class ErrorHandlingService {
   }
 
   classifyError(error: any, errorCode?: number): ErrorClassification {
-    console.log('Classifying error:', { message: error.message, code: errorCode || error.code });
+
 
     // Gmail API specific errors
     if (error.response?.data?.error) {
@@ -232,7 +232,7 @@ export class ErrorHandlingService {
   }
 
   makeRetryDecision(errorScenario: ErrorScenario): RetryDecision {
-    console.log(`Making retry decision for attempt ${errorScenario.retry_attempt}/${errorScenario.max_retries}`);
+
 
     const classification = this.classifyError(errorScenario.original_error, errorScenario.error_code);
 
@@ -305,19 +305,19 @@ export class ErrorHandlingService {
   private calculateExponentialBackoff(attempt: number, multiplier?: number): number {
     const mult = multiplier || this.retryConfig.multiplier;
     let delay = this.retryConfig.base_delay * Math.pow(mult, attempt);
-    
+
     // Cap at max delay
     delay = Math.min(delay, this.retryConfig.max_delay);
-    
+
     // Add jitter to prevent thundering herd
     const jitter = delay * this.retryConfig.jitter * Math.random();
     delay += jitter;
-    
+
     return Math.round(delay);
   }
 
   addToDeadLetterQueue(messageId: string, errorScenario: ErrorScenario, originalRequest: any): void {
-    console.log(`Adding message ${messageId} to dead letter queue`);
+
 
     const classification = this.classifyError(errorScenario.original_error, errorScenario.error_code);
 
@@ -440,7 +440,7 @@ export class ErrorHandlingService {
     recentDLQEntries.forEach(entry => {
       const category = this.extractErrorCategory(entry.failure_reason);
       errorByCategory[category] = (errorByCategory[category] || 0) + 1;
-      
+
       totalRetries += entry.retry_count;
       if (entry.retry_count > 0 && !entry.requires_manual_intervention) {
         successfulRetries += entry.retry_count - 1; // Assumes last retry failed

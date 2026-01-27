@@ -469,7 +469,7 @@ export class DealService {
         const deal = this.dealModel.findById(dealId, userId);
         if (!deal) return null;
 
-        console.log("log from service", info);
+
         const data = this.dealModel.makeDealAsLost(dealId, info);
 
         if (data) {

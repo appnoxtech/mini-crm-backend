@@ -85,7 +85,7 @@ export class EmailModel {
     // Add labelIds column if it doesn't exist (for existing databases)
     try {
       this.db.exec("ALTER TABLE emails ADD COLUMN labelIds TEXT");
-      console.log("Added labelIds column to emails table");
+
     } catch (error) {
       // Column already exists, ignore error
     }
@@ -93,14 +93,14 @@ export class EmailModel {
     // Add lastHistoryId column if it doesn't exist (for existing databases)
     try {
       this.db.exec("ALTER TABLE email_accounts ADD COLUMN lastHistoryId TEXT");
-      console.log("Added lastHistoryId column to email_accounts table");
+
     } catch (error) {
       // Column already exists, ignore error
     }
     // Add attachments column if it doesn't exist
     try {
       this.db.exec("ALTER TABLE emails ADD COLUMN attachments TEXT");
-      console.log("Added attachments column to emails table");
+
     } catch (error) {
       // Column already exists, ignore error
     }
@@ -110,7 +110,7 @@ export class EmailModel {
     try {
       const schema = this.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='emails'").get() as any;
       if (schema && schema.sql && schema.sql.includes('messageId TEXT UNIQUE')) {
-        console.log("Migrating emails table to support multi-user messages...");
+
         this.db.transaction(() => {
           this.db.exec("DROP TABLE IF EXISTS emails_old");
           this.db.exec("ALTER TABLE emails RENAME TO emails_old");
@@ -154,7 +154,7 @@ export class EmailModel {
           this.db.exec("CREATE INDEX IF NOT EXISTS idx_emails_messageId ON emails(messageId)");
           this.db.exec("CREATE INDEX IF NOT EXISTS idx_emails_sentAt ON emails(sentAt)");
         })();
-        console.log("Migration successful!");
+
       }
     } catch (error: any) {
       console.error("Migration to multi-user emails failed:", error.message);
@@ -435,12 +435,12 @@ export class EmailModel {
   }
 
   getEmailAccounts(userId: string): EmailAccount[] {
-    console.log(`Getting email accounts for userId: ${userId}`);
+
     const stmt = this.db.prepare(
       "SELECT * FROM email_accounts WHERE userId = ? AND isActive = 1 ORDER BY createdAt DESC"
     );
     const rows = stmt.all(userId) as any[];
-    console.log(`Found ${rows.length} active email accounts for userId: ${userId}`);
+
 
     return rows.map((row) => {
       const account: EmailAccount = {
@@ -591,24 +591,24 @@ export class EmailModel {
     // Add folder filter
     if (folder === "inbox") {
       whereClause += ` AND e.isIncoming = 1 AND (e.labelIds IS NULL OR (e.labelIds NOT LIKE '%SPAM%' AND e.labelIds NOT LIKE '%JUNK%' AND e.labelIds NOT LIKE '%TRASH%' AND e.labelIds NOT LIKE '%ARCHIVE%'))`;
-      console.log("Filtering for INBOX emails (excluding ARCHIVE)");
+
     } else if (folder === "sent") {
       whereClause += ` AND e.isIncoming = 0 AND (e.labelIds IS NULL OR (e.labelIds NOT LIKE '%DRAFT%' AND e.labelIds NOT LIKE '%TRASH%'))`;
-      console.log("Filtering for SENT emails");
+
     } else if (folder === "spam") {
       whereClause += ` AND (e.labelIds LIKE '%SPAM%' OR e.labelIds LIKE '%JUNK%')`;
-      console.log("Filtering for SPAM emails");
+
     } else if (folder === "drafts" || folder === "drfts") {
       whereClause += ` AND e.labelIds LIKE '%DRAFT%'`;
-      console.log("Filtering for DRAFT emails");
+
     } else if (folder === "trash") {
       whereClause += ` AND e.labelIds LIKE '%TRASH%'`;
-      console.log("Filtering for TRASH emails");
+
     } else if (folder === "archive") {
       whereClause += ` AND (e.labelIds LIKE '%ARCHIVE%' OR e.labelIds LIKE '%ALL_MAIL%')`;
-      console.log("Filtering for ARCHIVE emails");
+
     } else {
-      console.log(`No specific folder logic for: ${folder}, applying basic owner check only`);
+
     }
 
     // Add unread filter
@@ -641,13 +641,12 @@ export class EmailModel {
       LIMIT ? OFFSET ?
     `;
 
-    console.log("Email query:", query);
-    console.log("Query params:", [...params, limit, offset]);
+
 
     const emailsStmt = this.db.prepare(query);
     const emailRows = emailsStmt.all(...params, limit, offset) as any[];
 
-    console.log(`Found ${emailRows.length} emails for folder: ${folder}`);
+
 
     const emails: Email[] = emailRows.map((row) => ({
       id: row.id,

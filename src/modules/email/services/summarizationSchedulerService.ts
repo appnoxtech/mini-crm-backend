@@ -19,7 +19,7 @@ export class SummarizationSchedulerService {
      */
     start(): void {
         if (this.cronJob) {
-            console.log('⚠️ [Scheduler] Already running');
+
             return;
         }
 
@@ -31,8 +31,7 @@ export class SummarizationSchedulerService {
             await this.runScheduledSummarization();
         });
 
-        console.log(`⏰ [Scheduler] Started with pattern: ${SUMMARIZATION_CRON}`);
-        console.log(`📊 [Scheduler] Batch size: ${BATCH_SIZE}`);
+
 
         // Run immediately on startup (after a short delay to allow Redis connection)
         setTimeout(() => {
@@ -45,22 +44,22 @@ export class SummarizationSchedulerService {
      */
     async runScheduledSummarization(): Promise<void> {
         if (this.isRunning) {
-            console.log('⏳ [Scheduler] Previous batch still running, skipping...');
+
             return;
         }
 
         this.isRunning = true;
-        console.log('\n🔄 [Scheduler] Starting scheduled summarization batch...');
+
         const startTime = Date.now();
 
         try {
             // Get threads that need summarization
             const threadsToSummarize = this.queueService.getThreadsNeedingSummary(BATCH_SIZE);
 
-            console.log(`📊 [Scheduler] Found ${threadsToSummarize.length} threads to summarize`);
+
 
             if (threadsToSummarize.length === 0) {
-                console.log('✨ [Scheduler] No threads need summarization');
+
                 return;
             }
 
@@ -86,11 +85,11 @@ export class SummarizationSchedulerService {
             }
 
             const duration = Date.now() - startTime;
-            console.log(`✅ [Scheduler] Queued ${queued} threads (${skipped} skipped) in ${duration}ms`);
+
 
             // Log queue stats
             const stats = await this.queueService.getQueueStats();
-            console.log(`📊 [Scheduler] Queue stats:`, stats);
+
 
         } catch (error: any) {
             console.error('❌ [Scheduler] Error in scheduled job:', error);
@@ -103,7 +102,7 @@ export class SummarizationSchedulerService {
      * Manual trigger for immediate processing
      */
     async triggerNow(): Promise<{ queued: number; skipped: number }> {
-        console.log('🔧 [Scheduler] Manual trigger requested');
+
 
         const threadsToSummarize = this.queueService.getThreadsNeedingSummary(BATCH_SIZE);
 
@@ -134,7 +133,7 @@ export class SummarizationSchedulerService {
         if (this.cronJob) {
             this.cronJob.stop();
             this.cronJob = null;
-            console.log('🛑 [Scheduler] Stopped');
+
         }
     }
 

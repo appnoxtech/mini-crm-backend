@@ -80,7 +80,7 @@ export class RunPodAsyncService {
         for (const query of alterTableQueries) {
             try {
                 this.db.exec(query);
-                console.log(`✅ Schema update: ${query.substring(0, 50)}...`);
+
             } catch (error: any) {
                 // Column already exists, ignore
             }
@@ -94,7 +94,7 @@ export class RunPodAsyncService {
             // Index might already exist
         }
 
-        console.log('📊 RunPod async service schema initialized');
+
     }
 
     /**
@@ -103,9 +103,7 @@ export class RunPodAsyncService {
      */
     async submitForSummarization(threadId: string): Promise<{ jobId: string; status: string }> {
         const config = getRunPodConfig();
-        console.log(`📤 Submitting thread ${threadId} for summarization...`);
-        console.log(`🔑 API Key loaded: ${config.RUNPOD_API_KEY ? 'Yes (length: ' + config.RUNPOD_API_KEY.length + ')' : 'No - MISSING!'}`);
-        console.log(`🌐 Endpoint: ${config.RUNPOD_BASE_URL}/run`);
+
 
         // Get emails for this thread
         const emails = this.getEmailsByThreadId(threadId);
@@ -145,7 +143,7 @@ export class RunPodAsyncService {
         const data = await response.json();
         const jobId = data.id;
 
-        console.log(`📥 Job submitted: ${jobId}`);
+
 
         // Store job info in database
         this.updateJobStatus(threadId, jobId, 'IN_QUEUE');
@@ -182,14 +180,14 @@ export class RunPodAsyncService {
     async summarizeAndWait(threadId: string): Promise<SummaryData> {
         const { jobId } = await this.submitForSummarization(threadId);
 
-        console.log(`⏳ Waiting for job ${jobId} to complete...`);
+
 
         // Poll for completion
         for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
             await this.sleep(POLL_INTERVAL_MS);
 
             const status = await this.checkJobStatus(jobId);
-            console.log(`📊 Job ${jobId} status: ${status.status}`);
+
 
             if (status.status === 'COMPLETED') {
                 const result = this.parseRunPodOutput(status.output);
@@ -211,7 +209,7 @@ export class RunPodAsyncService {
      * Call this from a cron job for batch processing
      */
     async processPendingJobs(): Promise<{ completed: number; failed: number; pending: number }> {
-        console.log('🔄 Processing pending RunPod jobs...');
+
 
         const pendingJobs = this.getPendingJobs();
         let completed = 0;
@@ -226,11 +224,7 @@ export class RunPodAsyncService {
                     const result = this.parseRunPodOutput(status.output);
                     await this.saveCompletedSummary(job.threadId, job.runpodJobId, result);
                     completed++;
-                    console.log(`✅ Job ${job.runpodJobId} completed`);
-                } else if (status.status === 'FAILED' || status.status === 'CANCELLED') {
-                    this.updateJobStatus(job.threadId, job.runpodJobId, status.status, status.error);
-                    failed++;
-                    console.log(`❌ Job ${job.runpodJobId} failed: ${status.error}`);
+
                 } else {
                     pending++;
                 }
@@ -239,7 +233,7 @@ export class RunPodAsyncService {
             }
         }
 
-        console.log(`📊 Processed: ${completed} completed, ${failed} failed, ${pending} still pending`);
+
         return { completed, failed, pending };
     }
 
@@ -250,7 +244,7 @@ export class RunPodAsyncService {
         const threads = this.getThreadsNeedingSummary(limit);
         const jobIds: string[] = [];
 
-        console.log(`📤 Submitting ${threads.length} threads for summarization...`);
+
 
         for (const threadId of threads) {
             try {

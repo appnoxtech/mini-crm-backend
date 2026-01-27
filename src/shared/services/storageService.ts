@@ -101,11 +101,10 @@ export class StorageService {
      */
     async deleteFromS3(keys: string[]): Promise<void> {
         if (!keys || keys.length === 0) {
-            console.log('No keys to delete');
             return;
         }
 
-        console.log('🗑️  Attempting to delete from S3:', keys);
+
 
         try {
             const command = new DeleteObjectsCommand({
@@ -119,9 +118,7 @@ export class StorageService {
             const result = await this.s3Client.send(command);
 
             // Log successful deletions
-            if (result.Deleted && result.Deleted.length > 0) {
-                console.log('✅ Successfully deleted:', result.Deleted.map(d => d.Key));
-            }
+
 
             // Log any errors
             if (result.Errors && result.Errors.length > 0) {
@@ -144,7 +141,7 @@ export class StorageService {
      * Verify files are actually deleted from S3
      */
     private async verifyDeletion(keys: string[]): Promise<void> {
-        console.log('🔍 Verifying deletion...');
+
 
         for (const key of keys) {
             try {
@@ -155,7 +152,7 @@ export class StorageService {
                 console.warn(`⚠️  WARNING: File still exists in S3: ${key}`);
             } catch (error: any) {
                 if (error.name === 'NotFound' || error.$metadata?.httpStatusCode === 404) {
-                    console.log(`✅ Confirmed deleted: ${key}`);
+                    // console.log(`✅ Confirmed deleted: ${key}`);
                 } else {
                     console.error(`❓ Error verifying ${key}:`, error.message);
                 }
@@ -172,20 +169,19 @@ export const storageService = new StorageService();
  */
 export async function safeDeleteFromS3(keys: string[], retries = 3): Promise<void> {
     if (!keys || keys.length === 0) {
-        console.log('safeDeleteFromS3: No keys provided');
         return;
     }
 
-    console.log(`🔄 safeDeleteFromS3 called with ${keys.length} keys, ${retries} retries remaining`);
+
 
     try {
         await storageService.deleteFromS3(keys);
-        console.log('✅ safeDeleteFromS3: Deletion successful');
+
     } catch (err: any) {
         console.error(`❌ safeDeleteFromS3: Attempt failed. Retries left: ${retries - 1}`, err.message);
 
         if (retries > 0) {
-            console.log(`⏳ Waiting 1 second before retry...`);
+
             await new Promise(r => setTimeout(r, 1000));
             return safeDeleteFromS3(keys, retries - 1);
         }

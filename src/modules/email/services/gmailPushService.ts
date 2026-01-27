@@ -45,7 +45,7 @@ export class GmailPushService {
         // Start watch renewal interval
         this.startWatchRenewal();
 
-        console.log('📧 Gmail Push Service initialized');
+
     }
 
     /**
@@ -65,7 +65,7 @@ export class GmailPushService {
         }
 
         try {
-            console.log(`🔔 Starting Gmail watch for: ${account.email}`);
+
 
             const auth = new google.auth.OAuth2(
                 process.env.GOOGLE_CLIENT_ID,
@@ -104,7 +104,7 @@ export class GmailPushService {
 
             this.watchedAccounts.set(account.id, watchInfo);
 
-            console.log(`✅ Gmail watch started for ${account.email}, expires: ${watchInfo.expiration.toISOString()}`);
+
             return true;
         } catch (error: any) {
             console.error(`❌ Failed to start Gmail watch for ${account.email}:`, error.message);
@@ -128,7 +128,7 @@ export class GmailPushService {
         try {
             // Note: Gmail watch automatically expires, but we can stop early
             // There's no explicit "stop" API, we just remove from our tracking
-            console.log(`⏹️ Stopped watching Gmail account: ${watchInfo.email}`);
+
         } catch (error: any) {
             console.error(`Error stopping Gmail watch for ${accountId}:`, error.message);
         }
@@ -150,7 +150,7 @@ export class GmailPushService {
             const decodedData = Buffer.from(message.data, 'base64').toString('utf-8');
             const notification = JSON.parse(decodedData);
 
-            console.log('📬 Gmail push notification received:', notification);
+
 
             const { emailAddress, historyId } = notification;
 
@@ -185,7 +185,7 @@ export class GmailPushService {
         }
 
         try {
-            console.log(`📥 Processing Gmail changes for ${watchInfo.email}, historyId: ${watchInfo.historyId} -> ${newHistoryId}`);
+
 
             // Get the email account from database
             const account = await this.emailService.getEmailAccountById(watchInfo.accountId);
@@ -197,7 +197,7 @@ export class GmailPushService {
             // Process incoming emails (this will fetch and notify)
             const result = await this.emailService.processIncomingEmails(account);
 
-            console.log(`✅ Processed ${result.newEmails} new Gmail emails for ${watchInfo.email}`);
+
 
             // Update the history ID
             watchInfo.historyId = newHistoryId;
@@ -220,7 +220,7 @@ export class GmailPushService {
      */
     private startWatchRenewal(): void {
         this.renewalInterval = setInterval(async () => {
-            console.log('🔄 Renewing Gmail watches...');
+
 
             for (const [accountId, watchInfo] of this.watchedAccounts.entries()) {
                 // Renew if expiring within 24 hours
@@ -248,7 +248,7 @@ export class GmailPushService {
             const accounts = await getActiveAccounts();
             const gmailAccounts = accounts.filter(a => a.provider === 'gmail' && a.accessToken && a.isActive);
 
-            console.log(`📧 Starting Gmail push notifications for ${gmailAccounts.length} accounts`);
+
 
             for (const account of gmailAccounts) {
                 await this.startWatching(account);
@@ -264,7 +264,7 @@ export class GmailPushService {
      * Stop all watches and cleanup
      */
     async stopAll(): Promise<void> {
-        console.log('⏹️ Stopping all Gmail watches...');
+
 
         if (this.renewalInterval) {
             clearInterval(this.renewalInterval);
@@ -272,7 +272,7 @@ export class GmailPushService {
         }
 
         this.watchedAccounts.clear();
-        console.log('✅ All Gmail watches stopped');
+
     }
 
     /**

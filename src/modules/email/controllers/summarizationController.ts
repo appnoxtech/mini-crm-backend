@@ -260,7 +260,7 @@ export class SummarizationController {
                     jobs.push(job.id?.toString() || '');
                 } catch (error: any) {
                     // Skip if already in queue
-                    console.log(`Skipping thread ${threadId}: ${error.message}`);
+
                 }
             }
 

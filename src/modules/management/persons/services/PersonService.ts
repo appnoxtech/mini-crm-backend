@@ -50,7 +50,7 @@ export class PersonService {
     }
 
     async updatePerson(id: number, data: UpdatePersonData): Promise<Person | null> {
-        console.log(data);
+
 
         if (data.organizationId !== undefined && this.organizationModel) {
             const organizationId = Number(data.organizationId);

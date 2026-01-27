@@ -60,14 +60,14 @@ export class QuotaValidationService {
     rate_limit_status: RateLimitStatus;
     validation_result: QuotaValidationResult;
   }> {
-    console.log(`Validating quota for user: ${request.user_email}, estimated units: ${request.estimated_quota_units}`);
+
 
     // Perform quota validation
     const validation = this.performQuotaValidation(request);
-    
+
     // Check rate limits
     const rateLimitCheck = this.checkRateLimits();
-    
+
     // Generate final status
     const quotaStatus = this.generateQuotaStatus(validation, request.estimated_quota_units);
     const rateLimitStatus = this.generateRateLimitStatus(rateLimitCheck);
@@ -81,7 +81,7 @@ export class QuotaValidationService {
 
   private performQuotaValidation(request: QuotaCheckRequest): QuotaValidationResult {
     const today = this.getTodayKey();
-    
+
     // Get daily quota usage
     const dailyQuotaUsed = this.getQuotaUsage(today);
     const availableQuota = this.dailyQuotaLimit - dailyQuotaUsed;
@@ -119,14 +119,14 @@ export class QuotaValidationService {
   private checkRateLimits(): { currentRPS: number; canProceed: boolean } {
     const currentRPS = this.getCurrentRequestsPerSecond();
     const canProceed = currentRPS < this.requestsPerSecondLimit;
-    
+
     return { currentRPS, canProceed };
   }
 
   private generateQuotaStatus(validation: QuotaValidationResult, estimatedUnits: number): QuotaStatus {
-    const canSend = validation.daily_quota_check.sufficient && 
-                   validation.rate_limit_check.can_proceed && 
-                   validation.user_quota_check.user_can_send;
+    const canSend = validation.daily_quota_check.sufficient &&
+      validation.rate_limit_check.can_proceed &&
+      validation.user_quota_check.user_can_send;
 
     const quotaRemaining = Math.min(
       validation.daily_quota_check.available_quota,
@@ -172,26 +172,26 @@ export class QuotaValidationService {
 
   recordQuotaUsage(userEmail: string, quotaUnits: number): void {
     const today = this.getTodayKey();
-    
+
     // Record daily usage
     this.incrementQuotaUsage(today, quotaUnits);
-    
+
     // Record user usage
     const userKey = `user_${userEmail}_${today}`;
     this.incrementQuotaUsage(userKey, quotaUnits);
 
-    console.log(`Recorded quota usage: ${quotaUnits} units for user ${userEmail}`);
+
   }
 
   recordRequestAttempt(): void {
     const now = new Date();
     const secondKey = `${Math.floor(now.getTime() / 1000)}`;
-    
-    const current = this.requestTracker.get(secondKey) || { 
-      count: 0, 
-      resetTime: new Date(now.getTime() + 1000) 
+
+    const current = this.requestTracker.get(secondKey) || {
+      count: 0,
+      resetTime: new Date(now.getTime() + 1000)
     };
-    
+
     current.count++;
     this.requestTracker.set(secondKey, current);
   }
@@ -207,7 +207,7 @@ export class QuotaValidationService {
   private incrementQuotaUsage(key: string, units: number): void {
     const tomorrow = this.getTomorrowDate();
     const current = this.quotaTracker.get(key) || { used: 0, resetTime: tomorrow };
-    
+
     // Reset if past reset time
     if (new Date() >= current.resetTime) {
       current.used = units;
@@ -215,7 +215,7 @@ export class QuotaValidationService {
     } else {
       current.used += units;
     }
-    
+
     this.quotaTracker.set(key, current);
   }
 
@@ -229,7 +229,7 @@ export class QuotaValidationService {
     // Calculate delay to bring RPS below limit
     const currentRPS = this.getCurrentRequestsPerSecond();
     if (currentRPS <= this.requestsPerSecondLimit) return 0;
-    
+
     const excessRequests = currentRPS - this.requestsPerSecondLimit;
     return Math.ceil(excessRequests / this.requestsPerSecondLimit); // seconds
   }
@@ -263,14 +263,14 @@ export class QuotaValidationService {
     // Clean up expired entries every 5 minutes
     setInterval(() => {
       const now = new Date();
-      
+
       // Clean quota tracker
       for (const [key, value] of this.quotaTracker.entries()) {
         if (now >= value.resetTime) {
           this.quotaTracker.delete(key);
         }
       }
-      
+
       // Clean request tracker
       for (const [key, value] of this.requestTracker.entries()) {
         if (now >= value.resetTime) {
@@ -290,7 +290,7 @@ export class QuotaValidationService {
     const today = this.getTodayKey();
     const dailyUsed = this.getQuotaUsage(today);
     const currentRPS = this.getCurrentRequestsPerSecond();
-    
+
     // Count active users (users with quota usage today)
     let activeUsers = 0;
     for (const key of this.quotaTracker.keys()) {

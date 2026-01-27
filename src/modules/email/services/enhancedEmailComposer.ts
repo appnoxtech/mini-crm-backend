@@ -58,7 +58,7 @@ export class EnhancedEmailComposer {
   }
 
   async composeEmail(emailRequest: EmailRequest): Promise<CompositionResult> {
-    console.log('Starting enhanced email composition...');
+
 
     // Step 1: Validation
     const validationErrors = this.validateEmailRequest(emailRequest);
@@ -76,7 +76,7 @@ export class EnhancedEmailComposer {
     // Step 3: Process template variables
     const processedSubject = this.replaceTemplateVariables(emailRequest.subject, emailRequest.template_variables);
     const processedBodyText = this.replaceTemplateVariables(emailRequest.body_text, emailRequest.template_variables);
-    const processedBodyHtml = emailRequest.body_html ? 
+    const processedBodyHtml = emailRequest.body_html ?
       this.replaceTemplateVariables(emailRequest.body_html, emailRequest.template_variables) : undefined;
 
     // Step 4: Apply personalization and tracking
@@ -102,7 +102,7 @@ export class EnhancedEmailComposer {
     // Step 7: Generate metadata
     const metadata = this.createMessageMetadata(messageId, emailRequest, gmailMessage.raw);
 
-    console.log(`Email composition completed. Message ID: ${messageId}, Size: ${metadata.size} bytes`);
+
 
     return {
       gmail_message: gmailMessage,
@@ -140,7 +140,7 @@ export class EnhancedEmailComposer {
     if (request.attachments) {
       const totalSize = request.attachments.reduce((sum, att) => sum + att.size, 0);
       const maxSize = 25 * 1024 * 1024; // 25MB Gmail limit
-      
+
       if (totalSize > maxSize) {
         errors.push(`Total attachment size (${Math.round(totalSize / 1024 / 1024)}MB) exceeds limit (25MB)`);
       }
@@ -215,7 +215,7 @@ export class EnhancedEmailComposer {
 
   private wrapLinksWithTracking(htmlBody: string, messageId: string): string {
     const linkRegex = /<a\s+[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi;
-    
+
     return htmlBody.replace(linkRegex, (match, url) => {
       if (url.startsWith('mailto:') || url.startsWith('#') || url.includes(this.trackingBaseUrl)) {
         return match; // Don't track mailto links, anchors, or existing tracking URLs
@@ -275,19 +275,19 @@ export class EnhancedEmailComposer {
       const altBoundary = `alt_${boundary}`;
       message += `--${boundary}\r\n`;
       message += `Content-Type: multipart/alternative; boundary="${altBoundary}"\r\n\r\n`;
-      
+
       // Text part
       message += `--${altBoundary}\r\n`;
       message += `Content-Type: text/plain; charset=utf-8\r\n`;
       message += `Content-Transfer-Encoding: quoted-printable\r\n\r\n`;
       message += this.encodeQuotedPrintable(request.body_text) + '\r\n\r\n';
-      
+
       // HTML part
       message += `--${altBoundary}\r\n`;
       message += `Content-Type: text/html; charset=utf-8\r\n`;
       message += `Content-Transfer-Encoding: quoted-printable\r\n\r\n`;
       message += this.encodeQuotedPrintable(request.body_html!) + '\r\n\r\n';
-      
+
       message += `--${altBoundary}--\r\n`;
     } else {
       // Single body type
@@ -386,7 +386,7 @@ export class EnhancedEmailComposer {
     const baseUnits = 1;
     const recipientMultiplier = Math.max(1, (request.to?.length || 0) + (request.cc?.length || 0) + (request.bcc?.length || 0));
     const attachmentBonus = request.attachments && request.attachments.length > 0 ? 2 : 0;
-    
+
     return baseUnits * recipientMultiplier + attachmentBonus;
   }
 }

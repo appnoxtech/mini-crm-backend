@@ -146,7 +146,7 @@ export class OrganizationController {
             }
 
             const { q } = req.query;
-            console.log(q);
+
             const organisations = await this.organizationService.searchByOrgName(q as string);
 
             return ResponseHandler.success(res, organisations);

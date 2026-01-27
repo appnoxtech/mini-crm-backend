@@ -95,7 +95,7 @@ export class EmailTrackingService {
   }
 
   async initializeTracking(request: TrackingRequest, recipients: string[]): Promise<EmailAnalytics> {
-    console.log(`Initializing tracking for message: ${request.message_id}`);
+
 
     const analytics: EmailAnalytics = {
       message_id: request.message_id,
@@ -146,11 +146,11 @@ export class EmailTrackingService {
     return analytics;
   }
 
-  async trackEmailOpen(messageId: string, recipientEmail?: string, metadata?: { 
-    userAgent?: string; 
-    ipAddress?: string; 
+  async trackEmailOpen(messageId: string, recipientEmail?: string, metadata?: {
+    userAgent?: string;
+    ipAddress?: string;
   }): Promise<void> {
-    console.log(`Tracking email open for message: ${messageId}`);
+
 
     const analytics = this.trackingData.get(messageId);
     if (!analytics) {
@@ -163,7 +163,7 @@ export class EmailTrackingService {
     // Update overall tracking data
     analytics.tracking_data.open_count++;
     analytics.tracking_data.opened = true;
-    
+
     if (!analytics.tracking_data.first_open_time) {
       analytics.tracking_data.first_open_time = now;
     }
@@ -195,7 +195,7 @@ export class EmailTrackingService {
     }
 
     this.trackingData.set(messageId, analytics);
-    console.log(`Email open tracked. Total opens: ${analytics.engagement_metrics.open_count}`);
+
 
     // Notify about email open event
     if (this.notificationService) {
@@ -212,11 +212,11 @@ export class EmailTrackingService {
     }
   }
 
-  async trackLinkClick(messageId: string, originalUrl: string, recipientEmail?: string, metadata?: { 
-    userAgent?: string; 
-    ipAddress?: string; 
+  async trackLinkClick(messageId: string, originalUrl: string, recipientEmail?: string, metadata?: {
+    userAgent?: string;
+    ipAddress?: string;
   }): Promise<string> {
-    console.log(`Tracking link click for message: ${messageId}, URL: ${originalUrl}`);
+
 
     const analytics = this.trackingData.get(messageId);
     if (!analytics) {
@@ -243,7 +243,7 @@ export class EmailTrackingService {
     const isFirstClick = !trackedLink.clicked;
     trackedLink.clicked = true;
     trackedLink.click_count++;
-    
+
     if (isFirstClick) {
       trackedLink.first_click_time = now;
       trackedLink.unique_clicks++;
@@ -254,7 +254,7 @@ export class EmailTrackingService {
     analytics.engagement_metrics.clicked = true;
     analytics.engagement_metrics.click_count++;
     analytics.engagement_metrics.total_clicks++;
-    
+
     if (isFirstClick) {
       analytics.engagement_metrics.unique_clicks++;
     }
@@ -283,7 +283,7 @@ export class EmailTrackingService {
     }
 
     this.trackingData.set(messageId, analytics);
-    console.log(`Link click tracked. Total clicks: ${analytics.engagement_metrics.click_count}`);
+
 
     // Notify about link click event
     if (this.notificationService) {
@@ -304,7 +304,7 @@ export class EmailTrackingService {
   }
 
   async updateDeliveryStatus(messageId: string, status: 'delivered' | 'failed' | 'bounced', recipientEmail?: string, reason?: string): Promise<void> {
-    console.log(`Updating delivery status for message: ${messageId}, status: ${status}`);
+
 
     const analytics = this.trackingData.get(messageId);
     if (!analytics) {
@@ -322,7 +322,7 @@ export class EmailTrackingService {
     if (status === 'delivered') {
       analytics.delivery_status.status = 'delivered';
       analytics.delivery_status.delivered_time = now.toISOString();
-      
+
       if (analytics.campaign_id) {
         this.updateCampaignStats(analytics.campaign_id, 'delivered', 1);
       }
@@ -331,7 +331,7 @@ export class EmailTrackingService {
         analytics.delivery_status.status = 'failed';
       }
       analytics.delivery_status.bounce_reason = reason;
-      
+
       if (analytics.campaign_id) {
         this.updateCampaignStats(analytics.campaign_id, 'bounced', 1);
       }
@@ -463,13 +463,13 @@ export class EmailTrackingService {
   // Cleanup old tracking data (should be called periodically)
   cleanupOldData(daysToKeep: number = 90): void {
     const cutoffDate = new Date(Date.now() - (daysToKeep * 24 * 60 * 60 * 1000));
-    
+
     for (const [messageId, analytics] of this.trackingData.entries()) {
       if (analytics.sent_at < cutoffDate) {
         this.trackingData.delete(messageId);
       }
     }
 
-    console.log(`Cleaned up tracking data older than ${daysToKeep} days`);
+
   }
 }

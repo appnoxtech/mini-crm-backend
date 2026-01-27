@@ -156,7 +156,7 @@ export class ParallelImapSyncService {
             const mailboxStatus = client.mailbox;
             const totalMessages = (mailboxStatus && typeof mailboxStatus !== 'boolean') ? (mailboxStatus.exists || 0) : 0;
 
-            console.log(`📁 Fetching from ${folder.label} (${folder.path}): ${totalMessages} messages`);
+
 
             if (totalMessages === 0) {
                 return messages;
@@ -176,11 +176,11 @@ export class ParallelImapSyncService {
 
                 // Log progress for large folders
                 if (fetchedCount % batchSize === 0) {
-                    console.log(`  ↳ Fetched ${fetchedCount}/${totalMessages} from ${folder.label}`);
+
                 }
             }
 
-            console.log(`✅ Completed ${folder.label}: ${messages.length} messages fetched`);
+
         } catch (err: any) {
             console.error(`❌ Error fetching from ${folder.label}:`, err.message);
             throw err;
@@ -251,8 +251,7 @@ export class ParallelImapSyncService {
             foldersToSync,
         } = options;
 
-        console.log(`\n🚀 Starting parallel IMAP sync for ${account.email}`);
-        console.log(`   Max connections: ${maxConnections}, Batch size: ${batchSize}`);
+
 
         const allMessages: any[] = [];
         const allErrors: string[] = [];
@@ -268,7 +267,7 @@ export class ParallelImapSyncService {
                 ? allFolders.filter(f => foldersToSync.includes(f.label))
                 : allFolders;
 
-            console.log(`📋 Folders to sync: ${foldersToProcess.map(f => f.label).join(', ')}`);
+
 
             // Step 2: Prepare search criteria
             const searchCriteria: any = lastSyncTime
@@ -284,11 +283,11 @@ export class ParallelImapSyncService {
                 );
             }
 
-            console.log(`🔀 Processing ${folderBatches.length} parallel batches`);
+
 
             // Step 4: Process batches in parallel
             const batchPromises = folderBatches.map((batch, index) => {
-                console.log(`   Batch ${index + 1}: ${batch.map(f => f.label).join(', ')}`);
+
                 return this.processFolderBatch(account, batch, searchCriteria, batchSize);
             });
 
@@ -301,12 +300,7 @@ export class ParallelImapSyncService {
             }
 
             const duration = Date.now() - startTime;
-            console.log(`\n✨ Sync completed in ${(duration / 1000).toFixed(2)}s`);
-            console.log(`   Total messages: ${allMessages.length}`);
-            if (allErrors.length > 0) {
-                console.log(`   Errors: ${allErrors.length}`);
-                allErrors.forEach(err => console.log(`     - ${err}`));
-            }
+
 
             return {
                 messages: allMessages,

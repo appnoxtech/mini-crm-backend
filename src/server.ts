@@ -200,7 +200,7 @@ notificationService.initialize(io);
 
 // Initialize enhanced mail system
 configService.initializeSystem().then(result => {
-  console.log('Enhanced mail system initialization:', result);
+
 }).catch(error => {
   console.error('Failed to initialize enhanced mail system:', error);
 });
@@ -317,10 +317,7 @@ const localIP = getLocalIP();
 
 // Start the server
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`➡ Local:   http://localhost:${PORT}`);
-  console.log(`➡ Network: http://${localIP}:${PORT}`);
-  console.log('Socket.IO initialized for real-time notifications');
+
 });
 
 
@@ -330,17 +327,17 @@ startThreadSummaryJob(DB_PATH);
 
 // Start email sync cron job (syncs every 5 minutes)
 startEmailSyncJob(DB_PATH, notificationService);
-console.log('Email sync cron job started');
+
 
 // Start token refresh cron job (refreshes every 6 hours to prevent expiration)
 startTokenRefreshJob(DB_PATH);
-console.log('Token refresh cron job started');
+
 
 // Start RunPod async job processor (NO REDIS REQUIRED!)
 // This uses RunPod's built-in async queue for cost-efficient serverless processing
 try {
   startRunPodJobProcessor(DB_PATH);
-  console.log('📧 RunPod async job processor started (no Redis needed!)');
+
 } catch (error) {
   console.warn('⚠️ RunPod job processor failed to start:', error);
 }
@@ -370,7 +367,7 @@ const getActiveEmailAccounts = async () => {
 
 // Start IMAP IDLE for all IMAP accounts (instant notifications)
 imapIdleService.startMonitoringAllAccounts(getActiveEmailAccounts).then(() => {
-  console.log('📧 IMAP IDLE instant notifications started');
+
 }).catch(error => {
   console.warn('⚠️ IMAP IDLE failed to start:', error);
 });
@@ -378,24 +375,24 @@ imapIdleService.startMonitoringAllAccounts(getActiveEmailAccounts).then(() => {
 // Start Gmail Push notifications (if GMAIL_PUBSUB_TOPIC is configured)
 if (process.env.GMAIL_PUBSUB_TOPIC) {
   gmailPushService.startWatchingAllAccounts(getActiveEmailAccounts).then(() => {
-    console.log('📧 Gmail Push instant notifications started');
+
   }).catch(error => {
     console.warn('⚠️ Gmail Push failed to start:', error);
   });
 } else {
-  console.log('ℹ️  Gmail Push disabled (set GMAIL_PUBSUB_TOPIC to enable)');
+
 }
 
 // Graceful shutdown handler for instant notification services
 process.on('SIGTERM', async () => {
-  console.log('SIGTERM received, shutting down gracefully...');
+
   await imapIdleService.stopAll();
   await gmailPushService.stopAll();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
-  console.log('SIGINT received, shutting down gracefully...');
+
   await imapIdleService.stopAll();
   await gmailPushService.stopAll();
   process.exit(0);

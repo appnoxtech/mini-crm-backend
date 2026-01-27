@@ -136,7 +136,7 @@ export class EmailService {
         const recipientAccount = await this.emailModel.getEmailAccountByEmail(recipientEmail);
 
         if (recipientAccount && recipientAccount.userId !== account.userId) {
-          console.log(`🎯 Internal recipient found: ${recipientEmail} (User: ${recipientAccount.userId})`);
+
 
           // 1. Create a database record for the recipient immediately
           // This ensures they see the email even before sync
@@ -154,13 +154,13 @@ export class EmailService {
           const existingForRecipient = await this.emailModel.findEmailByMessageId(messageId, recipientAccount.id);
           if (!existingForRecipient) {
             await this.emailModel.createEmail(recipientEmailRecord);
-            console.log(`✅ Created incoming record for recipient ${recipientEmail}`);
+
           }
 
           // 2. Trigger real-time notification for the recipient
           if (this.notificationService) {
             this.notificationService.notifyNewEmail(recipientAccount.userId, recipientEmailRecord);
-            console.log(`🔔 Sent WebSocket notification to user ${recipientAccount.userId}`);
+
           }
         }
       } catch (internalNotifyError) {
@@ -193,7 +193,7 @@ export class EmailService {
           isDone: true,
           completedAt: new Date().toISOString(),
         });
-        console.log(`Activity record created for deal ${emailData.dealId}`);
+
       } catch (activityError: any) {
         console.error('Failed to create email activity record:', activityError.message);
         // We don't throw here to avoid failing the whole send process if only logging fails
@@ -216,6 +216,8 @@ export class EmailService {
   async processIncomingEmails(
     account: EmailAccount
   ): Promise<{ processed: number; errors: number; newEmails: number }> {
+
+
     const provider = account.provider;
     let rawEmails: any[] = [];
     let processed = 0;
@@ -223,9 +225,7 @@ export class EmailService {
     let newEmails = 0;
 
     try {
-      console.log(
-        `Processing incoming emails for ${provider} account: ${account.email}`
-      );
+
 
       // Notify user that sync is in progress
       if (this.notificationService) {
@@ -233,6 +233,7 @@ export class EmailService {
       }
 
       if (provider === "gmail") {
+
         // Fetch up to 100 emails for better sync coverage
         rawEmails = await this.connectorService.fetchGmailEmails(
           account,
@@ -240,11 +241,14 @@ export class EmailService {
           100 // Increased from default 50 for better sync coverage
         );
       } else if (provider === "outlook") {
+
         rawEmails = await this.connectorService.fetchOutlookEmails(
           account,
           account.lastSyncAt
         );
       } else if (provider === "imap" || provider === "custom") {
+
+
         // Use parallel sync for IMAP for better performance
         // Quick sync if we have a lastSyncAt, full sync otherwise
         const useQuickSync = !!account.lastSyncAt;
@@ -255,12 +259,13 @@ export class EmailService {
         );
       }
 
-      console.log(`Found ${rawEmails.length} emails to process`);
+
 
       for (const rawEmail of rawEmails) {
         try {
           const isNew = await this.processSingleEmail(account, rawEmail);
           processed++;
+
           if (isNew) newEmails++;
         } catch (error: any) {
           console.error("Error processing individual email:", error);
@@ -274,9 +279,7 @@ export class EmailService {
         lastSyncAt: new Date(),
       });
 
-      console.log(
-        `Email processing completed. Processed: ${processed}, New: ${newEmails}, Errors: ${errors}`
-      );
+
 
       // Notify user about sync completion
       if (this.notificationService) {
@@ -326,7 +329,7 @@ export class EmailService {
 
     // Determine if email is incoming or outgoing
     const isIncoming = this.determineEmailDirection(parsed, account, rawEmail);
-    console.log(`Email ${parsed.messageId} direction: ${isIncoming ? 'INCOMING' : 'OUTGOING'}`);
+
 
     const email: Email = {
       id: parsed.messageId!,
@@ -358,7 +361,7 @@ export class EmailService {
     if (parsed.labelIds) email.labelIds = parsed.labelIds;
 
     await this.emailModel.createEmail(email);
-    console.log(`Created database record for email: ${email.subject}`);
+
 
     // Create activity records for matched deals
     if (dealIds.length > 0 && this.activityModel) {
@@ -390,14 +393,12 @@ export class EmailService {
 
     // Notify user about new incoming email
     if (this.notificationService && isIncoming) {
-      console.log(
-        `🔔 Triggering WebSocket notification for: ${email.subject} (User: ${account.userId})`
-      );
+
       this.notificationService.notifyNewEmail(account.userId, email);
     } else if (this.notificationService && !isIncoming) {
-      console.log(`ℹ️ Not an incoming email (${email.subject}), skipping notification.`);
+
     } else if (!this.notificationService) {
-      console.log("⚠️ Notification service (this.notificationService) is MISSING in EmailService");
+
     }
 
     return true;
@@ -434,15 +435,10 @@ export class EmailService {
   ): boolean {
     // Method 1: Check Gmail labels
     const labelIds = rawEmail.labelIds || [];
-    console.log(`Determining Gmail email direction for ${parsed.subject}:`, {
-      labelIds,
-      from: parsed.from,
-      to: parsed.to,
-      accountEmail: account.email,
-    });
+
 
     if (labelIds.includes("SENT")) {
-      console.log("Email marked as SENT based on Gmail labels");
+
       return false; // This is a sent email
     }
     if (
@@ -450,7 +446,7 @@ export class EmailService {
       labelIds.includes("SPAM") ||
       labelIds.includes("TRASH")
     ) {
-      console.log("Email marked as INCOMING based on Gmail labels");
+
       return true; // This is an incoming email
     }
 
@@ -459,9 +455,7 @@ export class EmailService {
     const accountEmail = account.email.toLowerCase();
 
     if (fromEmail && fromEmail.toLowerCase() === accountEmail) {
-      console.log(
-        "Email marked as SENT based on sender matching account email"
-      );
+
       return false; // Email is from the account owner, so it's sent
     }
 
@@ -472,14 +466,12 @@ export class EmailService {
     if (
       toEmails.some((email) => email && email.toLowerCase() === accountEmail)
     ) {
-      console.log(
-        "Email marked as INCOMING based on account email in recipients"
-      );
+
       return true; // Account email is in recipients, so it's incoming
     }
 
     // Default to incoming
-    console.log("Email defaulted to INCOMING");
+
     return true;
   }
 
@@ -666,7 +658,7 @@ export class EmailService {
           });
         }
 
-        console.log(`IMAP Email Parsed - text len: ${body.length}, html len: ${htmlBody?.length || 0}, attachments: ${attachments?.length || 0}`);
+
       } catch (err) {
         console.error("Failed to parse IMAP email body:", err);
         // Do NOT fall back to raw source as body, it looks broken to the user

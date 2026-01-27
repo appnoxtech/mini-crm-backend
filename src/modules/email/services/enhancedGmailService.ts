@@ -54,7 +54,7 @@ export class EnhancedGmailService {
   }
 
   async sendEmail(sendRequest: SendRequest): Promise<SendSuccessResponse> {
-    console.log(`Sending email via Gmail API for user: ${sendRequest.user_email}`);
+
 
     // Check circuit breaker
     if (this.isCircuitBreakerOpen(sendRequest.user_email)) {
@@ -86,7 +86,7 @@ export class EnhancedGmailService {
       })
     };
 
-    console.log('Sending email via Gmail API...');
+
 
     return await this.executeWithRetry(async () => {
       try {
@@ -95,7 +95,7 @@ export class EnhancedGmailService {
           requestBody
         });
 
-        console.log('Gmail API send successful:', response.data.id);
+
 
         return {
           id: response.data.id!,
@@ -118,23 +118,23 @@ export class EnhancedGmailService {
   private async sendViaSMTPRelay(sendRequest: SendRequest): Promise<SendSuccessResponse> {
     // For SMTP relay implementation, we would typically use nodemailer with XOAUTH2
     // This is a simplified version that converts the Gmail message format
-    
-    console.log('Sending email via SMTP relay...');
+
+
 
     return await this.executeWithRetry(async () => {
       // Decode the raw message
       const rawMessage = Buffer.from(sendRequest.message.raw, 'base64').toString();
-      
+
       // In a real implementation, you would:
       // 1. Parse the raw message
       // 2. Connect to smtp-relay.gmail.com:587
       // 3. Authenticate with XOAUTH2
       // 4. Send the message via SMTP commands
-      
+
       // For now, we'll simulate the response
       const messageId = `smtp-${Date.now()}-${Math.random().toString(36).substring(7)}`;
-      
-      console.log('SMTP relay send successful:', messageId);
+
+
 
       return {
         id: messageId,
@@ -154,18 +154,18 @@ export class EnhancedGmailService {
     userEmail: string
   ): Promise<T> {
     let lastError: Error;
-    
+
     for (let attempt = 0; attempt <= this.retryConfig.maxRetries; attempt++) {
       try {
         const result = await operation();
-        
+
         // Reset failure count on success
         this.recordSuccess(userEmail);
-        
+
         return result;
       } catch (error: any) {
         lastError = error;
-        
+
         if (attempt === this.retryConfig.maxRetries) {
           console.error(`Operation failed after ${this.retryConfig.maxRetries + 1} attempts:`, error);
           break;
@@ -177,7 +177,7 @@ export class EnhancedGmailService {
         }
 
         const delay = this.calculateDelay(attempt);
-        console.log(`Attempt ${attempt + 1} failed, retrying in ${delay}ms...`);
+
         await this.sleep(delay);
       }
     }
@@ -198,7 +198,7 @@ export class EnhancedGmailService {
       return true;
     }
 
-    if (error.errors && error.errors.some((err: any) => 
+    if (error.errors && error.errors.some((err: any) =>
       retryableReasons.includes(err.reason)
     )) {
       return true;
@@ -321,7 +321,7 @@ export class EnhancedGmailService {
   // Method to manually reset circuit breaker
   resetCircuitBreaker(userEmail: string): void {
     this.circuitBreaker.delete(userEmail);
-    console.log(`Circuit breaker reset for user ${userEmail}`);
+
   }
 
   // Token refresh helper
@@ -337,7 +337,7 @@ export class EnhancedGmailService {
       const response = await auth.refreshAccessToken();
       return {
         access_token: response.credentials.access_token!,
-        expires_in: response.credentials.expiry_date ? 
+        expires_in: response.credentials.expiry_date ?
           Math.floor((response.credentials.expiry_date - Date.now()) / 1000) : 3600
       };
     } catch (error: any) {

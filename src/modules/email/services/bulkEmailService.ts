@@ -101,8 +101,7 @@ export class BulkEmailService {
     accessToken: string,
     userEmail: string
   ): Promise<BulkSendResult> {
-    console.log(`Starting bulk email processing for campaign: ${request.campaign_id}`);
-    console.log(`Total recipients: ${request.recipients.length}`);
+
 
     const startTime = Date.now();
     const status: BulkSendStatus = {
@@ -123,7 +122,7 @@ export class BulkEmailService {
 
       // Step 2: Create batches
       const batches = this.createBatches(request.recipients, request.send_options.batch_size);
-      console.log(`Created ${batches.length} batches of size ${request.send_options.batch_size}`);
+
 
       // Step 3: Process batches with optimization strategies
       const batchResults = await this.processBatchesWithOptimization(
@@ -145,7 +144,7 @@ export class BulkEmailService {
       // Step 5: Collect failed emails
       const failedEmails = this.collectFailedEmails(batchResults);
 
-      console.log(`Bulk email campaign completed: ${status.sent_successfully}/${status.total_emails} sent successfully`);
+
 
       return {
         campaign_id: request.campaign_id,
@@ -157,7 +156,7 @@ export class BulkEmailService {
     } catch (error: any) {
       console.error(`Bulk email campaign failed: ${error.message}`);
       status.completion_percentage = Math.round((status.sent_successfully / status.total_emails) * 100);
-      
+
       throw new Error(`Bulk email campaign failed: ${error.message}`);
     } finally {
       this.activeCampaigns.set(request.campaign_id, status);
@@ -199,9 +198,9 @@ export class BulkEmailService {
     // Process batches with controlled concurrency
     for (let i = 0; i < batches.length; i += maxConcurrent) {
       const currentBatches = batches.slice(i, i + maxConcurrent);
-      
+
       // Process current batch group in parallel
-      const batchPromises = currentBatches.map((batch, index) => 
+      const batchPromises = currentBatches.map((batch, index) =>
         this.processBatch(
           batch,
           `${request.campaign_id}_batch_${i + index}`,
@@ -213,7 +212,7 @@ export class BulkEmailService {
       );
 
       const batchGroupResults = await Promise.allSettled(batchPromises);
-      
+
       // Collect results and handle errors
       batchGroupResults.forEach((result, index) => {
         if (result.status === 'fulfilled') {
@@ -240,7 +239,7 @@ export class BulkEmailService {
 
       // Delay between batch groups (except for the last group)
       if (i + maxConcurrent < batches.length && delayBetweenBatches > 0) {
-        console.log(`Waiting ${delayBetweenBatches}ms before next batch group...`);
+
         await this.sleep(delayBetweenBatches);
       }
     }
@@ -257,7 +256,7 @@ export class BulkEmailService {
     userEmail: string
   ): Promise<BatchResult> {
     const startTime = Date.now();
-    console.log(`Processing batch ${batchId} with ${recipients.length} recipients`);
+
 
     const failures: FailedEmail[] = [];
     let successCount = 0;
@@ -284,7 +283,7 @@ export class BulkEmailService {
         };
 
         const compositionResult = await this.composerService.composeEmail(emailRequest);
-        
+
         if (compositionResult.validation_errors?.length) {
           throw new Error(`Validation failed: ${compositionResult.validation_errors.join(', ')}`);
         }
@@ -318,7 +317,7 @@ export class BulkEmailService {
         );
 
         successCount++;
-        console.log(`Email sent successfully to ${recipient.email} (${successCount}/${recipients.length})`);
+
 
       } catch (error: any) {
         console.error(`Failed to send email to ${recipient.email}:`, error.message);
@@ -332,7 +331,7 @@ export class BulkEmailService {
     }
 
     const processingTime = Date.now() - startTime;
-    
+
     const result: BatchResult = {
       batch_id: batchId,
       success_count: successCount,
@@ -341,29 +340,29 @@ export class BulkEmailService {
       processing_time: processingTime
     };
 
-    console.log(`Batch ${batchId} completed: ${successCount} success, ${failures.length} failures in ${processingTime}ms`);
+
     return result;
   }
 
   private async sendWithRetry(sendRequest: any, maxRetries: number): Promise<any> {
     let lastError: Error;
-    
+
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         return await this.gmailService.sendEmail(sendRequest);
       } catch (error: any) {
         lastError = error;
-        
+
         if (attempt === maxRetries) break;
-        
+
         const classification = this.errorService.classifyError(error);
         if (!classification.is_retryable) break;
-        
+
         const delay = this.calculateRetryDelay(attempt);
         await this.sleep(delay);
       }
     }
-    
+
     throw lastError!;
   }
 
@@ -371,13 +370,13 @@ export class BulkEmailService {
     const baseDelay = 1000; // 1 second
     const multiplier = 2;
     const maxDelay = 30000; // 30 seconds
-    
+
     let delay = baseDelay * Math.pow(multiplier, attempt);
     delay = Math.min(delay, maxDelay);
-    
+
     // Add jitter
     delay *= (0.5 + Math.random() * 0.5);
-    
+
     return Math.round(delay);
   }
 
@@ -403,7 +402,7 @@ export class BulkEmailService {
       status.completion_percentage = Math.round(
         ((status.sent_successfully + status.failed) / status.total_emails) * 100
       );
-      
+
       this.activeCampaigns.set(campaignId, status);
     }
   }
@@ -420,7 +419,7 @@ export class BulkEmailService {
     const seconds = Math.floor(milliseconds / 1000);
     const minutes = Math.floor(seconds / 60);
     const hours = Math.floor(minutes / 60);
-    
+
     if (hours > 0) {
       return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
     } else if (minutes > 0) {
@@ -482,7 +481,7 @@ export class BulkEmailService {
   // Cleanup method
   cleanupCompletedCampaigns(maxAge: number = 24 * 60 * 60 * 1000): void {
     const cutoff = new Date(Date.now() - maxAge);
-    
+
     for (const [campaignId, status] of this.activeCampaigns.entries()) {
       if (status.completed_at && status.completed_at < cutoff) {
         this.activeCampaigns.delete(campaignId);

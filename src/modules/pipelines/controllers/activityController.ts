@@ -32,7 +32,7 @@ export class ActivityController {
             const { dealId } = req.params;
             const { activityType, isDone, limit } = req.query;
 
-            console.log("dealId", dealId);
+
 
             const result = await this.activityService.getAllActivitiesOfDeal(Number(dealId), {
                 activityType: activityType as string,
@@ -74,7 +74,7 @@ export class ActivityController {
             const { dealId } = req.params;
             const { activityType, isDone, limit } = req.query;
 
-            console.log("dealId", dealId);
+
 
             const result = await this.activityService.getActivitiesForDeal(Number(dealId), {
                 activityType: activityType as string,
@@ -226,7 +226,7 @@ export class ActivityController {
                 return ResponseHandler.validationError(res, 'No files were processed');
             }
 
-            console.log("log from controller", files);
+
 
             await this.activityService.createFileActivity(Number(dealId), Number(userId), files);
 

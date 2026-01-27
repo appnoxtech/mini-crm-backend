@@ -229,7 +229,7 @@ export class DealController {
 
             const { dealId } = req.params;
             const info = req.body;
-            console.log("log from controller", info);
+
             const deal = await this.dealService.makeDealAsLost(Number(dealId), req.user.id, info);
 
             if (!deal) {
@@ -292,7 +292,7 @@ export class DealController {
             if (!files || files.length === 0) {
                 return ResponseHandler.validationError(res, 'No files were processed');
             }
-            console.log("log from controller", files);
+
 
             return ResponseHandler.success(res, { dealId, files }, 'Files uploaded and processed successfully');
         } catch (error: any) {

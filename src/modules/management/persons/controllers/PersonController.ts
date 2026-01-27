@@ -104,7 +104,7 @@ export class PersonController {
             const { id } = req.params;
             const { firstName, lastName, emails, phones, organizationId } = req.body;
 
-            console.log("Req body", req.body);
+
 
             const person = await this.personService.updatePerson(Number(id), {
                 firstName,

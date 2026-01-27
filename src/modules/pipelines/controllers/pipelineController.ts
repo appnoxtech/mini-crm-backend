@@ -228,9 +228,7 @@ export class PipelineController {
             const { moveDealsToStageId } = req.query;
 
 
-            console.log("moveDealsToStageId ----> ", moveDealsToStageId);
-            console.log("pipelineId ----> ", pipelineId);
-            console.log("stageId ----> ", stageId);
+
 
             const result = await this.stageService.deleteStage(
                 Number(pipelineId),
