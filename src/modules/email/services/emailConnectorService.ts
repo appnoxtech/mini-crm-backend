@@ -2,6 +2,7 @@ import nodemailer from 'nodemailer';
 import { ImapFlow } from 'imapflow';
 import { google } from 'googleapis';
 import { EmailAccount, EmailAttachment } from '../models/types';
+import { ParallelImapSyncService } from './parallelImapSyncService';
 
 export class EmailConnectorService {
   private gmailClient: any;
@@ -526,6 +527,55 @@ export class EmailConnectorService {
     }
 
     return messages;
+  }
+
+  /**
+   * Fetch IMAP emails using parallel connections for better performance
+   * This method uses multiple IMAP connections to fetch emails from different folders concurrently
+   * 
+   * @param account - Email account with IMAP configuration
+   * @param lastSyncTime - Optional timestamp to fetch only emails since last sync
+   * @param useQuickSync - If true, only syncs INBOX and SENT folders (default: false)
+   * @returns Array of email messages with folder labels
+   */
+  async fetchIMAPEmailsParallel(
+    account: EmailAccount,
+    lastSyncTime?: Date,
+    useQuickSync: boolean = false
+  ): Promise<any[]> {
+    const parallelSync = new ParallelImapSyncService(
+      3,  // Max 3 parallel connections
+      100 // Batch size of 100 emails
+    );
+
+    try {
+      let result;
+
+      if (useQuickSync) {
+        // Quick sync: only INBOX and SENT folders
+        console.log(`🚀 Starting quick parallel IMAP sync for ${account.email}`);
+        result = await parallelSync.quickSync(account, lastSyncTime);
+      } else {
+        // Full sync: all folders
+        console.log(`🚀 Starting full parallel IMAP sync for ${account.email}`);
+        result = await parallelSync.syncEmails(account, {
+          maxConnections: 3,
+          batchSize: 100,
+          lastSyncTime,
+        });
+      }
+
+      if (result.errors.length > 0) {
+        console.warn(`⚠️ Parallel sync completed with ${result.errors.length} errors:`, result.errors);
+      }
+
+      console.log(`✅ Parallel sync completed: ${result.totalFetched} emails in ${(result.duration / 1000).toFixed(2)}s`);
+
+      return result.messages;
+    } catch (error: any) {
+      console.error('Parallel IMAP sync failed:', error);
+      throw new Error(`Parallel IMAP sync failed: ${error.message}`);
+    }
   }
 
   // Validate OAuth tokens before sending email

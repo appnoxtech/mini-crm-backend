@@ -246,7 +246,7 @@ export class EmailModel {
 
   getEmailAccountById(accountId: string): EmailAccount | null {
     const stmt = this.db.prepare(
-      "SELECT * FROM email_accounts WHERE id = ? AND isActive = 1"
+      "SELECT * FROM email_accounts WHERE id = ?"
     );
     const row = stmt.get(accountId) as any;
 

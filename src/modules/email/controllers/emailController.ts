@@ -812,7 +812,10 @@ export class EmailController {
 
       // Check if account already exists
       const accountId = `${req.user.id}-${email}`;
+      console.log("accountId", accountId);
+
       const existingAccount = await this.emailService.getEmailModel().getEmailAccountById(accountId);
+
 
       // Get provider-specific defaults from environment
       const providerDefaults = getProviderDefaults(provider);

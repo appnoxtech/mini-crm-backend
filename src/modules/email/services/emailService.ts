@@ -245,9 +245,13 @@ export class EmailService {
           account.lastSyncAt
         );
       } else if (provider === "imap" || provider === "custom") {
-        rawEmails = await this.connectorService.fetchIMAPEmails(
+        // Use parallel sync for IMAP for better performance
+        // Quick sync if we have a lastSyncAt, full sync otherwise
+        const useQuickSync = !!account.lastSyncAt;
+        rawEmails = await this.connectorService.fetchIMAPEmailsParallel(
           account,
-          account.lastSyncAt
+          account.lastSyncAt,
+          useQuickSync
         );
       }
 
