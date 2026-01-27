@@ -573,10 +573,9 @@ export class EmailController {
         refreshTokenLength: oauthResult.refreshToken?.length || 0,
       });
 
-      // Check if user already has an email account
-      const existingAccount = await this.emailService.getEmailAccountByUserId(
-        oauthResult.userId
-      );
+      // Check if user already has THIS SPECIFIC email account
+      const userAccounts = await this.emailService.getEmailAccounts(oauthResult.userId);
+      const existingAccount = userAccounts.find(acc => acc.email === oauthResult.email);
 
       if (existingAccount) {
         // Update existing account with new tokens (encrypt them before storing)
@@ -859,13 +858,28 @@ export class EmailController {
         // Inference logic for new IMAP accounts or those missing it
         const smtpToUse = account.smtpConfig || smtpConfig;
         if (smtpToUse?.username && smtpToUse?.password) {
+          // If we have an SMTP host, try to infer the IMAP host from it
+          // e.g. smtp.example.com -> imap.example.com
+          // If invalid or unsure, fallback to providerDefaults (which might be system defaults)
+          let inferredImapHost = providerDefaults.imap.host;
+
+          if (smtpToUse.host) {
+            if (smtpToUse.host.startsWith('smtp.')) {
+              inferredImapHost = smtpToUse.host.replace('smtp.', 'imap.');
+            } else {
+              // If it's something like 'mail.example.com', IMAP often uses the same host
+              inferredImapHost = smtpToUse.host;
+            }
+          }
+
           account.imapConfig = {
-            host: providerDefaults.imap.host,
-            port: providerDefaults.imap.port,
+            host: inferredImapHost,
+            port: providerDefaults.imap.port, // Default port (993) is usually safe to guess
             secure: providerDefaults.imap.secure,
             username: smtpToUse.username,
             password: smtpToUse.password,
           };
+          console.log(`Inferred IMAP config for ${email}: host=${inferredImapHost}`);
         }
       }
 
