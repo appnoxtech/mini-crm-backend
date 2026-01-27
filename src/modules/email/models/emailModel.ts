@@ -88,6 +88,14 @@ export class EmailModel {
     } catch (error) {
       // Column already exists, ignore error
     }
+
+    // Add lastHistoryId column if it doesn't exist (for existing databases)
+    try {
+      this.db.exec("ALTER TABLE email_accounts ADD COLUMN lastHistoryId TEXT");
+      console.log("Added lastHistoryId column to email_accounts table");
+    } catch (error) {
+      // Column already exists, ignore error
+    }
   }
 
   async createEmail(email: Email): Promise<Email> {
