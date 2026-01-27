@@ -161,6 +161,24 @@ export class OrganizationModel {
     }
 
 
+    findByIds(ids: number[], includeDeleted = false): Organization[] {
+        if (ids.length === 0) return [];
+        const placeholders = ids.map(() => '?').join(',');
+        let query = `SELECT * FROM organizations WHERE id IN (${placeholders})`;
+        if (!includeDeleted) query += ' AND deletedAt IS NULL';
+
+        const rows = this.db.prepare(query).all(...ids) as any[];
+        return rows.map(org => ({
+            ...org,
+            emails: org.emails ? JSON.parse(org.emails) : [],
+            phones: org.phones ? JSON.parse(org.phones) : [],
+            address: org.address ? JSON.parse(org.address) : null,
+            annualRevenue: org.annualRevenue || null,
+            numberOfEmployees: org.numberOfEmployees || null,
+            linkedinProfile: org.linkedinProfile || null
+        }));
+    }
+
     findById(id: number, includeDeleted = false): Organization | undefined {
         let query = 'SELECT * FROM organizations WHERE id = ?';
         if (!includeDeleted) query += ' AND deletedAt IS NULL';

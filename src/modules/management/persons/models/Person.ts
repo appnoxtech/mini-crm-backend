@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { BaseEntity } from '../../../../shared/types';
-import { Label, LabelModel } from '../../../pipelines/models/Label';
+import { Organization } from '../../organisations/models/Organization';
 
 export type EmailLabel = 'work' | 'home' | 'other' | 'personal';
 export type PhoneType = 'home' | 'work' | 'mobile' | 'other';
@@ -21,6 +21,7 @@ export interface Person extends BaseEntity {
     emails: PersonEmail[];
     phones: PersonPhone[];
     organizationId?: number;
+    organization?: Organization | null;
     country?: string;
     deletedAt?: string;
 }
@@ -80,43 +81,8 @@ export class PersonModel {
       )
     `);
 
-        // Create lookup tables for emails and phones
-        this.db.exec(`
-      CREATE TABLE IF NOT EXISTS person_emails (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        personId INTEGER NOT NULL,
-        email TEXT NOT NULL,
-        FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE
-      )
-    `);
-
-        this.db.exec(`
-      CREATE TABLE IF NOT EXISTS person_phones (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        personId INTEGER NOT NULL,
-        phone TEXT NOT NULL,
-        FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE
-      )
-    `);
-
-        // Migration: If the table was created with organizationId (with 's'), 
-        // we need to add organizationId (with 'z') if it doesn't exist.
-        // Also, the old foreign key might be causing issues.
-
-        const tableInfo = this.db.prepare("PRAGMA table_info(persons)").all() as any[];
-        const hasZ = tableInfo.some(col => col.name === 'organizationId');
-
-        if (!hasZ) {
-            try {
-                this.db.exec('ALTER TABLE persons ADD COLUMN organizationId INTEGER');
-                this.db.exec('UPDATE persons SET organizationId = organizationId');
-                console.log('Migrated organizationId to organizationId in persons table');
-            } catch (error) {
-                console.error('Error during persons table migration:', error);
-            }
-        }
-
         // Migration: Add country column if it doesn't exist
+        const tableInfo = this.db.prepare("PRAGMA table_info(persons)").all() as any[];
         const hasCountry = tableInfo.some(col => col.name === 'country');
         if (!hasCountry) {
             try {
@@ -196,10 +162,7 @@ export class PersonModel {
 
     // Sync lookup tables when creating/updating a person
     private syncEmailLookup(personId: number, emails: PersonEmail[]): void {
-        // Delete existing emails for this person
         this.db.prepare('DELETE FROM person_emails WHERE personId = ?').run(personId);
-
-        // Insert new emails
         const insertStmt = this.db.prepare('INSERT INTO person_emails (personId, email) VALUES (?, ?)');
         for (const emailObj of emails) {
             insertStmt.run(personId, emailObj.email.toLowerCase());
@@ -207,10 +170,7 @@ export class PersonModel {
     }
 
     private syncPhoneLookup(personId: number, phones: PersonPhone[]): void {
-        // Delete existing phones for this person
         this.db.prepare('DELETE FROM person_phones WHERE personId = ?').run(personId);
-
-        // Insert new phones
         const insertStmt = this.db.prepare('INSERT INTO person_phones (personId, phone) VALUES (?, ?)');
         for (const phoneObj of phones) {
             insertStmt.run(personId, phoneObj.number);
@@ -253,7 +213,6 @@ export class PersonModel {
 
             const personId = result.lastInsertRowid as number;
 
-            // Sync lookup tables
             this.syncEmailLookup(personId, data.emails);
             if (data.phones && data.phones.length > 0) {
                 this.syncPhoneLookup(personId, data.phones);
@@ -399,7 +358,6 @@ export class PersonModel {
 
             stmt.run(...params);
 
-            // Sync lookup tables if emails or phones were updated
             if (data.emails !== undefined) {
                 this.syncEmailLookup(id, data.emails);
             }
@@ -423,7 +381,6 @@ export class PersonModel {
 
             const result = stmt.run(now, now, id);
 
-            // Clear lookup tables to free up emails/phones for reuse
             this.db.prepare('DELETE FROM person_emails WHERE personId = ?').run(id);
             this.db.prepare('DELETE FROM person_phones WHERE personId = ?').run(id);
 
@@ -443,7 +400,6 @@ export class PersonModel {
 
             stmt.run(now, id);
 
-            // Re-sync lookup tables with the person's emails/phones
             this.syncEmailLookup(id, existing.emails);
             if (existing.phones && existing.phones.length > 0) {
                 this.syncPhoneLookup(id, existing.phones);
@@ -454,7 +410,6 @@ export class PersonModel {
     }
 
     hardDelete(id: number): boolean {
-        // Lookup tables are automatically cleaned up via CASCADE
         const stmt = this.db.prepare('DELETE FROM persons WHERE id = ?');
         const result = stmt.run(id);
         return result.changes > 0;
