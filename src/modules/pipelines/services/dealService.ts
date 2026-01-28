@@ -406,20 +406,26 @@ export class DealService {
 
         if (updateData) {
             // If stageId has changed, close the previous stage record and create a new one
-            if (data.stageId && data.stageId !== oldDeal.stageId) {
-                this.historyModel.closeOpenStageRecord(dealId);
+            const oldStageId = Number(oldDeal.stageId);
+            const newStageId = data.stageId !== undefined ? Number(data.stageId) : oldStageId;
 
-                const fromStage = this.stageModel.findById(oldDeal.stageId);
-                const toStage = this.stageModel.findById(data.stageId);
+            if (newStageId !== oldStageId) {
+                const now = new Date().toISOString();
+                this.historyModel.closeOpenStageRecord(dealId, now);
+
+                const fromStage = this.stageModel.findById(oldStageId);
+                const toStage = this.stageModel.findById(newStageId);
 
                 this.historyModel.create({
                     dealId: updateData.id,
                     userId,
                     eventType: 'stage_change',
-                    fromStageId: oldDeal.stageId,
-                    toStageId: data.stageId,
+                    fromStageId: oldStageId,
+                    toStageId: newStageId,
+                    fromValue: fromStage?.name,
+                    toValue: toStage?.name,
                     description: `Moved from ${fromStage?.name || 'Unknown'} to ${toStage?.name || 'Unknown'} via update`,
-                    createdAt: new Date().toISOString()
+                    createdAt: now
                 });
             }
 
@@ -451,7 +457,8 @@ export class DealService {
         const data = this.dealModel.makeDealAsWon(dealId);
 
         if (data) {
-            this.historyModel.closeOpenStageRecord(dealId);
+            const now = new Date().toISOString();
+            this.historyModel.closeOpenStageRecord(dealId, now);
             this.historyModel.create({
                 dealId: data.id,
                 userId,
@@ -459,7 +466,7 @@ export class DealService {
                 eventType: `won deal ${data.title}`,
                 toStageId: data.stageId,
                 description: `Deal won in stage: ${data?.title}`,
-                createdAt: new Date().toISOString()
+                createdAt: now
             });
         }
         return data;
@@ -473,7 +480,8 @@ export class DealService {
         const data = this.dealModel.makeDealAsLost(dealId, info);
 
         if (data) {
-            this.historyModel.closeOpenStageRecord(dealId);
+            const now = new Date().toISOString();
+            this.historyModel.closeOpenStageRecord(dealId, now);
             this.historyModel.create({
                 dealId: data.id,
                 userId,
@@ -481,7 +489,7 @@ export class DealService {
                 eventType: `lost deal ${data.title}`,
                 toStageId: data.stageId,
                 description: `Deal lost in stage: ${data?.title}`,
-                createdAt: new Date().toISOString()
+                createdAt: now
             });
         }
         return data;
@@ -529,41 +537,63 @@ export class DealService {
             throw new Error('Stage does not belong to the deal\'s pipeline');
         }
 
-        const fromStageId = deal.stageId;
+        const fromStageId = Number(deal.stageId);
+        const toStageIdNum = Number(toStageId);
         const fromStage = this.stageModel.findById(fromStageId);
-
         const nowStr = new Date().toISOString();
-        this.historyModel.closeOpenStageRecord(dealId);
 
-        // Update deal
-        const updateData: any = {
-            stageId: toStageId,
-            probability: toStage.probability,
-            lastActivityAt: nowStr
-        };
+        console.log(`[DealService] moveDealToStage: dealId=${dealId}, from=${fromStageId}, to=${toStageIdNum}`);
 
-        const updatedDeal = this.dealModel.update(dealId, userId, updateData);
+        // If stage is changing, handle history and closing previous stage record
+        if (fromStageId !== toStageIdNum) {
+            console.log(`[DealService] Stage changed. Closing old record and creating new one.`);
+            this.historyModel.closeOpenStageRecord(dealId, nowStr);
 
-        // Create new open history entry
-        this.historyModel.create({
-            dealId,
-            userId,
-            toValue: "Updated Stage",
-            eventType: 'stage_change',
-            fromStageId,
-            toStageId,
-            description: note || `Moved from ${fromStage?.name} to ${toStage.name}`,
-            createdAt: nowStr
-        });
+            // Update deal
+            const updateData: any = {
+                stageId: toStageIdNum,
+                probability: toStage.probability,
+                lastActivityAt: nowStr
+            };
 
-        return {
-            ...updatedDeal,
-            message: 'Deal moved successfully',
-            history: {
-                fromStage: fromStage?.name,
-                toStage: toStage.name
-            }
-        };
+            const updatedDeal = this.dealModel.update(dealId, userId, updateData);
+
+            // Create new open history entry
+            this.historyModel.create({
+                dealId,
+                userId,
+                fromValue: fromStage?.name,
+                toValue: toStage.name,
+                eventType: 'stage_change',
+                fromStageId,
+                toStageId: toStageIdNum,
+                description: note || `Moved from ${fromStage?.name} to ${toStage.name}`,
+                createdAt: nowStr
+            });
+
+            return {
+                ...updatedDeal,
+                message: 'Deal moved successfully',
+                history: {
+                    fromStage: fromStage?.name,
+                    toStage: toStage.name
+                }
+            };
+        } else {
+            console.log(`[DealService] Stage unchanged (${fromStageId}). Skipping history entry.`);
+            // If stage is NOT changing, just update activity time and return
+            const updateData: any = {
+                lastActivityAt: nowStr
+            };
+
+            const updatedDeal = this.dealModel.update(dealId, userId, updateData);
+
+            return {
+                ...updatedDeal,
+                message: 'Deal stage unchanged',
+                history: null
+            };
+        }
     }
 
     async closeDeal(dealId: number, userId: number, status: 'WON' | 'LOST', lostReason?: string): Promise<Deal | null> {
@@ -584,6 +614,10 @@ export class DealService {
             actualCloseDate: now,
             lostReason: status === 'LOST' ? lostReason : undefined
         });
+
+        if (updatedDeal) {
+            this.historyModel.closeOpenStageRecord(dealId, now);
+        }
 
         // Create history entry
         this.historyModel.create({
@@ -607,6 +641,8 @@ export class DealService {
         const data = this.dealModel.delete(dealId, userId);
 
         if (data) {
+            const now = new Date().toISOString();
+            this.historyModel.closeOpenStageRecord(dealId, now);
             this.pipelineModel.recalculatePipelineOwners(deal.pipelineId);
             this.historyModel.create({
                 dealId: dealId,
@@ -614,7 +650,7 @@ export class DealService {
                 toValue: "Deleted",
                 eventType: 'deal_deleted',
                 description: 'Deal deleted',
-                createdAt: new Date().toISOString()
+                createdAt: now
             });
         }
 
