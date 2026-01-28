@@ -566,7 +566,7 @@ export class EmailConnectorService {
       }
 
       if (result.errors.length > 0) {
-        console.warn(`⚠️ Parallel sync completed with ${result.errors.length} errors:`, result.errors);
+        console.warn(`⚠️ Parallel sync completed with ${result.errors.length} errors:`, result);
       }
 
 

@@ -136,7 +136,8 @@ const labelModel = new LabelModel(db);
 
 
 // db.exec(`DROP TABLE IF EXISTS deals`);
-// db.exec(`DROP TABLE IF EXISTS deal_activities`);
+// db.exec(`DROP TABLE IF EXISTS emails`);
+// db.exec(`DROP TABLE IF EXISTS email_accounts`);
 
 // Initialize database tables
 userModel.initialize();
@@ -323,10 +324,10 @@ server.listen(PORT, '0.0.0.0', () => {
 
 // Start cron jobs
 
-startThreadSummaryJob(DB_PATH);
+// startThreadSummaryJob(DB_PATH);
 
-// Start email sync cron job (syncs every 5 minutes)
-startEmailSyncJob(DB_PATH, notificationService);
+// // Start email sync cron job (syncs every 5 minutes)
+// startEmailSyncJob(DB_PATH, notificationService);
 
 
 // Start token refresh cron job (refreshes every 6 hours to prevent expiration)
@@ -335,12 +336,12 @@ startTokenRefreshJob(DB_PATH);
 
 // Start RunPod async job processor (NO REDIS REQUIRED!)
 // This uses RunPod's built-in async queue for cost-efficient serverless processing
-try {
-  startRunPodJobProcessor(DB_PATH);
+// try {
+//   startRunPodJobProcessor(DB_PATH);
 
-} catch (error) {
-  console.warn('⚠️ RunPod job processor failed to start:', error);
-}
+// } catch (error) {
+//   console.warn('⚠️ RunPod job processor failed to start:', error);
+// }
 
 // Start instant email notification services
 // Helper function to get all active email accounts

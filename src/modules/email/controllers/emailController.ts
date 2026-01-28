@@ -132,7 +132,7 @@ export class EmailController {
         return ResponseHandler.unauthorized(res, "User not authenticated");
       }
 
-      const { to, subject, body, htmlBody, attachments, dealId, email, provider, smtpConfig } =
+      const { to, subject, body, htmlBody, attachments, dealId, email, from, provider, smtpConfig } =
         (req.body as any) || {};
 
       if (!to || !subject || !body) {
@@ -143,7 +143,7 @@ export class EmailController {
       const userId = req.user.id.toString();
 
       // 1. Determine which email address to use as the base for account resolution
-      const targetEmail = email || req.user.email;
+      const targetEmail = from || email || req.user.email;
       const accountId = `${userId}-${targetEmail}`;
 
       // 2. Try to find the specific account for this user and email
@@ -783,6 +783,17 @@ export class EmailController {
           return ResponseHandler.validationError(
             res,
             "SMTP username and password are required for custom email accounts"
+          );
+        }
+
+        const isAccountCurrent = await this.emailService.testSmtpConnection(smtpConfig);
+
+        const allSuccessful = isAccountCurrent.success;
+
+        if (!allSuccessful) {
+          return ResponseHandler.validationError(
+            res,
+            "SMTP username & password are incorrect"
           );
         }
       }
