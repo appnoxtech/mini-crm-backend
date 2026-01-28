@@ -59,7 +59,8 @@ export class DealController {
                 status: status as string,
                 search: search as string,
                 page: page ? Number(page) : undefined,
-                limit: limit ? Number(limit) : undefined
+                limit: limit ? Number(limit) : undefined,
+                includeArchived: req.query.includeArchived === 'true'
             });
 
             return ResponseHandler.success(res, result, 'Deals fetched successfully');
@@ -335,6 +336,86 @@ export class DealController {
         } catch (error: any) {
             console.error('Error fetching deal stage durations:', error);
             return ResponseHandler.internalError(res, 'Failed to fetch deal stage durations');
+        }
+    }
+
+    async archiveDeals(req: AuthenticatedRequest, res: Response): Promise<void> {
+        try {
+            if (!req.user) {
+                return ResponseHandler.unauthorized(res, 'User not authenticated');
+            }
+
+            const { dealIds } = req.body;
+            if (!Array.isArray(dealIds) || dealIds.length === 0) {
+                return ResponseHandler.validationError(res, 'dealIds must be a non-empty array');
+            }
+
+            const result = await this.dealService.archiveDeals(dealIds, req.user.id);
+            return ResponseHandler.success(res, { success: result }, 'Deals archived successfully');
+        } catch (error: any) {
+            console.error('Error archiving deals:', error);
+            return ResponseHandler.internalError(res, 'Failed to archive deals');
+        }
+    }
+
+    async unarchiveDeals(req: AuthenticatedRequest, res: Response): Promise<void> {
+        try {
+            if (!req.user) {
+                return ResponseHandler.unauthorized(res, 'User not authenticated');
+            }
+
+            const { dealIds } = req.body;
+            if (!Array.isArray(dealIds) || dealIds.length === 0) {
+                return ResponseHandler.validationError(res, 'dealIds must be a non-empty array');
+            }
+
+            const result = await this.dealService.unarchiveDeals(dealIds, req.user.id);
+            return ResponseHandler.success(res, { success: result }, 'Deals unarchived successfully');
+        } catch (error: any) {
+            console.error('Error unarchiving deals:', error);
+            return ResponseHandler.internalError(res, 'Failed to unarchive deals');
+        }
+    }
+
+    async getArchived(req: AuthenticatedRequest, res: Response): Promise<void> {
+        try {
+            if (!req.user) {
+                return ResponseHandler.unauthorized(res, 'User not authenticated');
+            }
+
+            const { pipelineId, stageId, page, limit } = req.query;
+
+            const result = await this.dealService.getArchivedDeals(req.user.id, {
+                pipelineId: pipelineId ? Number(pipelineId) : undefined,
+                stageId: stageId ? Number(stageId) : undefined,
+                page: page ? Number(page) : undefined,
+                limit: limit ? Number(limit) : undefined
+            });
+
+            const message = result.deals.length === 0 ? 'no archive deals' : 'Archived deals fetched successfully';
+            return ResponseHandler.success(res, result, message);
+        } catch (error: any) {
+            console.error('Error fetching archived deals:', error);
+            return ResponseHandler.internalError(res, 'Failed to fetch archived deals');
+        }
+    }
+
+    async permanentDeleteArchived(req: AuthenticatedRequest, res: Response): Promise<void> {
+        try {
+            if (!req.user) {
+                return ResponseHandler.unauthorized(res, 'User not authenticated');
+            }
+
+            const { dealIds } = req.body;
+            if (!Array.isArray(dealIds) || dealIds.length === 0) {
+                return ResponseHandler.validationError(res, 'dealIds must be a non-empty array');
+            }
+
+            const result = await this.dealService.permanentDeleteArchivedDeals(dealIds, req.user.id);
+            return ResponseHandler.success(res, { success: result }, 'Archived deals permanently deleted successfully');
+        } catch (error: any) {
+            console.error('Error permanently deleting archived deals:', error);
+            return ResponseHandler.internalError(res, 'Failed to permanently delete archived deals');
         }
     }
 }

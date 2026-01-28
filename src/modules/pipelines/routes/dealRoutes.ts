@@ -27,6 +27,11 @@ export function createDealRoutes(controller: DealController): Router {
     router.get("/deal-history/:dealId", (req, res) => controller.getDealHistory(req, res));
     router.get("/stage-durations/:dealId", (req, res) => controller.getDealStageDurations(req, res));
 
+    router.post('/archive', (req, res) => controller.archiveDeals(req, res));
+    router.post('/unarchive', (req, res) => controller.unarchiveDeals(req, res));
+    router.get('/archived', (req, res) => controller.getArchived(req, res));
+    router.delete('/archived/permanent', (req, res) => controller.permanentDeleteArchived(req, res));
+
 
     router.delete('/remove-label/:dealId', (req, res) => controller.removeLabelFromDeal(req, res));
 

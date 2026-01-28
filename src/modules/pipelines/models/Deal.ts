@@ -32,6 +32,7 @@ export interface Deal extends BaseEntity {
     labels?: string;
     customFields?: string;
     deletedAt?: string; // Soft delete timestamp
+    archivedAt?: string; // Archive timestamp
 }
 
 export class DealModel {
@@ -65,6 +66,7 @@ export class DealModel {
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL,
     deletedAt TEXT,
+    archivedAt TEXT,
 
     FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (pipelineId) REFERENCES pipelines(id) ON DELETE RESTRICT,
@@ -82,7 +84,8 @@ export class DealModel {
             { name: 'customFields', definition: 'TEXT' },
             { name: 'ownerIds', definition: 'TEXT' },
             { name: 'isVisibleToAll', definition: 'BOOLEAN DEFAULT 1' },
-            { name: 'deletedAt', definition: 'TEXT' }
+            { name: 'deletedAt', definition: 'TEXT' },
+            { name: 'archivedAt', definition: 'TEXT' }
         ];
 
         for (const column of columnsToAdd) {
@@ -103,6 +106,7 @@ export class DealModel {
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_organizationId ON deals(organizationId)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_isVisibleToAll ON deals(isVisibleToAll)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_deletedAt ON deals(deletedAt)');
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_archivedAt ON deals(archivedAt)');
     }
 
     create(data: Omit<Deal, 'id' | 'createdAt' | 'updatedAt'>): Deal {
@@ -114,9 +118,9 @@ export class DealModel {
     personId, organizationId,
     email, phone, description, expectedCloseDate, actualCloseDate, probability,
     userId, assignedTo, ownerIds, isVisibleToAll, status, lostReason, lastActivityAt, isRotten, source,
-    labelIds, customFields, createdAt, updatedAt, deletedAt
+    labelIds, customFields, createdAt, updatedAt, deletedAt, archivedAt
   )
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
         const result = stmt.run(
@@ -146,7 +150,8 @@ export class DealModel {
             data.customFields || null,
             now,
             now,
-            null // deletedAt
+            null, // deletedAt
+            null  // archivedAt
         );
 
         return this.findById(result.lastInsertRowid as number)!;
@@ -165,10 +170,13 @@ export class DealModel {
         return pipeline.userId === userId || pipelineOwnerIds.includes(userId);
     }
 
-    findById(id: number, userId?: number, includeDeleted: boolean = false): Deal | null {
+    findById(id: number, userId?: number, includeDeleted: boolean = false, includeArchived: boolean = false): Deal | null {
         let query = 'SELECT * FROM deals WHERE id = ?';
         if (!includeDeleted) {
             query += ' AND deletedAt IS NULL';
+        }
+        if (!includeArchived) {
+            query += ' AND archivedAt IS NULL';
         }
 
         const stmt = this.db.prepare(query);
@@ -211,6 +219,8 @@ export class DealModel {
         limit?: number;
         offset?: number;
         includeDeleted?: boolean;
+        includeArchived?: boolean;
+        onlyArchived?: boolean;
     } = {}): { deals: Deal[]; total: number } {
         let query = `SELECT d.* FROM deals d
             JOIN pipelines p ON d.pipelineId = p.id
@@ -228,6 +238,13 @@ export class DealModel {
         // Exclude soft deleted by default
         if (!filters.includeDeleted) {
             query += ' AND d.deletedAt IS NULL';
+        }
+
+        // Deal with archiving
+        if (filters.onlyArchived) {
+            query += ' AND d.archivedAt IS NOT NULL';
+        } else if (!filters.includeArchived) {
+            query += ' AND d.archivedAt IS NULL';
         }
 
         if (filters.pipelineId) {
@@ -328,7 +345,7 @@ export class DealModel {
         const stmt = this.db.prepare(`
             UPDATE deals 
             SET ${updates.join(', ')}
-            WHERE id = ? AND deletedAt IS NULL
+            WHERE id = ? AND deletedAt IS NULL AND archivedAt IS NULL
         `);
 
         stmt.run(...values);
@@ -370,6 +387,61 @@ export class DealModel {
         const stmt = this.db.prepare('UPDATE deals SET deletedAt = NULL, updatedAt = ? WHERE id = ?');
         stmt.run(now, id);
         return this.findById(id, userId);
+    }
+
+    // Archive deals
+    archive(ids: number[], userId: number): boolean {
+        if (ids.length === 0) return true;
+        const now = new Date().toISOString();
+        const placeholders = ids.map(() => '?').join(',');
+        const stmt = this.db.prepare(`
+            UPDATE deals 
+            SET archivedAt = ?, updatedAt = ? 
+            WHERE id IN (${placeholders}) 
+            AND userId = ? 
+            AND deletedAt IS NULL
+        `);
+        const result = stmt.run(now, now, ...ids, userId);
+        return result.changes > 0;
+    }
+
+    // Unarchive deals
+    unarchive(ids: number[], userId: number): boolean {
+        if (ids.length === 0) return true;
+        const now = new Date().toISOString();
+        const placeholders = ids.map(() => '?').join(',');
+        const stmt = this.db.prepare(`
+            UPDATE deals 
+            SET archivedAt = NULL, updatedAt = ? 
+            WHERE id IN (${placeholders}) 
+            AND userId = ? 
+            AND deletedAt IS NULL
+        `);
+        const result = stmt.run(now, ...ids, userId);
+        return result.changes > 0;
+    }
+
+    getArchivedDeals(userId: number, filters: {
+        pipelineId?: number;
+        stageId?: number;
+        limit?: number;
+        offset?: number;
+    } = {}): { deals: Deal[]; total: number } {
+        return this.findByUserId(userId, { ...filters, includeArchived: true, onlyArchived: true });
+    }
+
+    // Hard delete archived deals
+    hardDeleteArchived(ids: number[], userId: number): boolean {
+        if (ids.length === 0) return true;
+        const placeholders = ids.map(() => '?').join(',');
+        const stmt = this.db.prepare(`
+            DELETE FROM deals 
+            WHERE id IN (${placeholders}) 
+            AND userId = ? 
+            AND archivedAt IS NOT NULL
+        `);
+        const result = stmt.run(...ids, userId);
+        return result.changes > 0;
     }
 
     // Get all deleted deals
@@ -421,7 +493,7 @@ export class DealModel {
     }
 
     updateRottenStatus(dealId: number, isRotten: boolean): void {
-        this.db.prepare('UPDATE deals SET isRotten = ? WHERE id = ? AND deletedAt IS NULL').run(isRotten ? 1 : 0, dealId);
+        this.db.prepare('UPDATE deals SET isRotten = ? WHERE id = ? AND deletedAt IS NULL AND archivedAt IS NULL').run(isRotten ? 1 : 0, dealId);
     }
 
     getRottenDeals(userId: number, pipelineId?: number): Deal[] {
@@ -430,7 +502,7 @@ export class DealModel {
             FROM deals d
             JOIN pipelines p ON d.pipelineId = p.id
             JOIN pipeline_stages ps ON d.stageId = ps.id
-            WHERE d.deletedAt IS NULL
+            WHERE d.deletedAt IS NULL AND d.archivedAt IS NULL
             AND (d.userId = ? OR EXISTS (
                 SELECT 1 FROM json_each(d.ownerIds) 
                 WHERE json_each.value = ?
@@ -470,7 +542,7 @@ export class DealModel {
             }));
     }
 
-    searchDeals(userId: number, search: string, includeDeleted: boolean = false): Deal[] {
+    searchDeals(userId: number, search: string, includeDeleted: boolean = false, includeArchived: boolean = false): Deal[] {
         let query = `
             SELECT d.* FROM deals d
             JOIN pipelines p ON d.pipelineId = p.id
@@ -487,6 +559,10 @@ export class DealModel {
 
         if (!includeDeleted) {
             query += ' AND d.deletedAt IS NULL';
+        }
+
+        if (!includeArchived) {
+            query += ' AND d.archivedAt IS NULL';
         }
 
         const params = [`%${search}%`, `%${search}%`, `%${search}%`, userId, userId, userId, userId];
@@ -507,7 +583,7 @@ export class DealModel {
     }
 
     makeDealAsWon(dealId: number): Deal | null {
-        this.db.prepare('UPDATE deals SET status = ? WHERE id = ? AND deletedAt IS NULL').run('WON', dealId);
+        this.db.prepare('UPDATE deals SET status = ? WHERE id = ? AND deletedAt IS NULL AND archivedAt IS NULL').run('WON', dealId);
         return this.findById(dealId);
     }
 
@@ -520,7 +596,7 @@ export class DealModel {
         this.db.prepare(
             `UPDATE deals 
              SET status = ?, customFields = ?, updatedAt = ? 
-             WHERE id = ? AND deletedAt IS NULL`
+             WHERE id = ? AND deletedAt IS NULL AND archivedAt IS NULL`
         ).run(
             'LOST',
             customFields,
@@ -533,7 +609,7 @@ export class DealModel {
 
     resetDeal(dealId: number): Deal | null {
         this.db.prepare(
-            'UPDATE deals SET status = ?, lostReason = ?, customFields = ? WHERE id = ? AND deletedAt IS NULL'
+            'UPDATE deals SET status = ?, lostReason = ?, customFields = ? WHERE id = ? AND deletedAt IS NULL AND archivedAt IS NULL'
         ).run('OPEN', null, null, dealId);
 
         return this.findById(dealId);
@@ -547,7 +623,7 @@ export class DealModel {
         const updatedLabelIds = labelIds.filter(id => id !== labelId);
 
         this.db.prepare(
-            'UPDATE deals SET labelIds = ? WHERE id = ? AND deletedAt IS NULL'
+            'UPDATE deals SET labelIds = ? WHERE id = ? AND deletedAt IS NULL AND archivedAt IS NULL'
         ).run(JSON.stringify(updatedLabelIds), dealId);
 
         return this.findById(dealId);

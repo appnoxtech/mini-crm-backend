@@ -283,6 +283,7 @@ export class DealService {
         search?: string;
         page?: number;
         limit?: number;
+        includeArchived?: boolean;
     } = {}): Promise<{ deals: any[]; pagination: any }> {
         const page = filters.page || 1;
         const limit = filters.limit || 20;
@@ -690,6 +691,106 @@ export class DealService {
                 } : null
             };
         });
+    }
+
+    async archiveDeals(dealIds: number[], userId: number): Promise<boolean> {
+        const success = this.dealModel.archive(dealIds, userId);
+        if (success) {
+            const now = new Date().toISOString();
+            dealIds.forEach(dealId => {
+                this.historyModel.create({
+                    dealId,
+                    userId,
+                    toValue: "Archived",
+                    eventType: 'deal_archived',
+                    description: 'Deal archived',
+                    createdAt: now
+                });
+            });
+        }
+        return success;
+    }
+
+    async unarchiveDeals(dealIds: number[], userId: number): Promise<boolean> {
+        const success = this.dealModel.unarchive(dealIds, userId);
+        if (success) {
+            const now = new Date().toISOString();
+            dealIds.forEach(dealId => {
+                this.historyModel.create({
+                    dealId,
+                    userId,
+                    toValue: "Unarchived",
+                    eventType: 'deal_unarchived',
+                    description: 'Deal unarchived',
+                    createdAt: now
+                });
+            });
+        }
+        return success;
+    }
+
+    async getArchivedDeals(userId: number, filters: {
+        pipelineId?: number;
+        stageId?: number;
+        page?: number;
+        limit?: number;
+    } = {}): Promise<{ deals: any[]; pagination: any }> {
+        const page = filters.page || 1;
+        const limit = filters.limit || 20;
+        const offset = (page - 1) * limit;
+
+        const result = this.dealModel.getArchivedDeals(userId, {
+            ...filters,
+            limit,
+            offset
+        });
+
+        // Enrich each deal with related data
+        const enrichedDeals = result.deals.map(deal => {
+            const pipeline = this.pipelineModel.findById(deal.pipelineId, userId);
+            const stage = this.stageModel.findById(deal.stageId);
+
+            let person = null;
+            if (deal.personId) {
+                person = this.personModel.findById(deal.personId);
+            }
+
+            let organization = null;
+            if (deal.organizationId) {
+                organization = this.organizationModel.findById(deal.organizationId);
+            }
+
+            return {
+                ...deal,
+                pipeline: pipeline ? { id: pipeline.id, name: pipeline.name } : null,
+                stage: stage ? { id: stage.id, name: stage.name, probability: stage.probability } : null,
+                person: person ? {
+                    id: person.id,
+                    firstName: person.firstName,
+                    lastName: person.lastName,
+                    emails: person.emails
+                } : null,
+                organization: organization ? {
+                    id: organization.id,
+                    name: organization.name
+                } : null,
+                customFields: deal.customFields ? JSON.parse(deal.customFields) : {}
+            };
+        });
+
+        return {
+            deals: enrichedDeals,
+            pagination: {
+                total: result.total,
+                page,
+                limit,
+                totalPages: Math.ceil(result.total / limit)
+            }
+        };
+    }
+
+    async permanentDeleteArchivedDeals(dealIds: number[], userId: number): Promise<boolean> {
+        return this.dealModel.hardDeleteArchived(dealIds, userId);
     }
 
     async removeLabelFromDeal(dealId: number, labelId: number, userId: number): Promise<Deal | null> {
