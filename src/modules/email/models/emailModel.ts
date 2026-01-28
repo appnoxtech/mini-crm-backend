@@ -508,14 +508,74 @@ export class EmailModel {
     return [];
   }
 
+  private mapRowToEmail(row: any): Email {
+    return {
+      id: row.id,
+      messageId: row.messageId,
+      threadId: row.threadId,
+      accountId: row.accountId,
+      from: row.from_address,
+      to: row.to_addresses ? JSON.parse(row.to_addresses) : [],
+      cc: row.cc_addresses ? JSON.parse(row.cc_addresses) : undefined,
+      bcc: row.bcc_addresses ? JSON.parse(row.bcc_addresses) : undefined,
+      subject: row.subject,
+      body: row.body,
+      htmlBody: row.htmlBody,
+      attachments: row.attachments ? JSON.parse(row.attachments) : [],
+      isRead: Boolean(row.isRead),
+      isIncoming: Boolean(row.isIncoming),
+      sentAt: new Date(row.sentAt),
+      receivedAt: row.receivedAt ? new Date(row.receivedAt) : undefined,
+      contactIds: row.contactIds ? JSON.parse(row.contactIds) : [],
+      dealIds: row.dealIds ? JSON.parse(row.dealIds) : [],
+      accountEntityIds: row.accountEntityIds ? JSON.parse(row.accountEntityIds) : [],
+      trackingPixelId: row.trackingPixelId,
+      opens: row.opens || 0,
+      clicks: row.clicks || 0,
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt),
+      labelIds: row.labelIds ? JSON.parse(row.labelIds) : [],
+    };
+  }
+
   getEmailsForContact(contactId: string): Email[] {
-    // Mock implementation
-    return [];
+    const stmt = this.db.prepare(`
+      SELECT * FROM emails 
+      WHERE contactIds LIKE ? 
+      ORDER BY sentAt DESC
+    `);
+    const rows = stmt.all(`%"${contactId}"%`) as any[];
+    return rows.map(row => this.mapRowToEmail(row));
   }
 
   getEmailsForDeal(dealId: string): Email[] {
-    // Mock implementation
-    return [];
+    const stmt = this.db.prepare(`
+      SELECT * FROM emails 
+      WHERE dealIds LIKE ? 
+      ORDER BY sentAt DESC
+    `);
+    const rows = stmt.all(`%"${dealId}"%`) as any[];
+    return rows.map(row => this.mapRowToEmail(row));
+  }
+
+  getEmailsByAddress(address: string): Email[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM emails 
+      WHERE from_address = ? OR to_addresses LIKE ? 
+      ORDER BY sentAt DESC
+    `);
+    const rows = stmt.all(address, `%${address}%`) as any[];
+    return rows.map(row => this.mapRowToEmail(row));
+  }
+
+  getEmailsForThread(threadId: string): Email[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM emails 
+      WHERE threadId = ? 
+      ORDER BY sentAt ASC
+    `);
+    const rows = stmt.all(threadId) as any[];
+    return rows.map(row => this.mapRowToEmail(row));
   }
 
   getAllEmails(
