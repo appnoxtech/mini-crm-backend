@@ -102,6 +102,14 @@ import { OrganizationService } from './modules/management/organisations/services
 // Import data import module
 import { ImportModel, ImportService, ImportController, createImportRoutes } from './modules/import';
 
+// Import AI agent module
+import { SuggestionOrchestratorService } from './modules/ai-agent/services/suggestionOrchestratorService';
+import { SuggestionController } from './modules/ai-agent/controllers/suggestionController';
+import { AIConfigController } from './modules/ai-agent/controllers/aiConfigController';
+import { createSuggestionRoutes } from './modules/ai-agent/routes/suggestionRoutes';
+import { PricingModel } from './modules/ai-agent/models/PricingModel';
+import { BrandGuidelinesModel } from './modules/ai-agent/models/BrandGuidelinesModel';
+
 
 const app = express();
 const server = createServer(app);
@@ -232,6 +240,11 @@ const callController = new CallController(callService);
 const webhookController = new WebhookController(callService);
 webhookController.setSocketIO(io);
 
+// Initialize AI agent module
+const suggestionOrchestrator = new SuggestionOrchestratorService(db);
+const suggestionController = new SuggestionController(suggestionOrchestrator);
+const aiConfigController = new AIConfigController(new PricingModel(db), new BrandGuidelinesModel(db));
+
 // Middleware
 app.use(express.json());
 app.use(corsMiddleware);
@@ -274,6 +287,9 @@ app.use('/api/webhooks/twilio', createWebhookRoutes(webhookController));
 
 // Import module routes
 app.use('/api/import', createImportRoutes(importController));
+
+// AI agent module routes
+app.use('/api/ai', createSuggestionRoutes(suggestionController, aiConfigController));
 // Email webhook routes (Gmail Pub/Sub push notifications)
 app.use('/api/webhooks/email', createEmailWebhookRoutes());
 
