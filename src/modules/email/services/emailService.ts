@@ -4,12 +4,14 @@ import { Email, EmailAccount, EmailAttachment } from "../models/types";
 import { RealTimeNotificationService } from "./realTimeNotificationService";
 import { simpleParser } from 'mailparser';
 import { DealActivityModel } from "../../pipelines/models/DealActivity";
+import { HistoricalSyncService } from "./historicalSyncService";
 
 export class EmailService {
   private emailModel: EmailModel;
   private connectorService: EmailConnectorService;
   private notificationService?: RealTimeNotificationService;
   private activityModel?: DealActivityModel;
+  private historicalSyncService: HistoricalSyncService;
 
   constructor(
     emailModel: EmailModel,
@@ -21,6 +23,11 @@ export class EmailService {
     this.connectorService = connectorService;
     this.notificationService = notificationService;
     this.activityModel = activityModel;
+    this.historicalSyncService = new HistoricalSyncService(
+      emailModel,
+      connectorService,
+      notificationService
+    );
   }
 
   public getEmailModel(): EmailModel {
@@ -1061,4 +1068,33 @@ export class EmailService {
     await this.emailModel.archiveEmail(emailId, userId);
   }
 
+  /**
+   * Quick initial load for IMAP - fetches latest 100 emails immediately
+   * Used when connecting a new account to show emails fast
+   */
+  async quickInitialLoadIMAP(account: EmailAccount): Promise<{ emails: Email[]; count: number }> {
+    return this.historicalSyncService.quickInitialLoad(account);
+  }
+
+  /**
+   * Trigger full historical sync in background
+   */
+  async triggerHistoricalSync(accountId: string): Promise<{ success: boolean; message: string }> {
+    const account = await this.emailModel.getEmailAccountById(accountId);
+    if (!account) throw new Error("Account not found");
+
+    // Run in background (don't await)
+    this.historicalSyncService.syncHistoricalEmails(account).catch(err => {
+      console.error(`Background historical sync failed for ${accountId}:`, err);
+    });
+
+    return { success: true, message: "Historical sync started in background" };
+  }
+
+  /**
+   * Get paginated emails for the user
+   */
+  async getPaginatedEmails(userId: string, options: any) {
+    return this.emailModel.getEmailsPaginated(userId, options);
+  }
 }

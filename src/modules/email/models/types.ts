@@ -36,6 +36,9 @@ export interface Email {
   updatedAt: Date;
   // Gmail-specific fields
   labelIds?: string[];
+  // IMAP-specific fields for UID tracking
+  uid?: number;
+  folder?: string;
 }
 
 export interface EmailAccount {

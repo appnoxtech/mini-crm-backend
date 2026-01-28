@@ -151,6 +151,7 @@ const labelModel = new LabelModel(db);
 userModel.initialize();
 leadModel.initialize();
 emailModel.initialize();
+emailModel.initializeHistoricalSyncSchema(); // Initialize UID tracking for historical sync
 pipelineModel.initialize();
 pipelineStageModel.initialize();
 dealModel.initialize();

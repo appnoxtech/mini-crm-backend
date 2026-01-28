@@ -851,4 +851,241 @@ export class EmailModel {
     );
     return result.changes > 0;
   }
+
+  // ========== NEW METHODS FOR HISTORICAL SYNC ==========
+
+  /**
+   * Initialize UID tracking table and add new columns
+   */
+  initializeHistoricalSyncSchema(): void {
+    // Add uid column to emails table
+    try {
+      this.db.exec("ALTER TABLE emails ADD COLUMN uid INTEGER");
+    } catch (error) {
+      // Column already exists
+    }
+
+    // Add folder column to emails table
+    try {
+      this.db.exec("ALTER TABLE emails ADD COLUMN folder TEXT");
+    } catch (error) {
+      // Column already exists
+    }
+
+    // Create UID tracking table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS email_sync_state (
+        id TEXT PRIMARY KEY,
+        accountId TEXT NOT NULL,
+        folder TEXT NOT NULL,
+        lastSyncedUid INTEGER DEFAULT 0,
+        updatedAt TEXT NOT NULL,
+        UNIQUE(accountId, folder)
+      )
+    `);
+
+    // Create indexes for efficient querying
+    try {
+      this.db.exec("CREATE INDEX IF NOT EXISTS idx_emails_uid ON emails(uid)");
+      this.db.exec("CREATE INDEX IF NOT EXISTS idx_emails_folder ON emails(folder)");
+      this.db.exec("CREATE INDEX IF NOT EXISTS idx_emails_accountId_folder ON emails(accountId, folder)");
+    } catch (error) {
+      // Indexes may already exist
+    }
+  }
+
+  /**
+   * Bulk insert emails with duplicate prevention
+   */
+  bulkCreateEmails(emails: Email[]): { inserted: number; skipped: number } {
+    let inserted = 0;
+    let skipped = 0;
+
+    const insertStmt = this.db.prepare(`
+      INSERT OR IGNORE INTO emails (
+        id, messageId, threadId, accountId, from_address, to_addresses, cc_addresses, bcc_addresses,
+        subject, body, htmlBody, isRead, isIncoming, sentAt, receivedAt, contactIds, dealIds,
+        accountEntityIds, trackingPixelId, opens, clicks, createdAt, updatedAt, labelIds, attachments, uid, folder
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const transaction = this.db.transaction((emails: Email[]) => {
+      for (const email of emails) {
+        const result = insertStmt.run(
+          email.id,
+          email.messageId,
+          email.threadId || null,
+          email.accountId,
+          email.from,
+          JSON.stringify(email.to),
+          email.cc ? JSON.stringify(email.cc) : null,
+          email.bcc ? JSON.stringify(email.bcc) : null,
+          email.subject,
+          email.body,
+          email.htmlBody || null,
+          email.isRead ? 1 : 0,
+          email.isIncoming ? 1 : 0,
+          email.sentAt instanceof Date ? email.sentAt.toISOString() : email.sentAt,
+          email.receivedAt instanceof Date ? email.receivedAt.toISOString() : email.receivedAt,
+          JSON.stringify(email.contactIds || []),
+          JSON.stringify(email.dealIds || []),
+          JSON.stringify(email.accountEntityIds || []),
+          email.trackingPixelId || null,
+          email.opens || 0,
+          email.clicks || 0,
+          email.createdAt instanceof Date ? email.createdAt.toISOString() : email.createdAt,
+          email.updatedAt instanceof Date ? email.updatedAt.toISOString() : email.updatedAt,
+          email.labelIds ? JSON.stringify(email.labelIds) : null,
+          email.attachments ? JSON.stringify(email.attachments) : null,
+          email.uid || null,
+          email.folder || null
+        );
+
+        if (result.changes > 0) {
+          inserted++;
+        } else {
+          skipped++;
+        }
+      }
+    });
+
+    transaction(emails);
+    return { inserted, skipped };
+  }
+
+  /**
+   * Get last synced UID for an account/folder combination
+   */
+  getLastSyncedUid(accountId: string, folder: string): number | null {
+    const stmt = this.db.prepare(`
+      SELECT lastSyncedUid FROM email_sync_state 
+      WHERE accountId = ? AND folder = ?
+    `);
+    const result = stmt.get(accountId, folder) as any;
+    return result?.lastSyncedUid || null;
+  }
+
+  /**
+   * Update last synced UID for an account/folder combination
+   */
+  updateLastSyncedUid(accountId: string, folder: string, uid: number): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO email_sync_state (id, accountId, folder, lastSyncedUid, updatedAt)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(accountId, folder) DO UPDATE SET 
+        lastSyncedUid = excluded.lastSyncedUid,
+        updatedAt = excluded.updatedAt
+    `);
+    stmt.run(`${accountId}-${folder}`, accountId, folder, uid, new Date().toISOString());
+  }
+
+  /**
+   * Get paginated emails for a user with filtering options
+   */
+  getEmailsPaginated(userId: string, options: {
+    page?: number;
+    limit?: number;
+    folder?: string;
+    accountId?: string;
+    search?: string;
+    unreadOnly?: boolean;
+  }): { emails: Email[]; total: number; page: number; limit: number; totalPages: number } {
+    const page = options.page || 1;
+    const limit = options.limit || 50;
+    const offset = (page - 1) * limit;
+
+    let whereClause = "WHERE ea.userId = ?";
+    const params: any[] = [userId];
+
+    if (options.accountId) {
+      whereClause += " AND e.accountId = ?";
+      params.push(options.accountId);
+    }
+
+    if (options.folder) {
+      const folderUpper = options.folder.toUpperCase();
+      if (folderUpper === 'INBOX') {
+        whereClause += " AND (e.folder = 'INBOX' OR e.labelIds LIKE '%INBOX%') AND (e.labelIds NOT LIKE '%ARCHIVE%' OR e.labelIds IS NULL)";
+      } else if (folderUpper === 'SENT') {
+        whereClause += " AND (e.folder = 'SENT' OR e.isIncoming = 0)";
+      } else if (folderUpper === 'ARCHIVE') {
+        whereClause += " AND e.labelIds LIKE '%ARCHIVE%'";
+      } else {
+        whereClause += " AND (e.folder = ? OR e.labelIds LIKE ?)";
+        params.push(folderUpper, `%${folderUpper}%`);
+      }
+    }
+
+    if (options.search) {
+      whereClause += " AND (e.subject LIKE ? OR e.from_address LIKE ? OR e.body LIKE ?)";
+      const searchTerm = `%${options.search}%`;
+      params.push(searchTerm, searchTerm, searchTerm);
+    }
+
+    if (options.unreadOnly) {
+      whereClause += " AND e.isRead = 0";
+    }
+
+    // Get total count
+    const countStmt = this.db.prepare(`
+      SELECT COUNT(*) as total FROM emails e
+      JOIN email_accounts ea ON e.accountId = ea.id
+      ${whereClause}
+    `);
+    const countResult = countStmt.get(...params) as any;
+    const total = countResult?.total || 0;
+
+    // Get paginated emails
+    const selectStmt = this.db.prepare(`
+      SELECT e.* FROM emails e
+      JOIN email_accounts ea ON e.accountId = ea.id
+      ${whereClause}
+      ORDER BY e.sentAt DESC
+      LIMIT ? OFFSET ?
+    `);
+    const rows = selectStmt.all(...params, limit, offset) as any[];
+
+    const emails = rows.map((row) => this.mapRowToEmail(row));
+
+    return {
+      emails,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
+    };
+  }
+
+  // Helper method to map DB row to Email object
+  private mapRowToEmail(row: any): Email {
+    return {
+      id: row.id,
+      messageId: row.messageId,
+      threadId: row.threadId,
+      accountId: row.accountId,
+      from: row.from_address,
+      to: JSON.parse(row.to_addresses || '[]'),
+      cc: row.cc_addresses ? JSON.parse(row.cc_addresses) : undefined,
+      bcc: row.bcc_addresses ? JSON.parse(row.bcc_addresses) : undefined,
+      subject: row.subject,
+      body: row.body,
+      htmlBody: row.htmlBody,
+      isRead: !!row.isRead,
+      isIncoming: !!row.isIncoming,
+      sentAt: new Date(row.sentAt),
+      receivedAt: row.receivedAt ? new Date(row.receivedAt) : undefined,
+      contactIds: JSON.parse(row.contactIds || '[]'),
+      dealIds: JSON.parse(row.dealIds || '[]'),
+      accountEntityIds: JSON.parse(row.accountEntityIds || '[]'),
+      trackingPixelId: row.trackingPixelId,
+      opens: row.opens || 0,
+      clicks: row.clicks || 0,
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt),
+      labelIds: row.labelIds ? JSON.parse(row.labelIds) : undefined,
+      attachments: row.attachments ? JSON.parse(row.attachments) : undefined,
+      uid: row.uid,
+      folder: row.folder
+    };
+  }
 }

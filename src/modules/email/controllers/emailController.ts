@@ -884,19 +884,43 @@ export class EmailController {
         console.log(`Updating existing email account: ${accountId}`);
         await this.emailService.updateEmailAccount(accountId, account);
 
-        // Trigger initial sync in background
-        this.emailService.processIncomingEmails(account).catch(err =>
-          console.error(`Initial sync failed for ${accountId}:`, err)
-        );
+        // For IMAP: Quick load 100 emails first, then sync rest in background
+        if (provider === 'imap' || provider === 'custom') {
+          // Quick initial load (100 latest emails - returns fast)
+          this.emailService.quickInitialLoadIMAP(account).then(result => {
+            console.log(`Quick loaded ${result.count} emails for ${account.email}`);
+            // Then trigger full historical sync in background
+            this.emailService.triggerHistoricalSync(accountId);
+          }).catch(err => {
+            console.error(`Quick load failed for ${accountId}:`, err);
+          });
+        } else {
+          // OAuth providers - use standard sync
+          this.emailService.processIncomingEmails(account).catch(err =>
+            console.error(`Initial sync failed for ${accountId}:`, err)
+          );
+        }
 
         return ResponseHandler.success(res, account, "Email account updated successfully");
       } else {
         const createdAccount = await this.emailService.createEmailAccount(account);
 
-        // Trigger initial sync in background
-        this.emailService.processIncomingEmails(createdAccount).catch(err =>
-          console.error(`Initial sync failed for ${accountId}:`, err)
-        );
+        // For IMAP: Quick load 100 emails first, then sync rest in background
+        if (provider === 'imap' || provider === 'custom') {
+          // Quick initial load (100 latest emails - returns fast)
+          this.emailService.quickInitialLoadIMAP(createdAccount).then(result => {
+            console.log(`Quick loaded ${result.count} emails for ${createdAccount.email}`);
+            // Then trigger full historical sync in background
+            this.emailService.triggerHistoricalSync(createdAccount.id);
+          }).catch(err => {
+            console.error(`Quick load failed for ${createdAccount.id}:`, err);
+          });
+        } else {
+          // OAuth providers - use standard sync
+          this.emailService.processIncomingEmails(createdAccount).catch(err =>
+            console.error(`Initial sync failed for ${accountId}:`, err)
+          );
+        }
 
         return ResponseHandler.created(res, createdAccount, "Email account connected successfully");
       }

@@ -1157,4 +1157,79 @@ export class EmailConnectorService {
     // Token is not encrypted, return as is
     return token;
   }
+
+  // ========== NEW METHODS FOR HISTORICAL SYNC ==========
+
+  /**
+   * Get the highest UID for a given mailbox folder
+   */
+  async getHighestUid(account: EmailAccount, folder: string): Promise<number> {
+    const client = await this.connectIMAP(account);
+    try {
+      const status = await client.mailboxOpen(folder);
+      return status.exists > 0 ? status.uidNext - 1 : 0;
+    } finally {
+      await client.logout();
+    }
+  }
+
+  /**
+   * Fetch emails in a specific UID range from a folder
+   */
+  async fetchEmailsByUidRange(
+    account: EmailAccount,
+    folder: string,
+    startUid: number,
+    endUid: number
+  ): Promise<any[]> {
+    const client = await this.connectIMAP(account);
+    const messages: any[] = [];
+    try {
+      await client.mailboxOpen(folder);
+
+      const range = `${startUid}:${endUid}`;
+      for await (const message of client.fetch(range, {
+        envelope: true,
+        source: true,
+        flags: true,
+        uid: true
+      }, { uid: true })) {
+        messages.push({ ...message, folder: folder.toUpperCase() });
+      }
+      return messages.reverse(); // Newest first
+    } finally {
+      await client.logout();
+    }
+  }
+
+  /**
+   * Fetch incremental emails since a last known UID
+   */
+  async fetchEmailsIncrementalByUid(
+    account: EmailAccount,
+    folder: string,
+    lastUid: number
+  ): Promise<any[]> {
+    const client = await this.connectIMAP(account);
+    const messages: any[] = [];
+    try {
+      await client.mailboxOpen(folder);
+
+      // Fetch everything from lastUid + 1 to the end
+      const range = `${lastUid + 1}:*`;
+      for await (const message of client.fetch(range, {
+        envelope: true,
+        source: true,
+        flags: true,
+        uid: true
+      }, { uid: true })) {
+        if (message.uid > lastUid) {
+          messages.push({ ...message, folder: folder.toUpperCase() });
+        }
+      }
+      return messages;
+    } finally {
+      await client.logout();
+    }
+  }
 }
