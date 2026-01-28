@@ -93,9 +93,10 @@ export class EmailService {
     // Send email via connector service
     const messageId = await this.connectorService.sendEmail(account, emailData);
 
-    // Create email record in database
+    // Create email record in database with composite ID to prevent conflicts
+    const uniqueEmailId = `${account.id}-${messageId}`;
     const email: Email = {
-      id: messageId,
+      id: uniqueEmailId,
       messageId,
       accountId: account.id,
       from: account.email,
@@ -142,7 +143,7 @@ export class EmailService {
           // This ensures they see the email even before sync
           const recipientEmailRecord: Email = {
             ...email,
-            id: `${messageId}_${recipientAccount.id}`, // Unique ID for this account's copy
+            id: `${recipientAccount.id}-${messageId}`, // Unique ID using consistent format
             accountId: recipientAccount.id,
             isIncoming: true,
             isRead: false,
@@ -331,8 +332,11 @@ export class EmailService {
     const isIncoming = this.determineEmailDirection(parsed, account, rawEmail);
 
 
+    // Generate a unique composite ID to prevent conflicts when same email exists in multiple accounts
+    const uniqueEmailId = `${account.id}-${parsed.messageId}`;
+
     const email: Email = {
-      id: parsed.messageId!,
+      id: uniqueEmailId,
       messageId: parsed.messageId!,
       accountId: account.id,
       from: parsed.from!,
