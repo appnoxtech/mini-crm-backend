@@ -243,6 +243,13 @@ export class PersonModel {
         return row ? this.rowToPerson(row) : undefined;
     }
 
+    findByEmail(email: string): Person | undefined {
+        const query = 'SELECT p.* FROM persons p JOIN person_emails pe ON p.id = pe.personId WHERE pe.email = ? AND p.deletedAt IS NULL';
+        const stmt = this.db.prepare(query);
+        const row = stmt.get(email.toLowerCase()) as PersonRow | undefined;
+        return row ? this.rowToPerson(row) : undefined;
+    }
+
     findAll(options: {
         search?: string;
         organizationId?: number;
