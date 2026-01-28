@@ -94,10 +94,19 @@ export class DealHistoryModel {
   }
 
   private formatHistory(result: any): DealHistory {
-    return {
+    const history = {
       ...result,
       metadata: result.metadata ? JSON.parse(result.metadata) : undefined
     };
+
+    // Calculate live stage duration if it's a stage_change and not yet closed
+    if (history.eventType === 'stage_change' && !history.leftAt && history.createdAt) {
+      const created = new Date(history.createdAt);
+      const now = new Date();
+      history.stageDuration = (now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24);
+    }
+
+    return history;
   }
 
   findById(id: number): DealHistory | undefined {
@@ -160,8 +169,8 @@ export class DealHistoryModel {
    * Closes the current open stage record for a deal.
    * Calculations are in days.
    */
-  closeOpenStageRecord(dealId: number): void {
-    const now = new Date().toISOString();
+  closeOpenStageRecord(dealId: number, closedAt?: string): void {
+    const now = closedAt || new Date().toISOString();
     const openRecords = this.db.prepare(`
       SELECT * FROM deal_history 
       WHERE dealId = ? AND eventType = 'stage_change' AND leftAt IS NULL
