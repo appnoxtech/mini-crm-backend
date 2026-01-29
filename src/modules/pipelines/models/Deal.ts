@@ -293,7 +293,7 @@ export class DealModel {
                 labelIds: r.labelIds ? JSON.parse(r.labelIds) : null,
                 ownerIds: r.ownerIds ? JSON.parse(r.ownerIds) : []
             })),
-            total: countResult.count
+            total: countResult?.count || 0
         };
     }
 

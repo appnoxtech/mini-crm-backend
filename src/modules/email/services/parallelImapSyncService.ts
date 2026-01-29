@@ -170,6 +170,7 @@ export class ParallelImapSyncService {
                 bodyStructure: true,
                 source: true,
                 uid: true,
+                flags: true,
             })) {
                 messages.push({ ...message, folder: folder.label });
                 fetchedCount++;
@@ -343,5 +344,59 @@ export class ParallelImapSyncService {
             maxConnections: this.maxConnections,
             batchSize: this.batchSize,
         });
+    }
+
+    /**
+     * Fetch flags for specific UIDs in a folder
+     */
+    async fetchFlags(account: EmailAccount, folderPath: string, uids: number[]): Promise<Map<number, string[]>> {
+        if (uids.length === 0) return new Map();
+
+        let client: ImapFlow | null = null;
+        const flagMap = new Map<number, string[]>();
+
+        try {
+            client = await this.createConnection(account);
+            await client.mailboxOpen(folderPath);
+
+            // imapflow fetch first arg is range/set
+            // To use UIDs, we set {uid: true} in the fetch options (3rd arg)
+            const uidSet = uids.join(',');
+            for await (const message of client.fetch(uidSet, { flags: true }, { uid: true })) {
+                if (message.uid) {
+                    flagMap.set(message.uid, message.flags ? Array.from(message.flags) : []);
+                }
+            }
+        } catch (err: any) {
+            console.error(`❌ Error fetching flags for ${folderPath}:`, err.message);
+        } finally {
+            if (client) {
+                try {
+                    await client.logout();
+                } catch (err) { }
+            }
+        }
+
+        return flagMap;
+    }
+
+    /**
+     * Get folder configuration (path, label) for an account
+     */
+    async getFolderConfigs(account: EmailAccount): Promise<FolderConfig[]> {
+        let client: ImapFlow | null = null;
+        try {
+            client = await this.createConnection(account);
+            return await this.identifyFolders(client);
+        } catch (err: any) {
+            console.error(`❌ Error identifying folders for ${account.email}:`, err.message);
+            return [];
+        } finally {
+            if (client) {
+                try {
+                    await client.logout();
+                } catch (err) { }
+            }
+        }
     }
 }

@@ -124,8 +124,10 @@ const PORT = Number(process.env.PORT) || 4000;
 const DB_PATH = './data.db';
 
 // Initialize database
-const db = new Database('data.db');
+const db = new Database('data.db', { timeout: 10000 });
 db.pragma('foreign_keys = ON');
+db.pragma('journal_mode = WAL');
+db.pragma('synchronous = NORMAL');
 
 // Initialize models
 const userModel = new UserModel(db);
@@ -336,7 +338,7 @@ const localIP = getLocalIP();
 
 // Start the server
 server.listen(PORT, '0.0.0.0', () => {
-
+  console.log(`🚀 Server running on http://${localIP}:${PORT}`);
 });
 
 

@@ -338,9 +338,6 @@ export class EmailConnectorService {
     }
   }
 
-  /**
-   * Helper to fetch full details of a single Gmail message
-   */
   async fetchGmailMessageDetails(accountId: string, messageId: string): Promise<any> {
     const fullMessage = await this.gmailClient.users.messages.get({
       userId: 'me',
@@ -353,6 +350,34 @@ export class EmailConnectorService {
       provider: 'gmail',
       accountId: accountId
     };
+  }
+
+  /**
+   * Find Gmail message internal ID by RFC Message-ID
+   */
+  async findGmailMessageByRfcId(account: EmailAccount, messageId: string): Promise<string | null> {
+    await this.connectGmail(account);
+    const q = `rfc822msgid:${messageId}`;
+    const response = await this.gmailClient.users.messages.list({
+      userId: 'me',
+      q,
+      maxResults: 1
+    });
+
+    return response.data.messages?.[0]?.id || null;
+  }
+
+  /**
+   * Find Outlook message internal ID by Internet Message-ID
+   */
+  async findOutlookMessageByRfcId(account: EmailAccount, messageId: string): Promise<string | null> {
+    await this.connectOutlook(account);
+    const response = await this.outlookClient.api('/me/messages')
+      .filter(`internetMessageId eq '${messageId}'`)
+      .select('id')
+      .get();
+
+    return response.value?.[0]?.id || null;
   }
 
   async fetchOutlookEmails(account: EmailAccount, lastSyncTime?: Date, maxResults: number = 50): Promise<any[]> {
@@ -876,7 +901,7 @@ export class EmailConnectorService {
             const { EmailModel } = require('../models/emailModel');
             // Get database instance from global context or pass it properly
             const Database = require('better-sqlite3');
-            const db = new Database('data.db');
+            const db = new Database('data.db', { timeout: 10000 });
             const emailModel = new EmailModel(db);
             const emailService = new EmailService(emailModel, this);
 
@@ -1062,7 +1087,7 @@ export class EmailConnectorService {
             const { EmailModel } = require('../models/emailModel');
             // Get database instance from global context or pass it properly
             const Database = require('better-sqlite3');
-            const db = new Database('data.db');
+            const db = new Database('data.db', { timeout: 10000 });
             const emailModel = new EmailModel(db);
             const emailService = new EmailService(emailModel, this);
 
@@ -1230,6 +1255,119 @@ export class EmailConnectorService {
       return messages;
     } finally {
       await client.logout();
+    }
+  }
+
+  /**
+   * Set IMAP flags (e.g. \Seen) for a message
+   */
+  async setImapFlag(
+    account: EmailAccount,
+    folder: string,
+    uid: number,
+    opt: { add?: string[]; remove?: string[]; set?: string[] }
+  ): Promise<void> {
+    const client = await this.connectIMAP(account);
+    try {
+      await client.mailboxOpen(folder);
+
+      if (opt.add && opt.add.length > 0) {
+        await client.messageFlagsAdd(`${uid}`, opt.add, { uid: true });
+      }
+      if (opt.remove && opt.remove.length > 0) {
+        await client.messageFlagsRemove(`${uid}`, opt.remove, { uid: true });
+      }
+      if (opt.set && opt.set.length > 0) {
+        await client.messageFlagsSet(`${uid}`, opt.set, { uid: true });
+      }
+    } catch (error) {
+      console.error(`Failed to set IMAP flags for UID ${uid}:`, error);
+      throw error;
+    } finally {
+      await client.logout();
+    }
+  }
+
+  /**
+   * Set Gmail flags (using Labels: UNREAD, STARRED, etc)
+   */
+  async setGmailLabel(
+    account: EmailAccount,
+    messageId: string,
+    opt: { add?: string[]; remove?: string[] }
+  ): Promise<void> {
+    await this.connectGmail(account);
+    try {
+      await this.gmailClient.users.messages.modify({
+        userId: 'me',
+        id: messageId,
+        requestBody: {
+          addLabelIds: opt.add,
+          removeLabelIds: opt.remove
+        }
+      });
+    } catch (error) {
+      console.error(`Failed to set Gmail labels for ${messageId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Set Outlook flags (isRead)
+   */
+  async setOutlookFlag(
+    account: EmailAccount,
+    messageId: string,
+    updates: { isRead?: boolean }
+  ): Promise<void> {
+    await this.connectOutlook(account);
+    try {
+      const payload: any = {};
+      if (updates.isRead !== undefined) {
+        payload.isRead = updates.isRead;
+      }
+
+      await this.outlookClient.api(`/me/messages/${messageId}`).update(payload);
+    } catch (error) {
+      console.error(`Failed to set Outlook flag for ${messageId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Refresh flags for specific UIDs in an IMAP folder
+   */
+  async refreshIMAPFlags(
+    account: EmailAccount,
+    folderPath: string,
+    uids: number[]
+  ): Promise<Map<number, string[]>> {
+    const parallelSync = new ParallelImapSyncService(
+      3,  // Max 3 parallel connections
+      100 // Batch size of 100 emails
+    );
+    return await parallelSync.fetchFlags(account, folderPath, uids);
+  }
+
+  /**
+   * Get folder configurations for an IMAP account
+   */
+  async getIMAPFolderConfigs(account: EmailAccount): Promise<any[]> {
+    const parallelSync = new ParallelImapSyncService();
+    return await parallelSync.getFolderConfigs(account);
+  }
+
+  /**
+   * Fetch status (isRead) for a specific Outlook message
+   */
+  async fetchOutlookMessageStatus(account: EmailAccount, messageId: string): Promise<boolean> {
+    await this.connectOutlook(account);
+    try {
+      const response = await this.outlookClient.api(`/me/messages/${messageId}`).select('isRead').get();
+      return !!response.isRead;
+    } catch (error) {
+      console.error(`Failed to fetch Outlook status for ${messageId}:`, error);
+      throw error;
     }
   }
 }
