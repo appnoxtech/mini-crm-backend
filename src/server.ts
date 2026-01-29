@@ -109,6 +109,7 @@ import { AIConfigController } from './modules/ai-agent/controllers/aiConfigContr
 import { createSuggestionRoutes } from './modules/ai-agent/routes/suggestionRoutes';
 import { PricingModel } from './modules/ai-agent/models/PricingModel';
 import { BrandGuidelinesModel } from './modules/ai-agent/models/BrandGuidelinesModel';
+import { KnowledgeBaseModel } from './modules/ai-agent/models/KnowledgeBaseModel';
 
 
 const app = express();
@@ -244,7 +245,7 @@ webhookController.setSocketIO(io);
 // Initialize AI agent module
 const suggestionOrchestrator = new SuggestionOrchestratorService(db);
 const suggestionController = new SuggestionController(suggestionOrchestrator);
-const aiConfigController = new AIConfigController(new PricingModel(db), new BrandGuidelinesModel(db));
+const aiConfigController = new AIConfigController(new PricingModel(db), new BrandGuidelinesModel(db), new KnowledgeBaseModel(db));
 
 // Middleware
 app.use(express.json());

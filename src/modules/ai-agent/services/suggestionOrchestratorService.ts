@@ -6,6 +6,7 @@ import { SuggestionModel } from "../models/SuggestionModel";
 import { PricingModel } from "../models/PricingModel";
 import { BrandGuidelinesModel } from "../models/BrandGuidelinesModel";
 import { ClientProfileModel } from "../models/ClientProfileModel";
+import { KnowledgeBaseModel } from "../models/KnowledgeBaseModel";
 import { contextExtractionService } from "./contextExtractionService";
 import { inferenceService } from "./inferenceService";
 import { contentGenerationService } from "./contentGenerationService";
@@ -20,6 +21,7 @@ export class SuggestionOrchestratorService {
     private pricingModel: PricingModel;
     private brandGuidelinesModel: BrandGuidelinesModel;
     private clientProfileModel: ClientProfileModel;
+    private knowledgeBaseModel: KnowledgeBaseModel;
 
     constructor(db: Database.Database) {
         this.emailModel = new EmailModel(db);
@@ -29,12 +31,14 @@ export class SuggestionOrchestratorService {
         this.pricingModel = new PricingModel(db);
         this.brandGuidelinesModel = new BrandGuidelinesModel(db);
         this.clientProfileModel = new ClientProfileModel(db);
+        this.knowledgeBaseModel = new KnowledgeBaseModel(db);
 
         // Initialize models
         this.suggestionModel.initialize();
         this.pricingModel.initialize();
         this.brandGuidelinesModel.initialize();
         this.clientProfileModel.initialize();
+        this.knowledgeBaseModel.initialize();
     }
 
     async generateSuggestion(request: SuggestionRequest): Promise<EmailSuggestion> {
@@ -206,11 +210,64 @@ export class SuggestionOrchestratorService {
             // 5. Get pricing & guidelines
             tiers = this.pricingModel.getAllTiers();
             guidelines = this.brandGuidelinesModel.getGuidelines()!;
+
+            // 5.1 Check if customPrompt mentions a specific plan name
+            // Use word-based scoring: count how many words from tier name appear in prompt
+            if (request.customPrompt && tiers.length > 0) {
+                const promptWords = request.customPrompt.toLowerCase().split(/\s+/);
+
+                // Score each tier based on how many of its name words appear in the prompt
+                const scoredTiers = tiers.map(tier => {
+                    const tierWords = tier.name.toLowerCase().split(/\s+/);
+                    const matchCount = tierWords.filter((word: string) =>
+                        promptWords.some((pw: string) => pw.includes(word) || word.includes(pw))
+                    ).length;
+                    // Calculate percentage of tier name words that matched
+                    const score = tierWords.length > 0 ? matchCount / tierWords.length : 0;
+                    return { tier, matchCount, score };
+                });
+
+                // Find the best match (highest score, then highest match count)
+                const bestMatch = scoredTiers
+                    .filter(s => s.matchCount > 0)
+                    .sort((a, b) => {
+                        // First by percentage match (prefer 100% matches)
+                        if (b.score !== a.score) return b.score - a.score;
+                        // Then by number of matched words
+                        return b.matchCount - a.matchCount;
+                    })[0];
+
+                if (bestMatch && bestMatch.score >= 0.5) {
+                    console.log(`Plan "${bestMatch.tier.name}" detected (${bestMatch.matchCount} words matched, ${Math.round(bestMatch.score * 100)}% score)`);
+                    tiers = [bestMatch.tier];
+                }
+            }
         }
 
 
         // 6. Build generation context with email content
         const lastEmail = emails.length > 0 ? emails[emails.length - 1] : null;
+
+        // Fetch knowledge base context
+        // Fetch knowledge base context
+        let knowledgeBaseContext: string[] = [];
+
+        // Use inferred information needs + raw content for search
+        const searchTerms = [
+            ...(inference?.informationNeeds || []), // Add high-priority inferred terms first
+            request.customPrompt,
+            request.lastEmailContent,
+            lastEmail?.subject,
+            lastEmail?.body || lastEmail?.htmlBody?.replace(/<[^>]*>/g, '')
+        ].filter(Boolean).join(' ');
+
+        if (searchTerms) {
+            knowledgeBaseContext = this.knowledgeBaseModel.findRelevantContext(searchTerms);
+            if (knowledgeBaseContext.length > 0) {
+                console.log(`Found ${knowledgeBaseContext.length} relevant knowledge base items based on intent & content.`);
+            }
+        }
+
         const generationContext = {
             lastEmailContent: request.lastEmailContent || lastEmail?.body || lastEmail?.htmlBody?.replace(/<[^>]*>/g, '') || undefined,
             lastEmailSubject: request.lastEmailSubject || lastEmail?.subject || undefined,
@@ -222,7 +279,8 @@ export class SuggestionOrchestratorService {
                 subject: e.subject,
                 body: (e.body || e.htmlBody?.replace(/<[^>]*>/g, '') || '').substring(0, 500),
                 date: new Date(e.sentAt).toLocaleString()
-            }))
+            })),
+            knowledgeBaseContext
         };
 
         // 7. Generate email

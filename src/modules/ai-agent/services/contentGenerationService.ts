@@ -9,6 +9,7 @@ export interface GenerationContext {
     senderName?: string;
     userName?: string;
     conversationHistory?: Array<{ from: string; subject: string; body: string; date: string }>;
+    knowledgeBaseContext?: string[];
 }
 
 export class ContentGenerationService {
@@ -69,8 +70,14 @@ BRAND VOICE:
 - Tone: ${guidelines?.tone || 'professional'} (${guidelines?.voiceCharacteristics?.join(', ') || 'clear, helpful'})
 - Closing Phrases Options: ${guidelines?.closingPhrases?.join(', ') || 'Best regards, Thanks, Kind regards'}
 - Phrases to AVOID: ${guidelines?.avoidPhrases?.join(', ') || 'None specified'}
+- SIGNATURE TEMPLATE: ${guidelines?.signatureTemplate || 'None'}
 
-SENDER'S NAME FOR SIGNATURE: ${context?.userName || '[Name]'}
+SENDER'S NAME FOR SIGNATURE: ${context?.userName || '{insert name}'}
+
+${context?.knowledgeBaseContext && context.knowledgeBaseContext.length > 0 ? `
+RELEVANT COMPANY KNOWLEDGE (Use these facts if applicable):
+${context.knowledgeBaseContext.map(k => `- ${k}`).join('\n')}
+` : ''}
 
 ${relevantTier ? `
 PRICING CONTEXT (if relevant to include):
@@ -87,6 +94,11 @@ CRITICAL INSTRUCTIONS:
 5. Provide specific solutions or next steps relevant to what was mentioned.
 6. Keep the reply professional but conversational.
 7. The subject line should be appropriate for a reply (start with "Re:" if replying).
+8. CALCULATION INSTRUCTIONS: If the user asks for a project quote or pricing, and you have component costs in the 'RELEVANT COMPANY KNOWLEDGE' section:
+   - You MUST calculate the total estimated price by summing the relevant items.
+   - Break down the cost: List each component and its price found in the knowledge base.
+   - Show the final total clearly (e.g., "Total Estimated Cost: $X").
+   - Do NOT say "it depends" or "let's get on a call" if you have the necessary pricing data to give an estimate. Use the provided facts.
 
 EMAIL STRUCTURE (VERY IMPORTANT - FOLLOW THIS EXACTLY):
 The email body MUST be formatted as a professional email with the following structure:
@@ -100,9 +112,9 @@ The email body MUST be formatted as a professional email with the following stru
    - Break long content into multiple paragraphs for readability.
 
 3. CLOSING: 
-   - Add a blank line before the closing phrase.
-   - Put the closing phrase (e.g., "Best regards," or "Thanks," or "Kind regards,") on its own line.
-   - Put the sender's name "${context?.userName || '[Name]'}" on the NEXT line.
+   - Use the SIGNATURE TEMPLATE defined above if it is not 'None'.
+   - If the template is used, do NOT add another closing phrase or name unless the template is incomplete.
+   - If no template is provided, add "Best regards," followed by "${context?.userName || '{insert name}'}" on new lines.
 
 EXAMPLE FORMAT:
 Hi Team,
@@ -116,8 +128,8 @@ I have a few suggestions:
 
 Please let me know if you need any further clarification.
 
-Best regards,
-${context?.userName || '[Name]'}
+${guidelines?.signatureTemplate ? guidelines.signatureTemplate : `Best regards,
+${context?.userName || '{insert name}'}`}
 
 Respond ONLY with a JSON object containing:
 {
