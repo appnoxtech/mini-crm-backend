@@ -44,8 +44,8 @@ export class SuggestionOrchestratorService {
     async generateSuggestion(request: SuggestionRequest): Promise<EmailSuggestion> {
         let { dealId, personId, threadId, messageId, email } = request;
 
-        // Check if this is a refinement-only request (no context identifiers needed)
-        const isRefinementOnly = !dealId && !personId && !email && !threadId && !messageId && request.customPrompt && request.lastEmailContent;
+        // Check if this is a compose/refinement-only request (no context identifiers needed)
+        const isRefinementOnly = !dealId && !personId && !email && !threadId && !messageId && request.customPrompt && request.customPrompt.trim().length > 0;
 
         // For refinement-only requests, skip context validation
         if (!isRefinementOnly) {
@@ -177,28 +177,55 @@ export class SuggestionOrchestratorService {
             guidelines = this.brandGuidelinesModel.getGuidelines()!;
 
             // Apply plan matching for refinement requests
+            // Extract ONLY the user's instructions part, not the full draft content
             if (request.customPrompt && tiers.length > 0) {
-                const promptWords = request.customPrompt.toLowerCase().split(/\s+/);
+                let searchText = request.customPrompt.toLowerCase();
 
-                const scoredTiers = tiers.map(tier => {
-                    const tierWords = tier.name.toLowerCase().split(/\s+/);
-                    const matchCount = tierWords.filter((word: string) =>
-                        promptWords.some((pw: string) => pw.includes(word) || word.includes(pw))
-                    ).length;
-                    const score = tierWords.length > 0 ? matchCount / tierWords.length : 0;
-                    return { tier, matchCount, score };
-                });
+                // If this is a refinement prompt, extract only the user's instruction part
+                const instructionMarker = "user's instructions for refinement:";
+                const markerIndex = searchText.indexOf(instructionMarker);
+                if (markerIndex !== -1) {
+                    searchText = searchText.substring(markerIndex + instructionMarker.length).trim();
+                    console.log(`[Refinement] Extracted user instruction: "${searchText}"`);
+                }
 
-                const bestMatch = scoredTiers
-                    .filter(s => s.matchCount > 0)
-                    .sort((a, b) => {
-                        if (b.score !== a.score) return b.score - a.score;
-                        return b.matchCount - a.matchCount;
-                    })[0];
+                const promptWords = searchText.split(/\s+/);
 
-                if (bestMatch && bestMatch.score >= 0.5) {
-                    console.log(`[Refinement] Plan "${bestMatch.tier.name}" detected (${bestMatch.matchCount} words matched)`);
-                    tiers = [bestMatch.tier];
+                // First: check for exact tier name match in user's instructions (highest priority)
+                const exactMatch = tiers.find(tier =>
+                    searchText.includes(tier.name.toLowerCase())
+                );
+
+                if (exactMatch) {
+                    // If multiple exact matches, pick the longest tier name (most specific)
+                    const exactMatches = tiers.filter(tier =>
+                        searchText.includes(tier.name.toLowerCase())
+                    ).sort((a, b) => b.name.length - a.name.length);
+
+                    console.log(`[Refinement] Exact match: Plan "${exactMatches[0].name}" detected`);
+                    tiers = [exactMatches[0]];
+                } else {
+                    // Fallback: word-based scoring
+                    const scoredTiers = tiers.map(tier => {
+                        const tierWords = tier.name.toLowerCase().split(/\s+/);
+                        const matchCount = tierWords.filter((word: string) =>
+                            promptWords.some((pw: string) => pw === word)
+                        ).length;
+                        const score = tierWords.length > 0 ? matchCount / tierWords.length : 0;
+                        return { tier, matchCount, score };
+                    });
+
+                    const bestMatch = scoredTiers
+                        .filter(s => s.matchCount > 0)
+                        .sort((a, b) => {
+                            if (b.score !== a.score) return b.score - a.score;
+                            return b.matchCount - a.matchCount;
+                        })[0];
+
+                    if (bestMatch && bestMatch.score >= 0.5) {
+                        console.log(`[Refinement] Word match: Plan "${bestMatch.tier.name}" (${Math.round(bestMatch.score * 100)}% match)`);
+                        tiers = [bestMatch.tier];
+                    }
                 }
             }
         } else {
@@ -240,34 +267,45 @@ export class SuggestionOrchestratorService {
             guidelines = this.brandGuidelinesModel.getGuidelines()!;
 
             // 5.1 Check if customPrompt mentions a specific plan name
-            // Use word-based scoring: count how many words from tier name appear in prompt
             if (request.customPrompt && tiers.length > 0) {
-                const promptWords = request.customPrompt.toLowerCase().split(/\s+/);
+                const promptLower = request.customPrompt.toLowerCase();
+                const promptWords = promptLower.split(/\s+/);
 
-                // Score each tier based on how many of its name words appear in the prompt
-                const scoredTiers = tiers.map(tier => {
-                    const tierWords = tier.name.toLowerCase().split(/\s+/);
-                    const matchCount = tierWords.filter((word: string) =>
-                        promptWords.some((pw: string) => pw.includes(word) || word.includes(pw))
-                    ).length;
-                    // Calculate percentage of tier name words that matched
-                    const score = tierWords.length > 0 ? matchCount / tierWords.length : 0;
-                    return { tier, matchCount, score };
-                });
+                // First: check for exact tier name match (highest priority)
+                const exactMatch = tiers.find(tier =>
+                    promptLower.includes(tier.name.toLowerCase())
+                );
 
-                // Find the best match (highest score, then highest match count)
-                const bestMatch = scoredTiers
-                    .filter(s => s.matchCount > 0)
-                    .sort((a, b) => {
-                        // First by percentage match (prefer 100% matches)
-                        if (b.score !== a.score) return b.score - a.score;
-                        // Then by number of matched words
-                        return b.matchCount - a.matchCount;
-                    })[0];
+                if (exactMatch) {
+                    // If multiple exact matches, pick the longest tier name (most specific)
+                    const exactMatches = tiers.filter(tier =>
+                        promptLower.includes(tier.name.toLowerCase())
+                    ).sort((a, b) => b.name.length - a.name.length);
 
-                if (bestMatch && bestMatch.score >= 0.5) {
-                    console.log(`Plan "${bestMatch.tier.name}" detected (${bestMatch.matchCount} words matched, ${Math.round(bestMatch.score * 100)}% score)`);
-                    tiers = [bestMatch.tier];
+                    console.log(`Exact match: Plan "${exactMatches[0].name}" detected`);
+                    tiers = [exactMatches[0]];
+                } else {
+                    // Fallback: word-based scoring with exact word matches
+                    const scoredTiers = tiers.map(tier => {
+                        const tierWords = tier.name.toLowerCase().split(/\s+/);
+                        const matchCount = tierWords.filter((word: string) =>
+                            promptWords.some((pw: string) => pw === word)
+                        ).length;
+                        const score = tierWords.length > 0 ? matchCount / tierWords.length : 0;
+                        return { tier, matchCount, score };
+                    });
+
+                    const bestMatch = scoredTiers
+                        .filter(s => s.matchCount > 0)
+                        .sort((a, b) => {
+                            if (b.score !== a.score) return b.score - a.score;
+                            return b.matchCount - a.matchCount;
+                        })[0];
+
+                    if (bestMatch && bestMatch.score >= 0.5) {
+                        console.log(`Word match: Plan "${bestMatch.tier.name}" (${Math.round(bestMatch.score * 100)}% match)`);
+                        tiers = [bestMatch.tier];
+                    }
                 }
             }
         }

@@ -34,13 +34,28 @@ export class ContentGenerationService {
 
         // Build email to reply to context
         let replyToContext = '';
+
+        // Detect if this is a refinement request (contains refinement markers in customPrompt)
+        const isRefinementRequest = context?.customPrompt?.toLowerCase().includes('refine') ||
+            context?.customPrompt?.toLowerCase().includes('current draft to refine:');
+
         if (context?.lastEmailContent) {
-            replyToContext = `
+            if (isRefinementRequest) {
+                // For refinement: present as draft to improve, NOT as email to reply to
+                replyToContext = `
+CURRENT DRAFT TO REFINE (improve this, don't reply to it):
+Subject: ${context.lastEmailSubject || 'No subject'}
+Content:
+${context.lastEmailContent}
+`;
+            } else {
+                replyToContext = `
 EMAIL TO REPLY TO:
 Subject: ${context.lastEmailSubject || 'No subject'}
 Content:
 ${context.lastEmailContent}
 `;
+            }
         }
 
         // Custom prompt instructions
@@ -48,8 +63,37 @@ ${context.lastEmailContent}
             ? `\nUSER'S SPECIFIC INSTRUCTIONS:\n${context.customPrompt}\n`
             : '';
 
+        // Detect if this is a first-contact/new outreach (no email to reply to, or empty draft)
+        const isFirstContact = !context?.lastEmailContent || context.lastEmailContent.trim().length === 0;
+
+        const modeDescription = isRefinementRequest
+            ? 'You are a professional email assistant helping REFINE and IMPROVE an existing email draft. Do NOT treat the draft as a previous email to reply to.'
+            : (isFirstContact
+                ? 'You are a professional email assistant helping compose a NEW OUTREACH EMAIL to a potential client.'
+                : 'You are a professional email assistant helping write a DIRECT REPLY to an email.');
+
+        const modeInstructions = isFirstContact && !isRefinementRequest
+            ? `
+CRITICAL INSTRUCTIONS FOR NEW OUTREACH:
+1. Write a professional FIRST CONTACT email for initial client outreach.
+2. Introduce yourself/company professionally.
+3. Clearly state the purpose of reaching out.
+4. If a specific company or project is mentioned, acknowledge and reference it.
+5. Be concise, professional, and action-oriented.
+6. End with a clear call-to-action (e.g., schedule a call, request a meeting).
+7. Use the pricing/plan information if it's relevant to the outreach.`
+            : `
+CRITICAL INSTRUCTIONS:
+1. Write a DIRECT REPLY that specifically addresses the content of the email being replied to.
+2. Reference specific points, concerns, or topics from the email you're replying to.
+3. Be concise and actionable - no generic fluff or filler content.
+4. If the original email expresses frustration or concern, acknowledge it empathetically first.
+5. Provide specific solutions or next steps relevant to what was mentioned.
+6. Keep the reply professional but conversational.
+7. The subject line should be appropriate for a reply (start with "Re:" if replying).`;
+
         const generationPrompt = `
-You are a professional email assistant helping write a DIRECT REPLY to an email.
+${modeDescription}
 
 ${replyToContext}
 ${conversationContext}
@@ -80,20 +124,14 @@ ${context.knowledgeBaseContext.map(k => `- ${k}`).join('\n')}
 ` : ''}
 
 ${relevantTier ? `
-PRICING CONTEXT (if relevant to include):
-- Tier: ${relevantTier.name}
+PRICING CONTEXT (MUST USE THIS IF PRICING IS MENTIONED):
+- Plan/Tier Name: ${relevantTier.name}
 - Price: ${relevantTier.basePrice} ${relevantTier.currency}
 - Features: ${relevantTier.features.join(', ')}
+IMPORTANT: If the email mentions pricing or a plan, you MUST use the price "${relevantTier.basePrice} ${relevantTier.currency}" from this tier. Replace any outdated pricing in the draft with this correct pricing.
 ` : ''}
 
-CRITICAL INSTRUCTIONS:
-1. Write a DIRECT REPLY that specifically addresses the content of the email being replied to.
-2. Reference specific points, concerns, or topics from the email you're replying to.
-3. Be concise and actionable - no generic fluff or filler content.
-4. If the original email expresses frustration or concern, acknowledge it empathetically first.
-5. Provide specific solutions or next steps relevant to what was mentioned.
-6. Keep the reply professional but conversational.
-7. The subject line should be appropriate for a reply (start with "Re:" if replying).
+${modeInstructions}
 8. CALCULATION INSTRUCTIONS: If the user asks for a project quote or pricing, and you have component costs in the 'RELEVANT COMPANY KNOWLEDGE' section:
    - You MUST calculate the total estimated price by summing the relevant items.
    - Break down the cost: List each component and its price found in the knowledge base.
