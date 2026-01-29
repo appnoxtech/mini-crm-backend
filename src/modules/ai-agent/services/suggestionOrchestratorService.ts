@@ -171,8 +171,36 @@ export class SuggestionOrchestratorService {
                 requiredContent: ['Follow user instructions'],
                 confidence: 1.0
             };
-            tiers = [];
+
+            // Load tiers for refinement too, so plan matching works
+            tiers = this.pricingModel.getAllTiers();
             guidelines = this.brandGuidelinesModel.getGuidelines()!;
+
+            // Apply plan matching for refinement requests
+            if (request.customPrompt && tiers.length > 0) {
+                const promptWords = request.customPrompt.toLowerCase().split(/\s+/);
+
+                const scoredTiers = tiers.map(tier => {
+                    const tierWords = tier.name.toLowerCase().split(/\s+/);
+                    const matchCount = tierWords.filter((word: string) =>
+                        promptWords.some((pw: string) => pw.includes(word) || word.includes(pw))
+                    ).length;
+                    const score = tierWords.length > 0 ? matchCount / tierWords.length : 0;
+                    return { tier, matchCount, score };
+                });
+
+                const bestMatch = scoredTiers
+                    .filter(s => s.matchCount > 0)
+                    .sort((a, b) => {
+                        if (b.score !== a.score) return b.score - a.score;
+                        return b.matchCount - a.matchCount;
+                    })[0];
+
+                if (bestMatch && bestMatch.score >= 0.5) {
+                    console.log(`[Refinement] Plan "${bestMatch.tier.name}" detected (${bestMatch.matchCount} words matched)`);
+                    tiers = [bestMatch.tier];
+                }
+            }
         } else {
             // 3. Fetch/Create client profile
             profile = dealId
