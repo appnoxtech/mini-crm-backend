@@ -2,10 +2,11 @@ import { groqApiService } from "./groqApiService";
 import { ClientProfile } from "../types";
 
 export interface InferenceResult {
-    emailType: 'pricing_proposal' | 'check_in' | 'objection_handling' | 'renewal' | 're_engagement' | 'follow_up' | 'proactive_outreach';
+    emailType: 'pricing_proposal' | 'check_in' | 'objection_handling' | 'renewal' | 're_engagement' | 'follow_up' | 'proactive_outreach' | 'refinement';
     confidence: number;
     reasoning: string;
     requiredContent: string[];
+    informationNeeds: string[]; // Keywords/Topics to search in Knowledge Base
     suggestedTone: string;
     urgency: 'low' | 'medium' | 'high';
 }
@@ -30,8 +31,9 @@ export class InferenceService {
       3. What specific content is required in this email?
       4. What should be the tone?
       5. How urgent is this communication?
+      6. What specific company knowledge/facts are needed? (output keywords for search, e.g. 'price', 'office address', 'refund policy')
 
-      Select from these email types: pricing_proposal, check_in, objection_handling, renewal, re_engagement, follow_up, proactive_outreach.
+      Select from these email types: pricing_proposal, check_in, objection_handling, renewal, re_engagement, follow_up, proactive_outreach, refinement.
     `;
 
         const schema = {
@@ -39,6 +41,7 @@ export class InferenceService {
             confidence: "number",
             reasoning: "string",
             requiredContent: ["string"],
+            informationNeeds: ["string"],
             suggestedTone: "string",
             urgency: "string"
         };
