@@ -271,15 +271,26 @@ export class EmailService {
 
       for (const rawEmail of rawEmails) {
         try {
-          const isNew = await this.processSingleEmail(account, rawEmail);
-          processed++;
-
-          if (isNew) newEmails++;
+          const result = await this.processSingleEmail(account, rawEmail);
+          if (result) {
+            processed++;
+            if (result.isNew) newEmails++;
+          }
         } catch (error: any) {
           console.error("Error processing individual email:", error);
           errors++;
           // Continue processing other emails
         }
+      }
+
+      // Refresh flags for existing emails
+      if (provider === "imap" || provider === "custom") {
+        await this.refreshEmailFlags(account);
+      } else if (provider === "gmail" && account.lastHistoryId) {
+        // Incremental sync via history for label/status changes
+        await this.syncGmailHistory(account);
+      } else if (provider === "outlook") {
+        await this.refreshOutlookFlags(account);
       }
 
       // Update last sync time
@@ -318,17 +329,44 @@ export class EmailService {
   private async processSingleEmail(
     account: EmailAccount,
     rawEmail: any
-  ): Promise<boolean> {
+  ): Promise<{ id: string, isNew: boolean } | null> {
     const parsed = await this.parseRawEmail(rawEmail, account.provider);
+    const provider = account.provider;
 
     // Check if email already exists for THIS account
-    const existing = await this.emailModel.findEmailByMessageId(
-      parsed.messageId!,
-      account.id
-    );
+    let existing: Email | null = null;
+
+    if (provider === 'imap' || provider === 'custom') {
+      const { uid, folder } = parsed as any;
+      if (uid && folder) {
+        existing = await this.emailModel.findEmailByImapUid(account.id, folder, uid);
+      }
+    }
+
+    if (!existing) {
+      existing = await this.emailModel.findEmailByMessageId(
+        parsed.messageId!,
+        account.id
+      );
+    }
+
     if (existing) {
-      // console.log(`Email ${parsed.messageId} already exists for account ${account.id}, skipping.`);
-      return false;
+      // Backfill missing fields for existing emails (providerId, uid, folder)
+      const updates: any = {};
+      if (!existing.providerId && parsed.providerId) updates.providerId = parsed.providerId;
+      if (!existing.uid && parsed.uid) updates.uid = parsed.uid;
+      if (!existing.folder && parsed.folder) updates.folder = parsed.folder;
+
+      if (Object.keys(updates).length > 0) {
+        console.log(`Backfilling missing fields for existing email ${existing.id}:`, updates);
+        await this.emailModel.updateEmail(existing.id, updates);
+      }
+
+      if (existing.isRead !== parsed.isRead) {
+        // console.log(`Email ${existing.id} read status changed to ${parsed.isRead}. Updating.`);
+        await this.emailModel.markEmailAsRead(existing.id, account.userId, !!parsed.isRead);
+      }
+      return { id: existing.id, isNew: false };
     }
 
     // Match with CRM entities
@@ -370,6 +408,9 @@ export class EmailService {
     if (parsed.htmlBody) email.htmlBody = parsed.htmlBody;
     if (parsed.attachments) email.attachments = parsed.attachments;
     if (parsed.labelIds) email.labelIds = parsed.labelIds;
+    if (parsed.uid) email.uid = parsed.uid;
+    if (parsed.folder) email.folder = parsed.folder;
+    if (parsed.providerId) email.providerId = parsed.providerId;
 
     await this.emailModel.createEmail(email);
 
@@ -404,15 +445,10 @@ export class EmailService {
 
     // Notify user about new incoming email
     if (this.notificationService && isIncoming) {
-
       this.notificationService.notifyNewEmail(account.userId, email);
-    } else if (this.notificationService && !isIncoming) {
-
-    } else if (!this.notificationService) {
-
     }
 
-    return true;
+    return { id: email.id, isNew: true };
   }
 
   private async parseRawEmail(rawEmail: any, provider: string): Promise<Partial<Email>> {
@@ -573,6 +609,7 @@ export class EmailService {
 
     return {
       messageId: headers["message-id"],
+      providerId: message.id,
       threadId: message.threadId,
       from: headers["from"],
       to: (headers["to"] || "")
@@ -600,6 +637,7 @@ export class EmailService {
   private parseOutlookMessage(message: any): Partial<Email> {
     return {
       messageId: message.internetMessageId,
+      providerId: message.id,
       threadId: message.conversationId,
       from: message.from?.emailAddress?.address,
       to: (message.toRecipients || []).map((r: any) => r.emailAddress.address),
@@ -723,6 +761,7 @@ export class EmailService {
       receivedAt: date,
       isRead: isRead,
       // Store folder for direction detection and labeling
+      uid: message.uid,
       folder: message.folder,
       labelIds: message.folder ? [message.folder] : [],
     } as any;
@@ -882,7 +921,31 @@ export class EmailService {
     userId: string,
     isRead: boolean
   ): Promise<boolean> {
-    return this.emailModel.markEmailAsRead(emailId, userId, isRead);
+    // 1. Update local DB immediately
+    const success = await this.emailModel.markEmailAsRead(emailId, userId, isRead);
+    if (!success) {
+      return false;
+    }
+
+    // 2. Sync to provider asynchronously
+    // Fetch email to get accountId and provider details
+    const email = await this.emailModel.getEmailById(emailId, userId);
+    if (!email) {
+      return true; // DB update was success, but somehow can't refetch? inconsistent but return success
+    }
+
+    const account = await this.emailModel.getEmailAccountById(email.accountId);
+    if (!account) {
+      console.warn(`Account ${email.accountId} not found for email ${emailId}, skipping provider sync`);
+      return true;
+    }
+
+    // Don't await provider sync to keep UI snappy
+    this.syncReadStatusToProvider(account, email, isRead).catch(err => {
+      console.error(`Failed to sync read status for ${emailId} to provider:`, err);
+    });
+
+    return true;
   }
 
   async archiveEmail(emailId: string, userId: string): Promise<boolean> {
@@ -997,20 +1060,22 @@ export class EmailService {
       if (record.messagesAdded) {
         for (const item of record.messagesAdded) {
           try {
-            const messageId = item.message.id;
-            // Check if we already have it
-            const existing = await this.emailModel.findEmailByMessageId(messageId);
+            const gmailId = item.message.id;
+            // Check if we already have it using internal Gmail ID
+            const existing = await this.emailModel.findEmailByProviderId(account.id, gmailId);
             if (!existing) {
               // Fetch full details
-              const fullMsg = await this.connectorService.fetchGmailMessageDetails(account.id, messageId);
-              await this.processSingleEmail(account, fullMsg);
+              const fullMsg = await this.connectorService.fetchGmailMessageDetails(account.id, gmailId);
+              const result = await this.processSingleEmail(account, fullMsg);
 
               // Check if it should be archived
-              const labels = fullMsg.labelIds || [];
-              if (!labels.includes('INBOX') && !labels.includes('SPAM') && !labels.includes('TRASH')) {
-                await this.ensureArchiveStatus(messageId, account.userId);
+              if (result) {
+                const labels = fullMsg.labelIds || [];
+                if (!labels.includes('INBOX') && !labels.includes('SPAM') && !labels.includes('TRASH')) {
+                  await this.ensureArchiveStatus(result.id, account.userId);
+                }
+                processed++;
               }
-              processed++;
             }
           } catch (err) {
             console.error(`Error processing history messageAdded:`, err);
@@ -1024,10 +1089,23 @@ export class EmailService {
         for (const item of record.labelsRemoved) {
           try {
             // item has message { id, threadId } and labelIds (removed labels)
-            if (item.labelIds && item.labelIds.includes('INBOX')) {
-              console.log(`Message ${item.message.id} archived (INBOX label removed)`);
-              await this.emailModel.archiveEmail(item.message.id, account.userId);
-              processed++;
+            if (item.labelIds) {
+              if (item.labelIds.includes('INBOX')) {
+                console.log(`Message ${item.message.id} archived (INBOX label removed)`);
+                const existing = await this.emailModel.findEmailByProviderId(account.id, item.message.id);
+                if (existing) {
+                  await this.emailModel.archiveEmail(existing.id, account.userId);
+                  processed++;
+                }
+              }
+              if (item.labelIds.includes('UNREAD')) {
+                console.log(`Message ${item.message.id} marked as READ (UNREAD label removed)`);
+                const existing = await this.emailModel.findEmailByProviderId(account.id, item.message.id);
+                if (existing) {
+                  await this.emailModel.markEmailAsRead(existing.id, account.userId, true);
+                  processed++;
+                }
+              }
             }
           } catch (err) {
             errors++;
@@ -1039,10 +1117,23 @@ export class EmailService {
       if (record.labelsAdded) {
         for (const item of record.labelsAdded) {
           try {
-            if (item.labelIds && item.labelIds.includes('INBOX')) {
-              console.log(`Message ${item.message.id} unarchived (INBOX label added)`);
-              await this.emailModel.unarchiveEmail(item.message.id, account.userId);
-              processed++;
+            if (item.labelIds) {
+              if (item.labelIds.includes('INBOX')) {
+                console.log(`Message ${item.message.id} unarchived (INBOX label added)`);
+                const existing = await this.emailModel.findEmailByProviderId(account.id, item.message.id);
+                if (existing) {
+                  await this.emailModel.unarchiveEmail(existing.id, account.userId);
+                  processed++;
+                }
+              }
+              if (item.labelIds.includes('UNREAD')) {
+                console.log(`Message ${item.message.id} marked as UNREAD (UNREAD label added)`);
+                const existing = await this.emailModel.findEmailByProviderId(account.id, item.message.id);
+                if (existing) {
+                  await this.emailModel.markEmailAsRead(existing.id, account.userId, false);
+                  processed++;
+                }
+              }
             }
           } catch (err) {
             errors++;
@@ -1096,5 +1187,155 @@ export class EmailService {
    */
   async getPaginatedEmails(userId: string, options: any) {
     return this.emailModel.getEmailsPaginated(userId, options);
+  }
+
+  private async syncReadStatusToProvider(account: EmailAccount, email: Email, isRead: boolean) {
+    const { provider } = account;
+    console.log(`[ReadSync] Starting sync for email ${email.id} (Provider: ${provider}, isRead: ${isRead})`);
+
+    try {
+      if (provider === 'gmail') {
+        // Use providerId (hex ID) if available
+        let gmailId = email.providerId;
+
+        if (!gmailId) {
+          console.log(`[ReadSync] providerId missing for Gmail email ${email.id}. Attempting to resolve via RFC Message-ID...`);
+          gmailId = (await this.connectorService.findGmailMessageByRfcId(account, email.messageId)) ?? undefined;
+          if (gmailId) {
+            console.log(`[ReadSync] Resolved Gmail ID: ${gmailId}. Backfilling DB.`);
+            await this.emailModel.updateEmail(email.id, { providerId: gmailId ?? undefined });
+          }
+        }
+
+        if (!gmailId) {
+          console.error(`[ReadSync] Could not resolve Gmail ID for message ${email.messageId}. Cannot sync status.`);
+          return;
+        }
+
+        // Gmail uses labels: UNREAD (if isRead=false, add UNREAD; isRead=true, remove UNREAD)
+        await this.connectorService.setGmailLabel(account, gmailId, {
+          add: isRead ? [] : ['UNREAD'],
+          remove: isRead ? ['UNREAD'] : []
+        });
+        console.log(`[ReadSync] Successfully synced Gmail label for message ${gmailId}`);
+      }
+      else if (provider === 'imap' || provider === 'custom') {
+        const { uid, folder } = email;
+        if (uid && folder) {
+          // IMAP uses \Seen flag
+          await this.connectorService.setImapFlag(account, folder, uid, {
+            add: isRead ? ['\\Seen'] : [],
+            remove: isRead ? [] : ['\\Seen']
+          });
+          console.log(`[ReadSync] Successfully synced IMAP flag for UID ${uid} in folder ${folder}`);
+        } else {
+          console.warn(`[ReadSync] Skipping IMAP sync for ${email.id} - missing UID or folder`);
+        }
+      }
+      else if (provider === 'outlook') {
+        let outlookId = email.providerId;
+
+        if (!outlookId) {
+          console.log(`[ReadSync] providerId missing for Outlook email ${email.id}. Attempting to resolve via Internet Message-ID...`);
+          outlookId = (await this.connectorService.findOutlookMessageByRfcId(account, email.messageId)) ?? undefined;
+          if (outlookId) {
+            console.log(`[ReadSync] Resolved Outlook ID: ${outlookId}. Backfilling DB.`);
+            await this.emailModel.updateEmail(email.id, { providerId: outlookId ?? undefined });
+          }
+        }
+
+        if (!outlookId) {
+          console.error(`[ReadSync] Could not resolve Outlook ID for message ${email.messageId}. Cannot sync status.`);
+          return;
+        }
+
+        await this.connectorService.setOutlookFlag(account, outlookId, { isRead });
+        console.log(`[ReadSync] Successfully synced Outlook status for message ${outlookId}`);
+      }
+    } catch (error) {
+      console.error(`[ReadSync] Failed to sync status for ${email.id} (${provider}):`, error);
+      // We could add a retry queue here if needed
+    }
+  }
+
+  /**
+   * Refresh read/unread status for existing emails in specified folders
+   */
+  private async refreshEmailFlags(account: EmailAccount): Promise<void> {
+    if (account.provider !== 'imap' && account.provider !== 'custom') {
+      return;
+    }
+
+    try {
+      const folders = await this.connectorService.getIMAPFolderConfigs(account);
+
+      for (const folder of folders) {
+        // Get unread UIDs + last 50 synced UIDs for this folder
+        const unreadUids = this.emailModel.getUnreadUids(account.id, folder.label);
+        const recentUids = this.emailModel.getRecentUids(account.id, folder.label, 50);
+
+        // Combine and unique UIDs
+        const uidsToRefresh = Array.from(new Set([...unreadUids, ...recentUids]));
+
+        if (uidsToRefresh.length === 0) continue;
+
+        // Fetch current flags from server
+        const flagMap = await this.connectorService.refreshIMAPFlags(account, folder.path, uidsToRefresh);
+
+        // Compare with DB and update if needed
+        for (const [uid, flags] of flagMap.entries()) {
+          const isReadOnServer = flags.includes('\\Seen');
+
+          // Get current state from DB
+          const existing = await this.emailModel.findEmailByImapUid(account.id, folder.label, uid);
+          if (existing && existing.isRead !== isReadOnServer) {
+            await this.emailModel.markEmailAsRead(existing.id, account.userId, isReadOnServer);
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error(`Failed to refresh email flags for account ${account.id}:`, error.message);
+    }
+  }
+
+  /**
+   * Refresh read/unread status for Outlook emails
+   */
+  private async refreshOutlookFlags(account: EmailAccount): Promise<void> {
+    try {
+      // Get unread or recent email IDs
+      // Note: For Outlook we don't have separate folders in a simple way like IMAP here
+      // but we can at least check the most recent synced messages across all folders
+      const unreadEmails = await this.emailModel.getEmailsForUser(account.userId, {
+        accountId: account.id,
+        unreadOnly: true,
+        limit: 50
+      });
+
+      const recentEmails = await this.emailModel.getEmailsForUser(account.userId, {
+        accountId: account.id,
+        limit: 50
+      });
+
+      const emailsToRefresh = Array.from(new Map([...unreadEmails.emails, ...recentEmails.emails].map(e => [e.id, e])).values());
+
+      for (const email of emailsToRefresh) {
+        try {
+          // Fetch current status from Outlook. Use providerId if available
+          const outlookId = email.providerId || email.messageId;
+          const isReadOnServer = await this.connectorService.fetchOutlookMessageStatus(account, outlookId);
+
+          if (email.isRead !== isReadOnServer) {
+            console.log(`Outlook message ${outlookId} status mismatch: CRM=${email.isRead}, Server=${isReadOnServer}. Updating...`);
+            await this.emailModel.markEmailAsRead(email.id, account.userId, isReadOnServer);
+          }
+        } catch (err) {
+          // Individual message fail shouldn't stop others
+          console.warn(`Failed to refresh status for Outlook message ${email.providerId || email.messageId}:`, err);
+        }
+      }
+    } catch (error: any) {
+      console.error(`Failed to refresh Outlook flags for account ${account.id}:`, error.message);
+    }
   }
 }

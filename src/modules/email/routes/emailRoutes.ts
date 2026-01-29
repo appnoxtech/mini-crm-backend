@@ -61,6 +61,7 @@ export function createEmailRoutes(emailController: EmailController): Router {
   router.post('/:emailId/archive', (req: any, res) => emailController.archiveEmail(req, res));
   router.post('/:emailId/unarchive', (req: any, res) => emailController.unarchiveEmail(req, res));
 
+  // Unified Read/Unread Status
   router.patch('/:emailId/read', (req: any, res) => emailController.markEmailAsRead(req, res));
 
   return router;

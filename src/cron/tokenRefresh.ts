@@ -15,7 +15,9 @@ import { EmailModel } from '../modules/email/models/emailModel';
  * By refreshing tokens regularly, we keep them active and prevent expiration.
  */
 export function startTokenRefreshJob(dbPath: string) {
-    const db = new Database(dbPath);
+    const db = new Database(dbPath, { timeout: 10000 });
+    db.pragma('journal_mode = WAL');
+    db.pragma('synchronous = NORMAL');
     const emailModel = new EmailModel(db);
     const oauthService = new OAuthService();
 

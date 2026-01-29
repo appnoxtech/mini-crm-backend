@@ -143,7 +143,7 @@ export class EmailController {
       const userId = req.user.id.toString();
 
       // 1. Determine which email address to use as the base for account resolution
-      const targetEmail = from || email || req.user.email;
+      const targetEmail = from ?? email ?? req.user.email;
       const accountId = `${userId}-${targetEmail}`;
 
       // 2. Try to find the specific account for this user and email

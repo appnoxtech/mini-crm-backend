@@ -16,13 +16,14 @@ export class HistoricalSyncService {
      * Returns the emails so they can be shown to the user right away
      */
     async quickInitialLoad(account: EmailAccount): Promise<{ emails: Email[]; count: number }> {
-        const folders = ['INBOX', 'SENT'];
+        const resolvedFolders = await this.getResolvedFolders(account);
         const allEmails: Email[] = [];
         const QUICK_LIMIT = 50; // 50 per folder = 100 total
 
         console.log(`[QuickLoad] Fetching latest ${QUICK_LIMIT * 2} emails for ${account.email}`);
 
-        for (const folder of folders) {
+        for (const folderConfig of resolvedFolders) {
+            const folder = folderConfig.path;
             try {
                 const highestUid = await this.connectorService.getHighestUid(account, folder);
                 if (highestUid <= 0) continue;
@@ -95,23 +96,24 @@ export class HistoricalSyncService {
      * Full historical sync - runs in background, fetches ALL emails
      */
     async syncHistoricalEmails(account: EmailAccount): Promise<void> {
-        const folders = ['INBOX', 'SENT'];
+        const resolvedFolders = await this.getResolvedFolders(account);
         const userId = account.userId;
         const accountId = account.id;
 
-        console.log(`[HistoricalSync] Starting FULL sync for ${account.email}`);
+        console.log(`[HistoricalSync] Starting FULL sync for ${account.email} on folders: ${resolvedFolders.map(f => f.path).join(', ')}`);
 
         if (this.notificationService) {
             this.notificationService.notifySyncStatus(userId, accountId, 'starting', {
                 type: 'full_historical',
-                folders
+                folders: resolvedFolders.map(f => f.path)
             });
         }
 
         const stats = { totalFetched: 0, folderStats: {} as any };
 
         try {
-            for (const folder of folders) {
+            for (const folderConfig of resolvedFolders) {
+                const folder = folderConfig.path;
                 const folderStats = await this.syncFolderHistorical(account, folder);
                 stats.totalFetched += folderStats.fetched;
                 stats.folderStats[folder] = folderStats;
@@ -232,9 +234,10 @@ export class HistoricalSyncService {
      * Incremental sync using UIDs (for subsequent syncs)
      */
     async syncIncrementalByUid(account: EmailAccount): Promise<void> {
-        const folders = ['INBOX', 'SENT'];
+        const resolvedFolders = await this.getResolvedFolders(account);
 
-        for (const folder of folders) {
+        for (const folderConfig of resolvedFolders) {
+            const folder = folderConfig.path;
             const lastUid = this.emailModel.getLastSyncedUid(account.id, folder) || 0;
             console.log(`[IncrementalSync] ${account.email} folder ${folder} since UID ${lastUid}`);
 
@@ -347,5 +350,35 @@ export class HistoricalSyncService {
         }
 
         return true;
+    }
+
+    private async getResolvedFolders(account: EmailAccount): Promise<{ path: string, label: string }[]> {
+        // For Gmail/Outlook, we don't use this service or these methods yet as they have their own sync flows
+        // But for IMAP, we need to find the real paths for INBOX and SENT
+        if (account.provider !== 'imap' && account.provider !== 'custom') {
+            return [
+                { path: 'INBOX', label: 'INBOX' },
+                { path: 'SENT', label: 'SENT' }
+            ];
+        }
+
+        try {
+            const configs = await this.connectorService.getIMAPFolderConfigs(account);
+            const targetLabels = ['INBOX', 'SENT'];
+            const resolved = configs.filter(c => targetLabels.includes(c.label));
+
+            if (resolved.length > 0) {
+                console.log(`[HistoricalSync] Resolved folders for ${account.email}:`, resolved.map(r => `${r.label}=>${r.path}`));
+                return resolved;
+            }
+        } catch (error) {
+            console.error(`[HistoricalSync] Failed to resolve IMAP folders:`, error);
+        }
+
+        // Fallback
+        return [
+            { path: 'INBOX', label: 'INBOX' },
+            { path: 'SENT', label: 'SENT' }
+        ];
     }
 }

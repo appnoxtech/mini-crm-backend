@@ -10,7 +10,9 @@ export function startEmailSyncJob(
     dbPath: string,
     notificationService?: RealTimeNotificationService
 ) {
-    const db = new Database(dbPath);
+    const db = new Database(dbPath, { timeout: 10000 });
+    db.pragma('journal_mode = WAL');
+    db.pragma('synchronous = NORMAL');
     const emailModel = new EmailModel(db);
     const oauthService = new OAuthService();
     const connectorService = new EmailConnectorService(oauthService);

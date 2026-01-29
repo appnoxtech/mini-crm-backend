@@ -41,7 +41,9 @@ export class SummarizationQueueService {
     private isInitialized: boolean = false;
 
     constructor(dbPath: string = './data.db') {
-        this.db = new Database(dbPath);
+        this.db = new Database(dbPath, { timeout: 10000 });
+        this.db.pragma('journal_mode = WAL');
+        this.db.pragma('synchronous = NORMAL');
 
         // Initialize the queue
         this.queue = new Queue<SummarizationJobData>('email-summarization', REDIS_URL, {

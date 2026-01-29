@@ -55,6 +55,10 @@ export class EmailModel {
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL,
         labelIds TEXT,
+        attachments TEXT,
+        uid INTEGER,
+        folder TEXT,
+        providerId TEXT,
         UNIQUE(messageId, accountId),
         FOREIGN KEY (accountId) REFERENCES email_accounts(id)
       )
@@ -100,10 +104,20 @@ export class EmailModel {
     // Add attachments column if it doesn't exist
     try {
       this.db.exec("ALTER TABLE emails ADD COLUMN attachments TEXT");
+    } catch (error) { }
 
-    } catch (error) {
-      // Column already exists, ignore error
-    }
+    // Add providerId column if it doesn't exist
+    try {
+      this.db.exec("ALTER TABLE emails ADD COLUMN providerId TEXT");
+    } catch (error) { }
+
+    // Add uid and folder columns if they don't exist
+    try {
+      this.db.exec("ALTER TABLE emails ADD COLUMN uid INTEGER");
+    } catch (error) { }
+    try {
+      this.db.exec("ALTER TABLE emails ADD COLUMN folder TEXT");
+    } catch (error) { }
 
     // Migration for multi-user email support: remove global UNIQUE constraint on messageId
     // and replace it with composite UNIQUE(messageId, accountId)
@@ -141,10 +155,32 @@ export class EmailModel {
               updatedAt TEXT NOT NULL,
               labelIds TEXT,
               attachments TEXT,
+              uid INTEGER,
+              folder TEXT,
+              providerId TEXT,
               UNIQUE(messageId, accountId),
               FOREIGN KEY (accountId) REFERENCES email_accounts(id)
             )
           `);
+
+          // Add missing columns if they don't exist (for existing databases)
+          const columnsToAdd = [
+            { name: 'uid', definition: 'INTEGER' },
+            { name: 'folder', definition: 'TEXT' },
+            { name: 'providerId', definition: 'TEXT' },
+          ];
+
+          for (const column of columnsToAdd) {
+            try {
+              this.db.exec(`ALTER TABLE emails ADD COLUMN ${column.name} ${column.definition}`);
+
+            } catch (error) {
+              // Column already exists, ignore error
+            }
+          }
+
+
+
           // Note: When migrating old data, attachments column will be null, which is fine
           this.db.exec("INSERT INTO emails SELECT id, messageId, threadId, accountId, from_address, to_addresses, cc_addresses, bcc_addresses, subject, body, htmlBody, isRead, isIncoming, sentAt, receivedAt, contactIds, dealIds, accountEntityIds, trackingPixelId, opens, clicks, createdAt, updatedAt, labelIds, NULL FROM emails_old");
           this.db.exec("DROP TABLE emails_old");
@@ -166,8 +202,8 @@ export class EmailModel {
       INSERT INTO emails (
         id, messageId, threadId, accountId, from_address, to_addresses, cc_addresses, bcc_addresses,
         subject, body, htmlBody, isRead, isIncoming, sentAt, receivedAt, contactIds, dealIds,
-        accountEntityIds, trackingPixelId, opens, clicks, createdAt, updatedAt, labelIds, attachments
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        accountEntityIds, trackingPixelId, opens, clicks, createdAt, updatedAt, labelIds, attachments, uid, folder, providerId
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -195,10 +231,33 @@ export class EmailModel {
       email.createdAt.toISOString(),
       email.updatedAt.toISOString(),
       email.labelIds ? JSON.stringify(email.labelIds) : null,
-      email.attachments ? JSON.stringify(email.attachments) : null
+      email.attachments ? JSON.stringify(email.attachments) : null,
+      email.uid || null,
+      email.folder || null,
+      email.providerId || null
     );
 
     return email;
+  }
+
+  /**
+   * Find an email by IMAP account, folder and UID
+   */
+  findEmailByImapUid(accountId: string, folder: string, uid: number): Email | null {
+    const stmt = this.db.prepare("SELECT * FROM emails WHERE accountId = ? AND folder = ? AND uid = ?");
+    const row = stmt.get(accountId, folder, uid) as any;
+    if (!row) return null;
+    return this.mapRowToEmail(row);
+  }
+
+  /**
+   * Find an email by internal provider ID (e.g. Gmail hex ID or Outlook message ID)
+   */
+  findEmailByProviderId(accountId: string, providerId: string): Email | null {
+    const stmt = this.db.prepare("SELECT * FROM emails WHERE accountId = ? AND providerId = ?");
+    const row = stmt.get(accountId, providerId) as any;
+    if (!row) return null;
+    return this.mapRowToEmail(row);
   }
 
   findEmailByMessageId(messageId: string, accountId?: string): Email | null {
@@ -235,6 +294,9 @@ export class EmailModel {
       updatedAt: new Date(row.updatedAt),
       attachments: row.attachments ? JSON.parse(row.attachments) : [],
       labelIds: row.labelIds ? JSON.parse(row.labelIds) : [],
+      uid: row.uid || undefined,
+      folder: row.folder || undefined,
+      providerId: row.providerId || undefined,
     };
 
     if (row.receivedAt) {
@@ -611,7 +673,9 @@ export class EmailModel {
       clicks: row.clicks || 0,
       createdAt: new Date(row.createdAt),
       updatedAt: new Date(row.updatedAt),
-      labelIds: row.labelIds ? JSON.parse(row.labelIds) : undefined,
+      labelIds: row.labelIds ? JSON.parse(row.labelIds) : [],
+      uid: row.uid,
+      folder: row.folder
     }));
 
     return { emails, total: emails.length };
@@ -781,6 +845,8 @@ export class EmailModel {
       createdAt: new Date(row.createdAt),
       updatedAt: new Date(row.updatedAt),
       labelIds: row.labelIds ? JSON.parse(row.labelIds) : [],
+      uid: row.uid,
+      folder: row.folder
     };
   }
 
@@ -966,6 +1032,32 @@ export class EmailModel {
   }
 
   /**
+   * Get UIDs of unread emails for an account and folder
+   */
+  getUnreadUids(accountId: string, folder: string): number[] {
+    const stmt = this.db.prepare(`
+      SELECT uid FROM emails 
+      WHERE accountId = ? AND folder = ? AND isRead = 0 AND uid IS NOT NULL
+    `);
+    const rows = stmt.all(accountId, folder) as any[];
+    return rows.map(r => r.uid);
+  }
+
+  /**
+   * Get UIDs of the most recent emails for an account and folder
+   */
+  getRecentUids(accountId: string, folder: string, limit: number = 50): number[] {
+    const stmt = this.db.prepare(`
+      SELECT uid FROM emails 
+      WHERE accountId = ? AND folder = ? AND uid IS NOT NULL
+      ORDER BY sentAt DESC
+      LIMIT ?
+    `);
+    const rows = stmt.all(accountId, folder, limit) as any[];
+    return rows.map(r => r.uid);
+  }
+
+  /**
    * Update last synced UID for an account/folder combination
    */
   updateLastSyncedUid(accountId: string, folder: string, uid: number): void {
@@ -1054,6 +1146,55 @@ export class EmailModel {
       limit,
       totalPages: Math.ceil(total / limit)
     };
+  }
+
+  updateEmail(
+    emailId: string,
+    updates: Partial<Email>
+  ): boolean {
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    if (updates.isRead !== undefined) {
+      fields.push("isRead = ?");
+      values.push(updates.isRead ? 1 : 0);
+    }
+
+    if (updates.providerId !== undefined) {
+      fields.push("providerId = ?");
+      values.push(updates.providerId);
+    }
+
+    if (updates.uid !== undefined) {
+      fields.push("uid = ?");
+      values.push(updates.uid);
+    }
+
+    if (updates.folder !== undefined) {
+      fields.push("folder = ?");
+      values.push(updates.folder);
+    }
+
+    if (updates.labelIds !== undefined) {
+      fields.push("labelIds = ?");
+      values.push(JSON.stringify(updates.labelIds));
+    }
+
+    if (fields.length === 0) return false;
+
+    fields.push("updatedAt = ?");
+    values.push(new Date().toISOString());
+
+    values.push(emailId);
+
+    const stmt = this.db.prepare(`
+      UPDATE emails
+      SET ${fields.join(", ")}
+      WHERE id = ?
+    `);
+
+    const result = stmt.run(...values);
+    return result.changes > 0;
   }
 
   // Helper method to map DB row to Email object
