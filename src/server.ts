@@ -111,6 +111,21 @@ import { PricingModel } from './modules/ai-agent/models/PricingModel';
 import { BrandGuidelinesModel } from './modules/ai-agent/models/BrandGuidelinesModel';
 import { KnowledgeBaseModel } from './modules/ai-agent/models/KnowledgeBaseModel';
 
+// Import calendar module
+import { CalendarEventModel } from './modules/calendar/models/CalendarEvent';
+import { EventReminderModel } from './modules/calendar/models/EventReminder';
+import { EventShareModel } from './modules/calendar/models/EventShare';
+import { EventNotificationModel } from './modules/calendar/models/EventNotification';
+import { CalendarService } from './modules/calendar/services/calendarService';
+import { ReminderService } from './modules/calendar/services/reminderService';
+import { NotificationSchedulerService } from './modules/calendar/services/notificationSchedulerService';
+import { NotificationDispatcherService } from './modules/calendar/services/notificationDispatcherService';
+import { CalendarController } from './modules/calendar/controllers/calendarController';
+import { ReminderController } from './modules/calendar/controllers/reminderController';
+import { NotificationController } from './modules/calendar/controllers/notificationController';
+import { createCalendarRoutes } from './modules/calendar/routes/calendarRoutes';
+import { startReminderProcessor } from './cron/reminderProcessor';
+
 
 const app = express();
 const server = createServer(app);
@@ -144,6 +159,12 @@ const productModel = new ProductModel(db);
 const callModel = new CallModel(db);
 const labelModel = new LabelModel(db);
 
+// Initialize calendar models
+const calendarEventModel = new CalendarEventModel(db);
+const eventReminderModel = new EventReminderModel(db);
+const eventShareModel = new EventShareModel(db);
+const eventNotificationModel = new EventNotificationModel(db);
+
 
 
 // db.exec(`DROP TABLE IF EXISTS deals`);
@@ -166,6 +187,12 @@ labelModel.initialize();
 productModel.initialize();
 callModel.initialize();
 
+// Initialize calendar tables
+calendarEventModel.initialize();
+eventReminderModel.initialize();
+eventShareModel.initialize();
+eventNotificationModel.initialize();
+
 // Initialize import model
 const importModel = new ImportModel(db);
 importModel.initialize();
@@ -173,7 +200,7 @@ importModel.initialize();
 
 
 // Initialize services
-const authService = new AuthService(userModel);
+const authService = new AuthService(userModel, personModel);
 const leadService = new LeadService(leadModel);
 const oauthService = new OAuthService();
 const emailConnectorService = new EmailConnectorService(oauthService);
@@ -192,6 +219,13 @@ const profileService = new ProfileService(userModel);
 
 // Initialize call service
 const callService = new CallService(callModel);
+
+// Initialize calendar services
+const notificationSchedulerService = new NotificationSchedulerService(eventNotificationModel, eventShareModel);
+const calendarEventService = new CalendarService(calendarEventModel, eventReminderModel, eventShareModel, notificationSchedulerService);
+const reminderCalendarService = new ReminderService(eventReminderModel, calendarEventModel, notificationSchedulerService);
+const notificationDispatcherService = new NotificationDispatcherService(eventNotificationModel, calendarEventModel, emailService as any, userModel as any);
+notificationDispatcherService.setSocketIO(io);
 
 // Initialize enhanced email services
 const configService = new MailSystemConfigService();
@@ -250,6 +284,11 @@ const suggestionOrchestrator = new SuggestionOrchestratorService(db);
 const suggestionController = new SuggestionController(suggestionOrchestrator);
 const aiConfigController = new AIConfigController(new PricingModel(db), new BrandGuidelinesModel(db), new KnowledgeBaseModel(db));
 
+// Initialize calendar controllers
+const calendarController = new CalendarController(calendarEventService);
+const reminderCalendarController = new ReminderController(reminderCalendarService);
+const notificationCalendarController = new NotificationController(eventNotificationModel);
+
 // Middleware
 app.use(express.json());
 app.use(corsMiddleware);
@@ -297,6 +336,9 @@ app.use('/api/import', createImportRoutes(importController));
 app.use('/api/ai', createSuggestionRoutes(suggestionController, aiConfigController));
 // Email webhook routes (Gmail Pub/Sub push notifications)
 app.use('/api/webhooks/email', createEmailWebhookRoutes());
+
+// Calendar module routes
+app.use('/api/calendar', createCalendarRoutes(calendarController, reminderCalendarController, notificationCalendarController));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -352,6 +394,9 @@ server.listen(PORT, '0.0.0.0', () => {
 
 // Start token refresh cron job (refreshes every 6 hours to prevent expiration)
 startTokenRefreshJob(DB_PATH);
+
+// Start calendar reminder processor cron job
+startReminderProcessor(notificationDispatcherService);
 
 
 // Start RunPod async job processor (NO REDIS REQUIRED!)

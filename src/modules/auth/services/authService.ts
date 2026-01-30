@@ -2,15 +2,18 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { User, AuthUser } from '../../../shared/types';
 import { UserModel } from '../models/User';
+import { PersonModel } from '../../management/persons/models/Person';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const SALT_ROUNDS = 10;
 
 export class AuthService {
   private userModel: UserModel;
+  private personModel: PersonModel;
 
-  constructor(userModel: UserModel) {
+  constructor(userModel: UserModel, personModel: PersonModel) {
     this.userModel = userModel;
+    this.personModel = personModel;
   }
 
   async hashPassword(password: string): Promise<string> {
@@ -126,9 +129,32 @@ export class AuthService {
 
   async searchByPersonName(searchTerm: string): Promise<any> {
     if (!searchTerm || !searchTerm.trim()) {
-      return;
+      return [];
     }
-    return this.userModel.searchByPersonName(searchTerm.trim());
+
+    const trimmedSearch = searchTerm.trim();
+
+    // Search in users table
+    const users = this.userModel.searchByPersonName(trimmedSearch);
+    const formattedUsers = users.map(user => ({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      type: 'user',
+      profileImg: user.profileImg
+    }));
+
+    // Search in persons table
+    const persons = this.personModel.searchByPersonName(trimmedSearch);
+    const formattedPersons = persons.map(person => ({
+      id: person.id,
+      name: `${person.firstName} ${person.lastName || ''}`.trim(),
+      email: person.emails?.[0]?.email || '',
+      type: 'person',
+      profileImg: [] // Persons don't have profileImg in this schema yet
+    }));
+
+    return [...formattedUsers, ...formattedPersons];
   }
 }
 

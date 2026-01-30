@@ -100,6 +100,11 @@ export class ResponseHandler {
         return res.status(statusCode).json(response);
     }
 
+    // Bad Request (400)
+    static badRequest(res: any, message: string = 'Bad request', details?: any) {
+        return this.error(res, message, 400, ErrorCodes.INVALID_INPUT, details);
+    }
+
     // Validation Error (400)
     static validationError(res: any, details: any, message: string = 'Validation failed') {
         return this.error(res, message, 400, ErrorCodes.VALIDATION_ERROR, details);
