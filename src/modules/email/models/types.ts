@@ -26,6 +26,7 @@ export interface Email {
   isIncoming: boolean;
   sentAt: Date;
   receivedAt?: Date;
+  snippet?: string;        // Short preview of the email body
   contactIds: string[];
   dealIds: string[];
   accountEntityIds: string[];
@@ -40,6 +41,15 @@ export interface Email {
   uid?: number;
   folder?: string;
   providerId?: string;
+}
+
+export interface EmailContent {
+  messageId: string;
+  body: string;
+  htmlBody?: string;
+  attachments?: EmailAttachment[];
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface EmailAccount {

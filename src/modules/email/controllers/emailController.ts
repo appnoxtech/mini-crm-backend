@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import axios from "axios";
 import { EmailService } from "../services/emailService";
 import { OAuthService } from "../services/oauthService";
 import { EmailQueueService } from "../services/emailQueueService";
@@ -120,6 +121,22 @@ export class EmailController {
       }
 
       return ResponseHandler.success(res, summaryData, "Thread Summary Fetched Successfully");
+    } catch (err: any) {
+      console.error(err);
+      return ResponseHandler.internalError(res, err.message);
+    }
+  }
+
+  // Get all emails for a thread
+  async getThreadEmails(req: AuthenticatedRequest, res: Response) {
+    try {
+      const threadId = req.params.threadId;
+      if (!threadId) {
+        return ResponseHandler.validationError(res, "Thread ID is required");
+      }
+
+      const emails = this.emailService.getEmailModel().getEmailsForThread(threadId);
+      return ResponseHandler.success(res, emails, "Thread emails fetched successfully");
     } catch (err: any) {
       console.error(err);
       return ResponseHandler.internalError(res, err.message);
@@ -1385,7 +1402,42 @@ export class EmailController {
     }
   }
 
-  async getArchive(req: AuthenticatedRequest, res: Response): Promise<void> {
+  async proxyImage(req: Request, res: Response): Promise<void> {
+    try {
+      const imageUrl = req.query.url as string;
+      if (!imageUrl) {
+        return ResponseHandler.error(res, "URL parameter is required", 400);
+      }
+
+      // We use a stream to pipe the image directly to the response
+      const response = await axios({
+        url: imageUrl,
+        method: 'GET',
+        responseType: 'stream',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Referer': 'https://drive.google.com/',
+        },
+        timeout: 10000,
+      });
+
+      // Pass along the content type if available
+      const contentType = response.headers['content-type'];
+      if (contentType) {
+        res.setHeader('Content-Type', contentType);
+      }
+
+      // Cache for 24 hours to reduce backend load
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+
+      response.data.pipe(res);
+    } catch (error: any) {
+      console.error("Error proxying image:", error.message);
+      res.status(404).end();
+    }
+  }
+
+  getArchive(req: AuthenticatedRequest, res: Response): Promise<void> {
     req.query.folder = 'archive';
     return this.getEmails(req, res);
   }

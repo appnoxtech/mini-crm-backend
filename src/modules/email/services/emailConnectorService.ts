@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import MailComposer from 'nodemailer/lib/mail-composer';
 import { ImapFlow } from 'imapflow';
 import { google } from 'googleapis';
 import { EmailAccount, EmailAttachment } from '../models/types';
@@ -569,8 +570,8 @@ export class EmailConnectorService {
     useQuickSync: boolean = false
   ): Promise<any[]> {
     const parallelSync = new ParallelImapSyncService(
-      3,  // Max 3 parallel connections
-      100 // Batch size of 100 emails
+      5,  // Max 3 parallel connections
+      50 // Batch size of 100 emails
     );
 
     try {
@@ -789,6 +790,52 @@ export class EmailConnectorService {
 
     try {
       const result = await transporter.sendMail(mailOptions);
+
+      // For custom IMAP/SMTP accounts, we need to manually append the sent email to the "Sent" folder
+      if (account.provider === 'custom' || (!['gmail', 'outlook'].includes(account.provider) && account.imapConfig)) {
+        try {
+          const composer = new MailComposer(mailOptions);
+          const messageBuffer = await composer.compile().build();
+
+          const client = await this.connectIMAP(account);
+
+          // Prevent crash on error
+          client.on('error', (err) => {
+            console.error('IMAP Client Error during append:', err);
+          });
+
+          if (!client.usable) {
+            await client.connect();
+          }
+
+          // Try to find the Sent folder
+          let sentPath = 'Sent';
+          const specialUse = (client.mailbox as any)?.specialUse || {};
+          // ImapFlow might map special use folders
+
+          // Simple heuristic for now: try standard names if special use isn't clear
+          // Or just default to 'Sent' and handle error/fallback?
+          // Let's try to list folders to find a "Sent" one if we want to be fancy, 
+          // but for now, 'Sent' is safe for most. 'INBOX.Sent' is another. 
+          // Better: use ImapFlow's capability if available, otherwise default 'Sent'.
+
+          // Actually, ImapFlow doesn't explicitly expose a simple "getSentFolder" helper without listing.
+          // We'll try 'Sent' first.
+
+          const lock = await client.getMailboxLock(sentPath);
+          try {
+            await client.append(sentPath, messageBuffer, ['\\Seen']);
+          } finally {
+            lock.release();
+          }
+
+          await client.logout();
+        } catch (appendError) {
+          console.error('Failed to append sent email to IMAP Sent folder:', appendError);
+          // We intentionally don't throw here to avoid failing the send operation 
+          // just because sync failed. The email was sent successfully via SMTP.
+        }
+      }
 
       return result.messageId as string;
     } catch (error: any) {

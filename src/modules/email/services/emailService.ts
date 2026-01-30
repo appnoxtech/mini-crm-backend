@@ -351,23 +351,45 @@ export class EmailService {
     }
 
     if (existing) {
-      // Backfill missing fields for existing emails (providerId, uid, folder)
+      // If found, we can potentially backfill missing fields (historical sync)
+      let needsUpdate = false;
       const updates: any = {};
-      if (!existing.providerId && parsed.providerId) updates.providerId = parsed.providerId;
-      if (!existing.uid && parsed.uid) updates.uid = parsed.uid;
-      if (!existing.folder && parsed.folder) updates.folder = parsed.folder;
 
-      if (Object.keys(updates).length > 0) {
+      if (!existing.providerId && parsed.providerId) {
+        updates.providerId = parsed.providerId;
+        needsUpdate = true;
+      }
+      if (parsed.uid && existing.uid === null) {
+        updates.uid = parsed.uid;
+        needsUpdate = true;
+      }
+
+      if (parsed.folder && existing.folder === null) {
+        updates.folder = parsed.folder;
+        needsUpdate = true;
+      }
+
+      if (needsUpdate) {
         console.log(`Backfilling missing fields for existing email ${existing.id}:`, updates);
         await this.emailModel.updateEmail(existing.id, updates);
       }
 
       if (existing.isRead !== parsed.isRead) {
-        // console.log(`Email ${existing.id} read status changed to ${parsed.isRead}. Updating.`);
         await this.emailModel.markEmailAsRead(existing.id, account.userId, !!parsed.isRead);
       }
+
       return { id: existing.id, isNew: false };
     }
+
+    // --- CHECK FOR GLOBAL CONTENT REUSE ---
+    const existingContent = await this.emailModel.findContentByMessageId(parsed.messageId!);
+    if (existingContent) {
+      console.log(`Reusing existing content for messageId: ${parsed.messageId}`);
+      parsed.body = existingContent.body;
+      parsed.htmlBody = existingContent.htmlBody;
+      parsed.attachments = existingContent.attachments;
+    }
+    // --------------------------------------
 
     // Match with CRM entities
     const { contactIds, dealIds, accountEntityIds } =
@@ -798,16 +820,17 @@ export class EmailService {
 
     const walk = (parts: any[]) => {
       for (const part of parts) {
-        if (part.filename && part.filename.length > 0) {
+        const contentId = this.getGmailHeader(part.headers || [], 'content-id');
+        if ((part.filename && part.filename.length > 0) || contentId) {
           const contentType = part.mimeType || 'application/octet-stream';
           const attachmentId = part.body?.attachmentId || `att_${Date.now()}_${attachments.length}`;
 
           const attachment: EmailAttachment = {
             id: attachmentId,
-            filename: part.filename,
+            filename: part.filename || (contentId ? `inline_${contentId.replace(/[<>]/g, '')}` : `att_${attachments.length}`),
             contentType: contentType,
             size: part.body?.size || 0,
-            contentId: this.getGmailHeader(part.headers || [], 'content-id')
+            contentId: contentId
           };
 
           // If content is directly in the part (rare for large files, but possible for small ones/inline)

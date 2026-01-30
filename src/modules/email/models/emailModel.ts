@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { Email, EmailAccount, Contact, Deal } from "./types";
+import { Email, EmailAccount, EmailAttachment, EmailContent, Contact, Deal } from "./types";
 
 export class EmailModel {
   private db: Database.Database;
@@ -59,8 +59,21 @@ export class EmailModel {
         uid INTEGER,
         folder TEXT,
         providerId TEXT,
+        snippet TEXT,
         UNIQUE(messageId, accountId),
         FOREIGN KEY (accountId) REFERENCES email_accounts(id)
+      )
+    `);
+
+    // Create email_contents table for global unique content
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS email_contents (
+        messageId TEXT PRIMARY KEY,
+        body TEXT NOT NULL,
+        htmlBody TEXT,
+        attachments TEXT,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
       )
     `);
     // Create thread_summaries table
@@ -195,16 +208,126 @@ export class EmailModel {
     } catch (error: any) {
       console.error("Migration to multi-user emails failed:", error.message);
     }
+
+    // Normalization Migration: Move existing data to email_contents and populate snippets
+    try {
+      const needsNormalization = this.db.prepare("SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='emails' AND sql LIKE '%body TEXT NOT NULL%'").get() as any;
+
+      if (needsNormalization && needsNormalization.count > 0) {
+        console.log("Starting email database normalization migration...");
+
+        this.db.transaction(() => {
+          // 1. Move unique content to email_contents
+          this.db.exec(`
+            INSERT OR IGNORE INTO email_contents (messageId, body, htmlBody, attachments, createdAt, updatedAt)
+            SELECT messageId, body, htmlBody, attachments, createdAt, updatedAt
+            FROM emails
+          `);
+
+          // 2. Add snippet column if not already there
+          try {
+            this.db.exec("ALTER TABLE emails ADD COLUMN snippet TEXT");
+          } catch (e) { }
+
+          // 3. Populate snippets and clear large content columns
+          // Simple snippet logic: first 200 chars
+          this.db.exec(`
+            UPDATE emails 
+            SET snippet = SUBSTR(REPLACE(REPLACE(body, CHAR(10), ' '), CHAR(13), ' '), 1, 200)
+          `);
+
+          // 4. Create the new schema emails table (no heavy bodies/attachments)
+          this.db.exec("ALTER TABLE emails RENAME TO emails_temp");
+          this.db.exec(`
+            CREATE TABLE emails (
+              id TEXT PRIMARY KEY,
+              messageId TEXT NOT NULL,
+              threadId TEXT,
+              accountId TEXT NOT NULL,
+              from_address TEXT NOT NULL,
+              to_addresses TEXT NOT NULL,
+              cc_addresses TEXT,
+              bcc_addresses TEXT,
+              subject TEXT NOT NULL,
+              snippet TEXT,
+              isRead BOOLEAN DEFAULT 0,
+              isIncoming BOOLEAN DEFAULT 1,
+              sentAt TEXT NOT NULL,
+              receivedAt TEXT,
+              contactIds TEXT,
+              dealIds TEXT,
+              accountEntityIds TEXT,
+              trackingPixelId TEXT,
+              opens INTEGER DEFAULT 0,
+              clicks INTEGER DEFAULT 0,
+              createdAt TEXT NOT NULL,
+              updatedAt TEXT NOT NULL,
+              labelIds TEXT,
+              uid INTEGER,
+              folder TEXT,
+              providerId TEXT,
+              UNIQUE(messageId, accountId),
+              FOREIGN KEY (accountId) REFERENCES email_accounts(id)
+            )
+          `);
+
+          // 5. Transfer data to the new thin table
+          this.db.exec(`
+            INSERT INTO emails (
+              id, messageId, threadId, accountId, from_address, to_addresses, cc_addresses, bcc_addresses,
+              subject, snippet, isRead, isIncoming, sentAt, receivedAt, contactIds, dealIds,
+              accountEntityIds, trackingPixelId, opens, clicks, createdAt, updatedAt, labelIds, uid, folder, providerId
+            )
+            SELECT 
+              id, messageId, threadId, accountId, from_address, to_addresses, cc_addresses, bcc_addresses,
+              subject, snippet, isRead, isIncoming, sentAt, receivedAt, contactIds, dealIds,
+              accountEntityIds, trackingPixelId, opens, clicks, createdAt, updatedAt, labelIds, uid, folder, providerId
+            FROM emails_temp
+          `);
+
+          // 6. Cleanup
+          this.db.exec("DROP TABLE emails_temp");
+
+          // 7. Re-create indexes
+          this.db.exec("CREATE INDEX IF NOT EXISTS idx_emails_accountId ON emails(accountId)");
+          this.db.exec("CREATE INDEX IF NOT EXISTS idx_emails_messageId ON emails(messageId)");
+          this.db.exec("CREATE INDEX IF NOT EXISTS idx_emails_sentAt ON emails(sentAt)");
+        })();
+        console.log("Email database normalization migration completed.");
+      }
+    } catch (error: any) {
+      console.error("Database normalization migration failed:", error.message);
+    }
   }
 
   createEmail(email: Email): Email {
+    // 1. Save or update unique content
+    const contentStmt = this.db.prepare(`
+      INSERT OR IGNORE INTO email_contents (
+        messageId, body, htmlBody, attachments, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    contentStmt.run(
+      email.messageId,
+      email.body,
+      email.htmlBody || null,
+      email.attachments ? JSON.stringify(email.attachments) : null,
+      email.createdAt.toISOString(),
+      email.updatedAt.toISOString()
+    );
+
+    // 2. Save account-specific metadata
     const stmt = this.db.prepare(`
       INSERT INTO emails (
         id, messageId, threadId, accountId, from_address, to_addresses, cc_addresses, bcc_addresses,
-        subject, body, htmlBody, isRead, isIncoming, sentAt, receivedAt, contactIds, dealIds,
-        accountEntityIds, trackingPixelId, opens, clicks, createdAt, updatedAt, labelIds, attachments, uid, folder, providerId
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        subject, snippet, isRead, isIncoming, sentAt, receivedAt, contactIds, dealIds,
+        accountEntityIds, trackingPixelId, opens, clicks, createdAt, updatedAt, labelIds, uid, folder, providerId
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
+
+    // Calculate snippet if not provided
+    const snippet = email.snippet || email.body.substring(0, 200).replace(/(\r\n|\n|\r)/gm, " ");
 
     stmt.run(
       email.id,
@@ -216,8 +339,7 @@ export class EmailModel {
       email.cc ? JSON.stringify(email.cc) : null,
       email.bcc ? JSON.stringify(email.bcc) : null,
       email.subject,
-      email.body,
-      email.htmlBody || null,
+      snippet,
       email.isRead ? 1 : 0,
       email.isIncoming ? 1 : 0,
       email.sentAt.toISOString(),
@@ -231,7 +353,6 @@ export class EmailModel {
       email.createdAt.toISOString(),
       email.updatedAt.toISOString(),
       email.labelIds ? JSON.stringify(email.labelIds) : null,
-      email.attachments ? JSON.stringify(email.attachments) : null,
       email.uid || null,
       email.folder || null,
       email.providerId || null
@@ -241,10 +362,32 @@ export class EmailModel {
   }
 
   /**
+   * Find unique content by messageId
+   */
+  findContentByMessageId(messageId: string): EmailContent | null {
+    const stmt = this.db.prepare("SELECT * FROM email_contents WHERE messageId = ?");
+    const row = stmt.get(messageId) as any;
+    if (!row) return null;
+    return {
+      messageId: row.messageId,
+      body: row.body,
+      htmlBody: row.htmlBody || undefined,
+      attachments: row.attachments ? JSON.parse(row.attachments) : undefined,
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt)
+    };
+  }
+
+  /**
    * Find an email by IMAP account, folder and UID
    */
   findEmailByImapUid(accountId: string, folder: string, uid: number): Email | null {
-    const stmt = this.db.prepare("SELECT * FROM emails WHERE accountId = ? AND folder = ? AND uid = ?");
+    const stmt = this.db.prepare(`
+      SELECT e.*, ec.body, ec.htmlBody, ec.attachments 
+      FROM emails e 
+      JOIN email_contents ec ON e.messageId = ec.messageId
+      WHERE e.accountId = ? AND e.folder = ? AND e.uid = ?
+    `);
     const row = stmt.get(accountId, folder, uid) as any;
     if (!row) return null;
     return this.mapRowToEmail(row);
@@ -254,7 +397,12 @@ export class EmailModel {
    * Find an email by internal provider ID (e.g. Gmail hex ID or Outlook message ID)
    */
   findEmailByProviderId(accountId: string, providerId: string): Email | null {
-    const stmt = this.db.prepare("SELECT * FROM emails WHERE accountId = ? AND providerId = ?");
+    const stmt = this.db.prepare(`
+      SELECT e.*, ec.body, ec.htmlBody, ec.attachments 
+      FROM emails e 
+      JOIN email_contents ec ON e.messageId = ec.messageId
+      WHERE e.accountId = ? AND e.providerId = ?
+    `);
     const row = stmt.get(accountId, providerId) as any;
     if (!row) return null;
     return this.mapRowToEmail(row);
@@ -262,8 +410,14 @@ export class EmailModel {
 
   findEmailByMessageId(messageId: string, accountId?: string): Email | null {
     const query = accountId
-      ? "SELECT * FROM emails WHERE messageId = ? AND accountId = ?"
-      : "SELECT * FROM emails WHERE messageId = ?"
+      ? `SELECT e.*, ec.body, ec.htmlBody, ec.attachments 
+         FROM emails e 
+         JOIN email_contents ec ON e.messageId = ec.messageId 
+         WHERE e.messageId = ? AND e.accountId = ?`
+      : `SELECT e.*, ec.body, ec.htmlBody, ec.attachments 
+         FROM emails e 
+         JOIN email_contents ec ON e.messageId = ec.messageId 
+         WHERE e.messageId = ?`
     const stmt = this.db.prepare(query);
     const row = accountId ? stmt.get(messageId, accountId) : stmt.get(messageId) as any;
 
@@ -297,6 +451,7 @@ export class EmailModel {
       uid: row.uid || undefined,
       folder: row.folder || undefined,
       providerId: row.providerId || undefined,
+      snippet: row.snippet || undefined,
     };
 
     if (row.receivedAt) {
@@ -602,9 +757,11 @@ export class EmailModel {
 
   getEmailsForContact(contactId: string): Email[] {
     const stmt = this.db.prepare(`
-      SELECT * FROM emails 
-      WHERE contactIds LIKE ? 
-      ORDER BY sentAt DESC
+      SELECT e.*, ec.body, ec.htmlBody, ec.attachments 
+      FROM emails e 
+      JOIN email_contents ec ON e.messageId = ec.messageId
+      WHERE e.contactIds LIKE ? 
+      ORDER BY e.sentAt DESC
     `);
     const rows = stmt.all(`%"${contactId}"%`) as any[];
     return rows.map(row => this.mapRowToEmail(row));
@@ -612,9 +769,11 @@ export class EmailModel {
 
   getEmailsForDeal(dealId: string): Email[] {
     const stmt = this.db.prepare(`
-      SELECT * FROM emails 
-      WHERE dealIds LIKE ? 
-      ORDER BY sentAt DESC
+      SELECT e.*, ec.body, ec.htmlBody, ec.attachments 
+      FROM emails e 
+      JOIN email_contents ec ON e.messageId = ec.messageId
+      WHERE e.dealIds LIKE ? 
+      ORDER BY e.sentAt DESC
     `);
     const rows = stmt.all(`%"${dealId}"%`) as any[];
     return rows.map(row => this.mapRowToEmail(row));
@@ -622,9 +781,11 @@ export class EmailModel {
 
   getEmailsByAddress(address: string): Email[] {
     const stmt = this.db.prepare(`
-      SELECT * FROM emails 
-      WHERE from_address = ? OR to_addresses LIKE ? 
-      ORDER BY sentAt DESC
+      SELECT e.*, ec.body, ec.htmlBody, ec.attachments 
+      FROM emails e 
+      JOIN email_contents ec ON e.messageId = ec.messageId
+      WHERE e.from_address = ? OR e.to_addresses LIKE ? 
+      ORDER BY e.sentAt DESC
     `);
     const rows = stmt.all(address, `%${address}%`) as any[];
     return rows.map(row => this.mapRowToEmail(row));
@@ -632,9 +793,11 @@ export class EmailModel {
 
   getEmailsForThread(threadId: string): Email[] {
     const stmt = this.db.prepare(`
-      SELECT * FROM emails 
-      WHERE threadId = ? 
-      ORDER BY sentAt ASC
+      SELECT e.*, ec.body, ec.htmlBody, ec.attachments 
+      FROM emails e 
+      JOIN email_contents ec ON e.messageId = ec.messageId
+      WHERE e.threadId = ? 
+      ORDER BY e.sentAt ASC
     `);
     const rows = stmt.all(threadId) as any[];
     return rows.map(row => this.mapRowToEmail(row));
@@ -657,8 +820,8 @@ export class EmailModel {
       cc: row.cc_addresses ? JSON.parse(row.cc_addresses) : undefined,
       bcc: row.bcc_addresses ? JSON.parse(row.bcc_addresses) : undefined,
       subject: row.subject,
-      body: row.body,
-      htmlBody: row.htmlBody,
+      snippet: row.snippet,
+      body: "", // No body in bulk list
       isRead: Boolean(row.isRead),
       isIncoming: Boolean(row.isIncoming),
       sentAt: new Date(row.sentAt),
@@ -743,14 +906,14 @@ export class EmailModel {
     // Add search filter
     if (search) {
       whereClause +=
-        " AND (e.subject LIKE ? OR e.from_address LIKE ? OR e.body LIKE ?)";
+        " AND (e.subject LIKE ? OR e.from_address LIKE ? OR ec.body LIKE ?)";
       const searchTerm = `%${search}%`;
       params.push(searchTerm, searchTerm, searchTerm);
     }
 
     // Get total count
     const countStmt = this.db.prepare(
-      `SELECT COUNT(*) as total FROM emails e ${whereClause}`
+      `SELECT COUNT(*) as total FROM emails e ${search ? 'JOIN email_contents ec ON e.messageId = ec.messageId' : ''} ${whereClause}`
     );
     const countResult = countStmt.get(...params) as { total: number };
     const total = countResult.total;
@@ -760,6 +923,7 @@ export class EmailModel {
       SELECT e.*, ea.email as accountEmail 
       FROM emails e 
       LEFT JOIN email_accounts ea ON e.accountId = ea.id 
+      ${search ? 'JOIN email_contents ec ON e.messageId = ec.messageId' : ''}
       ${whereClause} 
       ORDER BY e.sentAt DESC 
       LIMIT ? OFFSET ?
@@ -808,8 +972,9 @@ export class EmailModel {
   // Get a specific email by ID
   getEmailById(emailId: string, userId: string): Email | null {
     const stmt = this.db.prepare(`
-      SELECT e.*, ea.email as accountEmail 
+      SELECT e.*, ec.body, ec.htmlBody, ec.attachments, ea.email as accountEmail 
       FROM emails e 
+      JOIN email_contents ec ON e.messageId = ec.messageId
       LEFT JOIN email_accounts ea ON e.accountId = ea.id 
       WHERE e.id = ? AND e.accountId IN (SELECT id FROM email_accounts WHERE userId = ?)
     `);
@@ -817,37 +982,7 @@ export class EmailModel {
     const row = stmt.get(emailId, userId) as any;
     if (!row) return null;
 
-    return {
-      id: row.id,
-      messageId: row.messageId,
-      threadId: row.threadId,
-      accountId: row.accountId,
-      from: row.from_address,
-      to: row.to_addresses ? JSON.parse(row.to_addresses) : [],
-      cc: row.cc_addresses ? JSON.parse(row.cc_addresses) : undefined,
-      bcc: row.bcc_addresses ? JSON.parse(row.bcc_addresses) : undefined,
-      subject: row.subject,
-      body: row.body,
-      htmlBody: row.htmlBody,
-      attachments: row.attachments ? JSON.parse(row.attachments) : [],
-      isRead: Boolean(row.isRead),
-      isIncoming: Boolean(row.isIncoming),
-      sentAt: new Date(row.sentAt),
-      receivedAt: row.receivedAt ? new Date(row.receivedAt) : undefined,
-      contactIds: row.contactIds ? JSON.parse(row.contactIds) : [],
-      dealIds: row.dealIds ? JSON.parse(row.dealIds) : [],
-      accountEntityIds: row.accountEntityIds
-        ? JSON.parse(row.accountEntityIds)
-        : [],
-      trackingPixelId: row.trackingPixelId,
-      opens: row.opens || 0,
-      clicks: row.clicks || 0,
-      createdAt: new Date(row.createdAt),
-      updatedAt: new Date(row.updatedAt),
-      labelIds: row.labelIds ? JSON.parse(row.labelIds) : [],
-      uid: row.uid,
-      folder: row.folder
-    };
+    return this.mapRowToEmail(row);
   }
 
   archiveEmail(emailId: string, userId: string): boolean {
@@ -967,16 +1102,35 @@ export class EmailModel {
     let inserted = 0;
     let skipped = 0;
 
+    const contentStmt = this.db.prepare(`
+      INSERT OR IGNORE INTO email_contents (
+        messageId, body, htmlBody, attachments, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
     const insertStmt = this.db.prepare(`
       INSERT OR IGNORE INTO emails (
         id, messageId, threadId, accountId, from_address, to_addresses, cc_addresses, bcc_addresses,
-        subject, body, htmlBody, isRead, isIncoming, sentAt, receivedAt, contactIds, dealIds,
-        accountEntityIds, trackingPixelId, opens, clicks, createdAt, updatedAt, labelIds, attachments, uid, folder
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        subject, snippet, isRead, isIncoming, sentAt, receivedAt, contactIds, dealIds,
+        accountEntityIds, trackingPixelId, opens, clicks, createdAt, updatedAt, labelIds, uid, folder, providerId
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const transaction = this.db.transaction((emails: Email[]) => {
       for (const email of emails) {
+        // 1. Content
+        contentStmt.run(
+          email.messageId,
+          email.body,
+          email.htmlBody || null,
+          email.attachments ? JSON.stringify(email.attachments) : null,
+          email.createdAt instanceof Date ? email.createdAt.toISOString() : email.createdAt,
+          email.updatedAt instanceof Date ? email.updatedAt.toISOString() : email.updatedAt
+        );
+
+        // 2. Metadata (snippet calculate)
+        const snippet = email.snippet || email.body.substring(0, 200).replace(/(\r\n|\n|\r)/gm, " ");
+
         const result = insertStmt.run(
           email.id,
           email.messageId,
@@ -987,8 +1141,7 @@ export class EmailModel {
           email.cc ? JSON.stringify(email.cc) : null,
           email.bcc ? JSON.stringify(email.bcc) : null,
           email.subject,
-          email.body,
-          email.htmlBody || null,
+          snippet,
           email.isRead ? 1 : 0,
           email.isIncoming ? 1 : 0,
           email.sentAt instanceof Date ? email.sentAt.toISOString() : email.sentAt,
@@ -1002,9 +1155,9 @@ export class EmailModel {
           email.createdAt instanceof Date ? email.createdAt.toISOString() : email.createdAt,
           email.updatedAt instanceof Date ? email.updatedAt.toISOString() : email.updatedAt,
           email.labelIds ? JSON.stringify(email.labelIds) : null,
-          email.attachments ? JSON.stringify(email.attachments) : null,
           email.uid || null,
-          email.folder || null
+          email.folder || null,
+          email.providerId || null
         );
 
         if (result.changes > 0) {
@@ -1209,8 +1362,8 @@ export class EmailModel {
       cc: row.cc_addresses ? JSON.parse(row.cc_addresses) : undefined,
       bcc: row.bcc_addresses ? JSON.parse(row.bcc_addresses) : undefined,
       subject: row.subject,
-      body: row.body,
-      htmlBody: row.htmlBody,
+      body: row.body || "",
+      htmlBody: row.htmlBody || undefined,
       isRead: !!row.isRead,
       isIncoming: !!row.isIncoming,
       sentAt: new Date(row.sentAt),

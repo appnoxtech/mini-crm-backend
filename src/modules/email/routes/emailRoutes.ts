@@ -8,6 +8,7 @@ export function createEmailRoutes(emailController: EmailController): Router {
   // Public tracking endpoints (no auth required)
   router.post('/track/open/:trackingId', (req, res) => emailController.handleEmailOpen(req, res));
   router.get('/track/click/:trackingId', (req, res) => emailController.handleLinkClick(req, res));
+  router.get('/proxy-image', (req, res) => emailController.proxyImage(req, res));
 
   // OAuth authorization endpoints (no auth required)
   router.get('/oauth/gmail/authorize', (req, res) => emailController.oauthGmailAuthorize(req, res));
@@ -27,6 +28,7 @@ export function createEmailRoutes(emailController: EmailController): Router {
   // Thread summary routes
   router.post('/threads/:threadId/summarize', (req, res) => emailController.summarizeThread(req, res));
   router.get('/threads/:threadId/summary', (req, res) => emailController.getThreadSummary(req, res));
+  router.get('/threads/:threadId/emails', (req: any, res) => emailController.getThreadEmails(req, res));
 
   // Email sending
   router.post('/send', (req: any, res) => emailController.sendEmail(req, res));
@@ -60,6 +62,7 @@ export function createEmailRoutes(emailController: EmailController): Router {
 
   router.post('/:emailId/archive', (req: any, res) => emailController.archiveEmail(req, res));
   router.post('/:emailId/unarchive', (req: any, res) => emailController.unarchiveEmail(req, res));
+  router.get('/:emailId', (req: any, res) => emailController.getEmailById(req, res));
 
   // Unified Read/Unread Status
   router.patch('/:emailId/read', (req: any, res) => emailController.markEmailAsRead(req, res));
