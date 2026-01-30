@@ -21,6 +21,7 @@ ecosystem.config.js
 data.db
 data.db-shm
 data.db-wal
+uploads/
 
 # Build outputs
 build/
