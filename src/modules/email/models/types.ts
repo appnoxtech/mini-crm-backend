@@ -39,6 +39,7 @@ export interface Email {
   // IMAP-specific fields for UID tracking
   uid?: number;
   folder?: string;
+  providerId?: string;
 }
 
 export interface EmailAccount {

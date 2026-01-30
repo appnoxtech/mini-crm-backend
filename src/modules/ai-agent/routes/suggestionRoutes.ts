@@ -16,9 +16,15 @@ export function createSuggestionRoutes(
     // Config/Management
     router.get("/config/pricing", (req, res) => configController.getAllTiers(req, res));
     router.post("/config/pricing", (req, res) => configController.createTier(req, res));
+    router.delete("/config/pricing/:id", (req, res) => configController.deleteTier(req, res));
+    router.put("/config/pricing/:id", (req, res) => configController.updateTier(req, res));
     router.post("/config/discount", (req, res) => configController.createDiscountRule(req, res));
     router.get("/config/guidelines", (req, res) => configController.getGuidelines(req, res));
     router.patch("/config/guidelines", (req, res) => configController.updateGuidelines(req, res));
+    router.get("/config/knowledge", (req, res) => configController.getKnowledgeBase(req, res));
+    router.post("/config/knowledge", (req, res) => configController.addToKnowledgeBase(req, res));
+    router.put("/config/knowledge/:id", (req, res) => configController.updateKnowledgeBaseItem(req, res));
+    router.delete("/config/knowledge/:id", (req, res) => configController.deleteKnowledgeBaseItem(req, res));
 
     return router;
 }

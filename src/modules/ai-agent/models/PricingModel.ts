@@ -114,6 +114,39 @@ export class PricingModel {
         return this.getTierById(id)!;
     }
 
+    deleteTier(id: string): boolean {
+        const deleteRules = this.db.prepare('DELETE FROM discount_rules WHERE tier_id = ?');
+        deleteRules.run(id);
+
+        const deleteTier = this.db.prepare('DELETE FROM pricing_tiers WHERE id = ?');
+        const result = deleteTier.run(id);
+
+        return result.changes > 0;
+    }
+
+    updateTier(id: string, data: Partial<Omit<PricingTier, 'id' | 'createdAt' | 'updatedAt' | 'discountRules'>>): PricingTier | null {
+        const existing = this.getTierById(id);
+        if (!existing) return null;
+
+        const stmt = this.db.prepare(`
+            UPDATE pricing_tiers 
+            SET name = ?, base_price = ?, currency = ?, features = ?, contract_terms = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `);
+
+        stmt.run(
+            data.name ?? existing.name,
+            data.basePrice ?? existing.basePrice,
+            data.currency ?? existing.currency,
+            JSON.stringify(data.features ?? existing.features),
+            data.contractTerms ?? existing.contractTerms,
+            (data.isActive ?? existing.isActive) ? 1 : 0,
+            id
+        );
+
+        return this.getTierById(id);
+    }
+
     // Rules
     createDiscountRule(data: Omit<DiscountRule, 'id'>): DiscountRule {
         const id = uuidv4();

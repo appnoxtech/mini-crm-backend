@@ -12,12 +12,12 @@ export class SuggestionController {
         try {
             const { dealId, personId, threadId, messageId, email, forceRefresh, customPrompt, lastEmailContent, lastEmailSubject, userName } = req.body;
 
-            // Allow either: context identifiers OR customPrompt with content (for refinement)
+            // Allow either: context identifiers OR customPrompt (for refinement/compose)
             const hasContextIdentifier = dealId || personId || email || threadId || messageId;
-            const isRefinementRequest = customPrompt && lastEmailContent;
+            const hasCustomPrompt = customPrompt && customPrompt.trim().length > 0;
 
-            if (!hasContextIdentifier && !isRefinementRequest) {
-                res.status(400).json({ error: "Either dealId, personId, threadId, messageId, email, or customPrompt with content is required" });
+            if (!hasContextIdentifier && !hasCustomPrompt) {
+                res.status(400).json({ error: "Either dealId, personId, threadId, messageId, email, or customPrompt is required" });
                 return;
             }
 

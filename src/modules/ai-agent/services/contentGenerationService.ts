@@ -9,6 +9,7 @@ export interface GenerationContext {
     senderName?: string;
     userName?: string;
     conversationHistory?: Array<{ from: string; subject: string; body: string; date: string }>;
+    knowledgeBaseContext?: string[];
 }
 
 export class ContentGenerationService {
@@ -33,13 +34,28 @@ export class ContentGenerationService {
 
         // Build email to reply to context
         let replyToContext = '';
+
+        // Detect if this is a refinement request (contains refinement markers in customPrompt)
+        const isRefinementRequest = context?.customPrompt?.toLowerCase().includes('refine') ||
+            context?.customPrompt?.toLowerCase().includes('current draft to refine:');
+
         if (context?.lastEmailContent) {
-            replyToContext = `
+            if (isRefinementRequest) {
+                // For refinement: present as draft to improve, NOT as email to reply to
+                replyToContext = `
+CURRENT DRAFT TO REFINE (improve this, don't reply to it):
+Subject: ${context.lastEmailSubject || 'No subject'}
+Content:
+${context.lastEmailContent}
+`;
+            } else {
+                replyToContext = `
 EMAIL TO REPLY TO:
 Subject: ${context.lastEmailSubject || 'No subject'}
 Content:
 ${context.lastEmailContent}
 `;
+            }
         }
 
         // Custom prompt instructions
@@ -47,8 +63,37 @@ ${context.lastEmailContent}
             ? `\nUSER'S SPECIFIC INSTRUCTIONS:\n${context.customPrompt}\n`
             : '';
 
+        // Detect if this is a first-contact/new outreach (no email to reply to, or empty draft)
+        const isFirstContact = !context?.lastEmailContent || context.lastEmailContent.trim().length === 0;
+
+        const modeDescription = isRefinementRequest
+            ? 'You are a professional email assistant helping REFINE and IMPROVE an existing email draft. Do NOT treat the draft as a previous email to reply to.'
+            : (isFirstContact
+                ? 'You are a professional email assistant helping compose a NEW OUTREACH EMAIL to a potential client.'
+                : 'You are a professional email assistant helping write a DIRECT REPLY to an email.');
+
+        const modeInstructions = isFirstContact && !isRefinementRequest
+            ? `
+CRITICAL INSTRUCTIONS FOR NEW OUTREACH:
+1. Write a professional FIRST CONTACT email for initial client outreach.
+2. Introduce yourself/company professionally.
+3. Clearly state the purpose of reaching out.
+4. If a specific company or project is mentioned, acknowledge and reference it.
+5. Be concise, professional, and action-oriented.
+6. End with a clear call-to-action (e.g., schedule a call, request a meeting).
+7. Use the pricing/plan information if it's relevant to the outreach.`
+            : `
+CRITICAL INSTRUCTIONS:
+1. Write a DIRECT REPLY that specifically addresses the content of the email being replied to.
+2. Reference specific points, concerns, or topics from the email you're replying to.
+3. Be concise and actionable - no generic fluff or filler content.
+4. If the original email expresses frustration or concern, acknowledge it empathetically first.
+5. Provide specific solutions or next steps relevant to what was mentioned.
+6. Keep the reply professional but conversational.
+7. The subject line should be appropriate for a reply (start with "Re:" if replying).`;
+
         const generationPrompt = `
-You are a professional email assistant helping write a DIRECT REPLY to an email.
+${modeDescription}
 
 ${replyToContext}
 ${conversationContext}
@@ -69,24 +114,29 @@ BRAND VOICE:
 - Tone: ${guidelines?.tone || 'professional'} (${guidelines?.voiceCharacteristics?.join(', ') || 'clear, helpful'})
 - Closing Phrases Options: ${guidelines?.closingPhrases?.join(', ') || 'Best regards, Thanks, Kind regards'}
 - Phrases to AVOID: ${guidelines?.avoidPhrases?.join(', ') || 'None specified'}
+- SIGNATURE TEMPLATE: ${guidelines?.signatureTemplate || 'None'}
 
-SENDER'S NAME FOR SIGNATURE: ${context?.userName || '[Name]'}
+SENDER'S NAME FOR SIGNATURE: ${context?.userName || '{insert name}'}
 
-${relevantTier ? `
-PRICING CONTEXT (if relevant to include):
-- Tier: ${relevantTier.name}
-- Price: ${relevantTier.basePrice} ${relevantTier.currency}
-- Features: ${relevantTier.features.join(', ')}
+${context?.knowledgeBaseContext && context.knowledgeBaseContext.length > 0 ? `
+RELEVANT COMPANY KNOWLEDGE (Use these facts if applicable):
+${context.knowledgeBaseContext.map(k => `- ${k}`).join('\n')}
 ` : ''}
 
-CRITICAL INSTRUCTIONS:
-1. Write a DIRECT REPLY that specifically addresses the content of the email being replied to.
-2. Reference specific points, concerns, or topics from the email you're replying to.
-3. Be concise and actionable - no generic fluff or filler content.
-4. If the original email expresses frustration or concern, acknowledge it empathetically first.
-5. Provide specific solutions or next steps relevant to what was mentioned.
-6. Keep the reply professional but conversational.
-7. The subject line should be appropriate for a reply (start with "Re:" if replying).
+${relevantTier ? `
+PRICING CONTEXT (MUST USE THIS IF PRICING IS MENTIONED):
+- Plan/Tier Name: ${relevantTier.name}
+- Price: ${relevantTier.basePrice} ${relevantTier.currency}
+- Features: ${relevantTier.features.join(', ')}
+IMPORTANT: If the email mentions pricing or a plan, you MUST use the price "${relevantTier.basePrice} ${relevantTier.currency}" from this tier. Replace any outdated pricing in the draft with this correct pricing.
+` : ''}
+
+${modeInstructions}
+8. CALCULATION INSTRUCTIONS: If the user asks for a project quote or pricing, and you have component costs in the 'RELEVANT COMPANY KNOWLEDGE' section:
+   - You MUST calculate the total estimated price by summing the relevant items.
+   - Break down the cost: List each component and its price found in the knowledge base.
+   - Show the final total clearly (e.g., "Total Estimated Cost: $X").
+   - Do NOT say "it depends" or "let's get on a call" if you have the necessary pricing data to give an estimate. Use the provided facts.
 
 EMAIL STRUCTURE (VERY IMPORTANT - FOLLOW THIS EXACTLY):
 The email body MUST be formatted as a professional email with the following structure:
@@ -100,9 +150,9 @@ The email body MUST be formatted as a professional email with the following stru
    - Break long content into multiple paragraphs for readability.
 
 3. CLOSING: 
-   - Add a blank line before the closing phrase.
-   - Put the closing phrase (e.g., "Best regards," or "Thanks," or "Kind regards,") on its own line.
-   - Put the sender's name "${context?.userName || '[Name]'}" on the NEXT line.
+   - Use the SIGNATURE TEMPLATE defined above if it is not 'None'.
+   - If the template is used, do NOT add another closing phrase or name unless the template is incomplete.
+   - If no template is provided, add "Best regards," followed by "${context?.userName || '{insert name}'}" on new lines.
 
 EXAMPLE FORMAT:
 Hi Team,
@@ -116,8 +166,8 @@ I have a few suggestions:
 
 Please let me know if you need any further clarification.
 
-Best regards,
-${context?.userName || '[Name]'}
+${guidelines?.signatureTemplate ? guidelines.signatureTemplate : `Best regards,
+${context?.userName || '{insert name}'}`}
 
 Respond ONLY with a JSON object containing:
 {

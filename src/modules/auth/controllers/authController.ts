@@ -67,7 +67,9 @@ export class AuthController {
         const { EmailModel } = require('../../email/models/emailModel');
         const Database = require('better-sqlite3');
 
-        const db = new Database('data.db');
+        const db = new Database('data.db', { timeout: 10000 });
+        db.pragma('journal_mode = WAL');
+        db.pragma('synchronous = NORMAL');
         const emailModel = new EmailModel(db);
         const emailService = new EmailService(emailModel);
 

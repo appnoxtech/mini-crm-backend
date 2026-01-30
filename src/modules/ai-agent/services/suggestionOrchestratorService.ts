@@ -6,6 +6,7 @@ import { SuggestionModel } from "../models/SuggestionModel";
 import { PricingModel } from "../models/PricingModel";
 import { BrandGuidelinesModel } from "../models/BrandGuidelinesModel";
 import { ClientProfileModel } from "../models/ClientProfileModel";
+import { KnowledgeBaseModel } from "../models/KnowledgeBaseModel";
 import { contextExtractionService } from "./contextExtractionService";
 import { inferenceService } from "./inferenceService";
 import { contentGenerationService } from "./contentGenerationService";
@@ -20,6 +21,7 @@ export class SuggestionOrchestratorService {
     private pricingModel: PricingModel;
     private brandGuidelinesModel: BrandGuidelinesModel;
     private clientProfileModel: ClientProfileModel;
+    private knowledgeBaseModel: KnowledgeBaseModel;
 
     constructor(db: Database.Database) {
         this.emailModel = new EmailModel(db);
@@ -29,19 +31,21 @@ export class SuggestionOrchestratorService {
         this.pricingModel = new PricingModel(db);
         this.brandGuidelinesModel = new BrandGuidelinesModel(db);
         this.clientProfileModel = new ClientProfileModel(db);
+        this.knowledgeBaseModel = new KnowledgeBaseModel(db);
 
         // Initialize models
         this.suggestionModel.initialize();
         this.pricingModel.initialize();
         this.brandGuidelinesModel.initialize();
         this.clientProfileModel.initialize();
+        this.knowledgeBaseModel.initialize();
     }
 
     async generateSuggestion(request: SuggestionRequest): Promise<EmailSuggestion> {
         let { dealId, personId, threadId, messageId, email } = request;
 
-        // Check if this is a refinement-only request (no context identifiers needed)
-        const isRefinementOnly = !dealId && !personId && !email && !threadId && !messageId && request.customPrompt && request.lastEmailContent;
+        // Check if this is a compose/refinement-only request (no context identifiers needed)
+        const isRefinementOnly = !dealId && !personId && !email && !threadId && !messageId && request.customPrompt && request.customPrompt.trim().length > 0;
 
         // For refinement-only requests, skip context validation
         if (!isRefinementOnly) {
@@ -167,8 +171,63 @@ export class SuggestionOrchestratorService {
                 requiredContent: ['Follow user instructions'],
                 confidence: 1.0
             };
-            tiers = [];
+
+            // Load tiers for refinement too, so plan matching works
+            tiers = this.pricingModel.getAllTiers();
             guidelines = this.brandGuidelinesModel.getGuidelines()!;
+
+            // Apply plan matching for refinement requests
+            // Extract ONLY the user's instructions part, not the full draft content
+            if (request.customPrompt && tiers.length > 0) {
+                let searchText = request.customPrompt.toLowerCase();
+
+                // If this is a refinement prompt, extract only the user's instruction part
+                const instructionMarker = "user's instructions for refinement:";
+                const markerIndex = searchText.indexOf(instructionMarker);
+                if (markerIndex !== -1) {
+                    searchText = searchText.substring(markerIndex + instructionMarker.length).trim();
+                    console.log(`[Refinement] Extracted user instruction: "${searchText}"`);
+                }
+
+                const promptWords = searchText.split(/\s+/);
+
+                // First: check for exact tier name match in user's instructions (highest priority)
+                const exactMatch = tiers.find(tier =>
+                    searchText.includes(tier.name.toLowerCase())
+                );
+
+                if (exactMatch) {
+                    // If multiple exact matches, pick the longest tier name (most specific)
+                    const exactMatches = tiers.filter(tier =>
+                        searchText.includes(tier.name.toLowerCase())
+                    ).sort((a, b) => b.name.length - a.name.length);
+
+                    console.log(`[Refinement] Exact match: Plan "${exactMatches[0].name}" detected`);
+                    tiers = [exactMatches[0]];
+                } else {
+                    // Fallback: word-based scoring
+                    const scoredTiers = tiers.map(tier => {
+                        const tierWords = tier.name.toLowerCase().split(/\s+/);
+                        const matchCount = tierWords.filter((word: string) =>
+                            promptWords.some((pw: string) => pw === word)
+                        ).length;
+                        const score = tierWords.length > 0 ? matchCount / tierWords.length : 0;
+                        return { tier, matchCount, score };
+                    });
+
+                    const bestMatch = scoredTiers
+                        .filter(s => s.matchCount > 0)
+                        .sort((a, b) => {
+                            if (b.score !== a.score) return b.score - a.score;
+                            return b.matchCount - a.matchCount;
+                        })[0];
+
+                    if (bestMatch && bestMatch.score >= 0.5) {
+                        console.log(`[Refinement] Word match: Plan "${bestMatch.tier.name}" (${Math.round(bestMatch.score * 100)}% match)`);
+                        tiers = [bestMatch.tier];
+                    }
+                }
+            }
         } else {
             // 3. Fetch/Create client profile
             profile = dealId
@@ -206,11 +265,75 @@ export class SuggestionOrchestratorService {
             // 5. Get pricing & guidelines
             tiers = this.pricingModel.getAllTiers();
             guidelines = this.brandGuidelinesModel.getGuidelines()!;
+
+            // 5.1 Check if customPrompt mentions a specific plan name
+            if (request.customPrompt && tiers.length > 0) {
+                const promptLower = request.customPrompt.toLowerCase();
+                const promptWords = promptLower.split(/\s+/);
+
+                // First: check for exact tier name match (highest priority)
+                const exactMatch = tiers.find(tier =>
+                    promptLower.includes(tier.name.toLowerCase())
+                );
+
+                if (exactMatch) {
+                    // If multiple exact matches, pick the longest tier name (most specific)
+                    const exactMatches = tiers.filter(tier =>
+                        promptLower.includes(tier.name.toLowerCase())
+                    ).sort((a, b) => b.name.length - a.name.length);
+
+                    console.log(`Exact match: Plan "${exactMatches[0].name}" detected`);
+                    tiers = [exactMatches[0]];
+                } else {
+                    // Fallback: word-based scoring with exact word matches
+                    const scoredTiers = tiers.map(tier => {
+                        const tierWords = tier.name.toLowerCase().split(/\s+/);
+                        const matchCount = tierWords.filter((word: string) =>
+                            promptWords.some((pw: string) => pw === word)
+                        ).length;
+                        const score = tierWords.length > 0 ? matchCount / tierWords.length : 0;
+                        return { tier, matchCount, score };
+                    });
+
+                    const bestMatch = scoredTiers
+                        .filter(s => s.matchCount > 0)
+                        .sort((a, b) => {
+                            if (b.score !== a.score) return b.score - a.score;
+                            return b.matchCount - a.matchCount;
+                        })[0];
+
+                    if (bestMatch && bestMatch.score >= 0.5) {
+                        console.log(`Word match: Plan "${bestMatch.tier.name}" (${Math.round(bestMatch.score * 100)}% match)`);
+                        tiers = [bestMatch.tier];
+                    }
+                }
+            }
         }
 
 
         // 6. Build generation context with email content
         const lastEmail = emails.length > 0 ? emails[emails.length - 1] : null;
+
+        // Fetch knowledge base context
+        // Fetch knowledge base context
+        let knowledgeBaseContext: string[] = [];
+
+        // Use inferred information needs + raw content for search
+        const searchTerms = [
+            ...(inference?.informationNeeds || []), // Add high-priority inferred terms first
+            request.customPrompt,
+            request.lastEmailContent,
+            lastEmail?.subject,
+            lastEmail?.body || lastEmail?.htmlBody?.replace(/<[^>]*>/g, '')
+        ].filter(Boolean).join(' ');
+
+        if (searchTerms) {
+            knowledgeBaseContext = this.knowledgeBaseModel.findRelevantContext(searchTerms);
+            if (knowledgeBaseContext.length > 0) {
+                console.log(`Found ${knowledgeBaseContext.length} relevant knowledge base items based on intent & content.`);
+            }
+        }
+
         const generationContext = {
             lastEmailContent: request.lastEmailContent || lastEmail?.body || lastEmail?.htmlBody?.replace(/<[^>]*>/g, '') || undefined,
             lastEmailSubject: request.lastEmailSubject || lastEmail?.subject || undefined,
@@ -222,7 +345,8 @@ export class SuggestionOrchestratorService {
                 subject: e.subject,
                 body: (e.body || e.htmlBody?.replace(/<[^>]*>/g, '') || '').substring(0, 500),
                 date: new Date(e.sentAt).toLocaleString()
-            }))
+            })),
+            knowledgeBaseContext
         };
 
         // 7. Generate email

@@ -109,6 +109,7 @@ import { AIConfigController } from './modules/ai-agent/controllers/aiConfigContr
 import { createSuggestionRoutes } from './modules/ai-agent/routes/suggestionRoutes';
 import { PricingModel } from './modules/ai-agent/models/PricingModel';
 import { BrandGuidelinesModel } from './modules/ai-agent/models/BrandGuidelinesModel';
+import { KnowledgeBaseModel } from './modules/ai-agent/models/KnowledgeBaseModel';
 
 
 const app = express();
@@ -123,8 +124,10 @@ const PORT = Number(process.env.PORT) || 4000;
 const DB_PATH = './data.db';
 
 // Initialize database
-const db = new Database('data.db');
+const db = new Database('data.db', { timeout: 10000 });
 db.pragma('foreign_keys = ON');
+db.pragma('journal_mode = WAL');
+db.pragma('synchronous = NORMAL');
 
 // Initialize models
 const userModel = new UserModel(db);
@@ -245,7 +248,7 @@ webhookController.setSocketIO(io);
 // Initialize AI agent module
 const suggestionOrchestrator = new SuggestionOrchestratorService(db);
 const suggestionController = new SuggestionController(suggestionOrchestrator);
-const aiConfigController = new AIConfigController(new PricingModel(db), new BrandGuidelinesModel(db));
+const aiConfigController = new AIConfigController(new PricingModel(db), new BrandGuidelinesModel(db), new KnowledgeBaseModel(db));
 
 // Middleware
 app.use(express.json());
@@ -335,7 +338,7 @@ const localIP = getLocalIP();
 
 // Start the server
 server.listen(PORT, '0.0.0.0', () => {
-
+  console.log(`🚀 Server running on http://${localIP}:${PORT}`);
 });
 
 
