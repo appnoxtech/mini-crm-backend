@@ -18,7 +18,16 @@ export function startEmailSyncJob(
     const connectorService = new EmailConnectorService(oauthService);
     const emailService = new EmailService(emailModel, connectorService, notificationService);
 
+    // Concurrency lock
+    let isSyncRunning = false;
+
     const syncAllAccounts = async () => {
+        if (isSyncRunning) {
+            console.log('⚠️ Email sync skipped: Previous sync job still running.');
+            return;
+        }
+
+        isSyncRunning = true;
         console.log('🔄 Starting automatic email sync...');
 
         try {
@@ -64,13 +73,15 @@ export function startEmailSyncJob(
             console.log('🔄 Automatic email sync completed');
         } catch (err: any) {
             console.error('❌ Email sync job failed:', err.message);
+        } finally {
+            isSyncRunning = false;
         }
     };
 
-    // Schedule email sync every 5 minutes
-    cron.schedule('*/5 * * * *', syncAllAccounts);
+    // Schedule email sync every 15 seconds
+    cron.schedule('*/15 * * * * *', syncAllAccounts);
 
-    console.log('📧 Email sync cron job scheduled (every 5 minutes)');
+    console.log('📧 Email sync cron job scheduled (every 1 seconds)');
 
     return syncAllAccounts; // also allow manual invocation
 }

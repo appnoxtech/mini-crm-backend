@@ -25,40 +25,70 @@ export class EventNotificationModel {
     }
 
     initialize(): void {
-        const tableInfo = this.db.prepare("PRAGMA table_info(event_notifications)").all() as any[];
-        const hasUserType = tableInfo.some(col => col.name === 'userType');
+        // Check if table exists first
+        const tableExists = this.db.prepare(`
+            SELECT name FROM sqlite_master WHERE type='table' AND name='event_notifications'
+        `).get();
 
-        if (!hasUserType) {
-            console.log('Migrating event_notifications to add userType and remove strict FK...');
-            this.db.transaction(() => {
-                this.db.exec(`
-                    CREATE TABLE event_notifications_new (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        eventId INTEGER NOT NULL,
-                        reminderId INTEGER NOT NULL,
-                        userId INTEGER NOT NULL,
-                        userType TEXT NOT NULL DEFAULT 'user',
-                        scheduledAt TEXT NOT NULL,
-                        status TEXT DEFAULT 'pending',
-                        inAppSentAt TEXT,
-                        emailSentAt TEXT,
-                        failureReason TEXT,
-                        createdAt TEXT NOT NULL,
-                        updatedAt TEXT NOT NULL,
-                        FOREIGN KEY (eventId) REFERENCES calendar_events(id) ON DELETE CASCADE,
-                        FOREIGN KEY (reminderId) REFERENCES event_reminders(id) ON DELETE CASCADE,
-                        UNIQUE(eventId, reminderId, userId, userType)
-                    )
-                `);
+        if (!tableExists) {
+            // Table doesn't exist - create it fresh
+            console.log('Creating event_notifications table...');
+            this.db.exec(`
+                CREATE TABLE event_notifications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    eventId INTEGER NOT NULL,
+                    reminderId INTEGER NOT NULL,
+                    userId INTEGER NOT NULL,
+                    userType TEXT NOT NULL DEFAULT 'user',
+                    scheduledAt TEXT NOT NULL,
+                    status TEXT DEFAULT 'pending',
+                    inAppSentAt TEXT,
+                    emailSentAt TEXT,
+                    failureReason TEXT,
+                    createdAt TEXT NOT NULL,
+                    updatedAt TEXT NOT NULL,
+                    FOREIGN KEY (eventId) REFERENCES calendar_events(id) ON DELETE CASCADE,
+                    FOREIGN KEY (reminderId) REFERENCES event_reminders(id) ON DELETE CASCADE,
+                    UNIQUE(eventId, reminderId, userId, userType)
+                )
+            `);
+        } else {
+            // Table exists - check if we need to migrate to add userType
+            const tableInfo = this.db.prepare("PRAGMA table_info(event_notifications)").all() as any[];
+            const hasUserType = tableInfo.some(col => col.name === 'userType');
 
-                this.db.exec(`
-                    INSERT INTO event_notifications_new (id, eventId, reminderId, userId, scheduledAt, status, inAppSentAt, emailSentAt, failureReason, createdAt, updatedAt)
-                    SELECT id, eventId, reminderId, userId, scheduledAt, status, inAppSentAt, emailSentAt, failureReason, createdAt, updatedAt FROM event_notifications
-                `);
+            if (!hasUserType) {
+                console.log('Migrating event_notifications to add userType and remove strict FK...');
+                this.db.transaction(() => {
+                    this.db.exec(`
+                        CREATE TABLE event_notifications_new (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            eventId INTEGER NOT NULL,
+                            reminderId INTEGER NOT NULL,
+                            userId INTEGER NOT NULL,
+                            userType TEXT NOT NULL DEFAULT 'user',
+                            scheduledAt TEXT NOT NULL,
+                            status TEXT DEFAULT 'pending',
+                            inAppSentAt TEXT,
+                            emailSentAt TEXT,
+                            failureReason TEXT,
+                            createdAt TEXT NOT NULL,
+                            updatedAt TEXT NOT NULL,
+                            FOREIGN KEY (eventId) REFERENCES calendar_events(id) ON DELETE CASCADE,
+                            FOREIGN KEY (reminderId) REFERENCES event_reminders(id) ON DELETE CASCADE,
+                            UNIQUE(eventId, reminderId, userId, userType)
+                        )
+                    `);
 
-                this.db.exec(`DROP TABLE event_notifications`);
-                this.db.exec(`ALTER TABLE event_notifications_new RENAME TO event_notifications`);
-            })();
+                    this.db.exec(`
+                        INSERT INTO event_notifications_new (id, eventId, reminderId, userId, scheduledAt, status, inAppSentAt, emailSentAt, failureReason, createdAt, updatedAt)
+                        SELECT id, eventId, reminderId, userId, scheduledAt, status, inAppSentAt, emailSentAt, failureReason, createdAt, updatedAt FROM event_notifications
+                    `);
+
+                    this.db.exec(`DROP TABLE event_notifications`);
+                    this.db.exec(`ALTER TABLE event_notifications_new RENAME TO event_notifications`);
+                })();
+            }
         }
 
         this.db.exec(`

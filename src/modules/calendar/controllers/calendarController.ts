@@ -92,7 +92,7 @@ export class CalendarController {
                 return ResponseHandler.badRequest(res, 'Invalid event ID');
             }
 
-            const { title, description, startTime, endTime, location, isAllDay } = req.body;
+            const { title, description, startTime, endTime, location, isAllDay, sharedWith } = req.body;
 
             const result = await this.calendarService.updateEvent(eventId, req.user.id, {
                 title,
@@ -100,7 +100,8 @@ export class CalendarController {
                 startTime,
                 endTime,
                 location,
-                isAllDay
+                isAllDay,
+                sharedWith
             });
 
             if (!result) {

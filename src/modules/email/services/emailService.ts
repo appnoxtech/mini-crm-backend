@@ -240,19 +240,24 @@ export class EmailService {
         this.notificationService.notifySyncStatus(account.userId, account.id, 'starting');
       }
 
+      // Use a safety buffer (15 minutes) for sync time to account for server delays/clock skew
+      const syncSince = account.lastSyncAt
+        ? new Date(account.lastSyncAt.getTime() - 15 * 60 * 1000)
+        : undefined;
+
       if (provider === "gmail") {
 
         // Fetch up to 100 emails for better sync coverage
         rawEmails = await this.connectorService.fetchGmailEmails(
           account,
-          account.lastSyncAt,
+          syncSince,
           100 // Increased from default 50 for better sync coverage
         );
       } else if (provider === "outlook") {
 
         rawEmails = await this.connectorService.fetchOutlookEmails(
           account,
-          account.lastSyncAt
+          syncSince
         );
       } else if (provider === "imap" || provider === "custom") {
 
@@ -262,7 +267,7 @@ export class EmailService {
         const useQuickSync = !!account.lastSyncAt;
         rawEmails = await this.connectorService.fetchIMAPEmailsParallel(
           account,
-          account.lastSyncAt,
+          syncSince,
           useQuickSync
         );
       }

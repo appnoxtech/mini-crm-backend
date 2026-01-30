@@ -16,34 +16,55 @@ export class EventShareModel {
     }
 
     initialize(): void {
-        // Check if we need to migrate to add participantType
-        const tableInfo = this.db.prepare("PRAGMA table_info(event_shares)").all() as any[];
-        const hasParticipantType = tableInfo.some(col => col.name === 'participantType');
+        // Check if table exists first
+        const tableExists = this.db.prepare(`
+            SELECT name FROM sqlite_master WHERE type='table' AND name='event_shares'
+        `).get();
 
-        if (!hasParticipantType) {
-            console.log('Migrating event_shares to add participantType and remove strict FK...');
-            // Recreate table to remove strict FK and add new column
-            this.db.transaction(() => {
-                this.db.exec(`
-                    CREATE TABLE event_shares_new (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        eventId INTEGER NOT NULL,
-                        sharedWithUserId INTEGER NOT NULL,
-                        participantType TEXT NOT NULL DEFAULT 'user',
-                        createdAt TEXT NOT NULL,
-                        FOREIGN KEY (eventId) REFERENCES calendar_events(id) ON DELETE CASCADE,
-                        UNIQUE(eventId, sharedWithUserId, participantType)
-                    )
-                `);
+        if (!tableExists) {
+            // Table doesn't exist - create it fresh
+            console.log('Creating event_shares table...');
+            this.db.exec(`
+                CREATE TABLE event_shares (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    eventId INTEGER NOT NULL,
+                    sharedWithUserId INTEGER NOT NULL,
+                    participantType TEXT NOT NULL DEFAULT 'user',
+                    createdAt TEXT NOT NULL,
+                    FOREIGN KEY (eventId) REFERENCES calendar_events(id) ON DELETE CASCADE,
+                    UNIQUE(eventId, sharedWithUserId, participantType)
+                )
+            `);
+        } else {
+            // Table exists - check if we need to migrate to add participantType
+            const tableInfo = this.db.prepare("PRAGMA table_info(event_shares)").all() as any[];
+            const hasParticipantType = tableInfo.some(col => col.name === 'participantType');
 
-                this.db.exec(`
-                    INSERT INTO event_shares_new (id, eventId, sharedWithUserId, createdAt)
-                    SELECT id, eventId, sharedWithUserId, createdAt FROM event_shares
-                `);
+            if (!hasParticipantType) {
+                console.log('Migrating event_shares to add participantType and remove strict FK...');
+                // Recreate table to remove strict FK and add new column
+                this.db.transaction(() => {
+                    this.db.exec(`
+                        CREATE TABLE event_shares_new (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            eventId INTEGER NOT NULL,
+                            sharedWithUserId INTEGER NOT NULL,
+                            participantType TEXT NOT NULL DEFAULT 'user',
+                            createdAt TEXT NOT NULL,
+                            FOREIGN KEY (eventId) REFERENCES calendar_events(id) ON DELETE CASCADE,
+                            UNIQUE(eventId, sharedWithUserId, participantType)
+                        )
+                    `);
 
-                this.db.exec(`DROP TABLE event_shares`);
-                this.db.exec(`ALTER TABLE event_shares_new RENAME TO event_shares`);
-            })();
+                    this.db.exec(`
+                        INSERT INTO event_shares_new (id, eventId, sharedWithUserId, createdAt)
+                        SELECT id, eventId, sharedWithUserId, createdAt FROM event_shares
+                    `);
+
+                    this.db.exec(`DROP TABLE event_shares`);
+                    this.db.exec(`ALTER TABLE event_shares_new RENAME TO event_shares`);
+                })();
+            }
         }
 
         this.db.exec(`
@@ -108,7 +129,7 @@ export class EventShareModel {
         return rows.map(row => row.sharedWithUserId);
     }
 
-    unshare(eventId: number, sharedWithUserId: number, participantType: string): boolean {
+    unshare(eventId: number, sharedWithUserId: number, participantType: string = 'user'): boolean {
         const result = this.db.prepare(`
             DELETE FROM event_shares WHERE eventId = ? AND sharedWithUserId = ? AND participantType = ?
         `).run(eventId, sharedWithUserId, participantType);
@@ -127,6 +148,18 @@ export class EventShareModel {
         `).get(eventId, userId, type);
 
         return !!row;
+    }
+
+    getSharedUsersDetails(eventId: number): { id: number, name: string, email: string, type: string }[] {
+        // Fetch users
+        const users = this.db.prepare(`
+            SELECT u.id, u.name, u.email, 'user' as type
+            FROM event_shares es
+            JOIN users u ON es.sharedWithUserId = u.id
+            WHERE es.eventId = ? AND es.participantType = 'user'
+        `).all(eventId) as any[];
+
+        return users;
     }
 
     private mapRow(row: any): EventShare {
