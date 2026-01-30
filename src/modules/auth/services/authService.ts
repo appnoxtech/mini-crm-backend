@@ -2,17 +2,24 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { User, AuthUser } from '../../../shared/types';
 import { UserModel } from '../models/User';
+import { OtpModel } from '../models/Otp';
+import { EmailService } from '../../email/services/emailService';
 import { PersonModel } from '../../management/persons/models/Person';
+import { SystemEmailHelper } from '../../../shared/utils/SystemEmailHelper';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const SALT_ROUNDS = 10;
 
 export class AuthService {
   private userModel: UserModel;
+  private otpModel: OtpModel;
+  private emailService: EmailService;
   private personModel: PersonModel;
 
-  constructor(userModel: UserModel, personModel: PersonModel) {
+  constructor(userModel: UserModel, otpModel: OtpModel, emailService: EmailService, personModel: PersonModel) {
     this.userModel = userModel;
+    this.otpModel = otpModel;
+    this.emailService = emailService;
     this.personModel = personModel;
   }
 
@@ -155,6 +162,272 @@ export class AuthService {
     }));
 
     return [...formattedUsers, ...formattedPersons];
+  }
+
+  // async forgotPassword(email: string): Promise<boolean> {
+  //   try {
+  //     const user = this.userModel.findByEmail(email);
+  //     if (!user) {
+  //       return false;
+  //     }
+
+  //     // Generate 6 digit OTP
+  //     const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  //     // Expires in 10 minutes
+  //     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  //     // Hash OTP before saving
+  //     const hashedOtp = await bcrypt.hash(otp, 10);
+  //     this.otpModel.saveOtp(email, hashedOtp, expiresAt);
+
+  //     // Create a temporary system account from .env
+  //     const systemAccount: any = {
+  //       id: 'system',
+  //       userId: 'system',
+  //       email: process.env.SMTP_USER || 'system@appnox.ai',
+  //       provider: 'custom',
+  //       isActive: true,
+  //       smtpConfig: {
+  //         host: process.env.SMTP_HOST || 'smtp.gmail.com',
+  //         port: parseInt(process.env.SMTP_PORT || '587'),
+  //         secure: process.env.SMTP_SECURE === 'true',
+  //         username: process.env.SMTP_USER || '',
+  //         password: process.env.SMTP_PASS || ''
+  //       }
+  //     };
+
+  //     // Send email using system configuration with skipSave option
+  //     await this.emailService.sendEmail(systemAccount, {
+  //       to: [email],
+  //       subject: 'Reset Your Password - OTP',
+  //       body: `Your OTP to reset password is: ${otp}. It expires in 10 minutes.`,
+  //       htmlBody: this.generateOtpTemplate(otp)
+  //     }, { skipSave: true });
+
+  //     return true;
+  //   } catch (error) {
+  //     console.error('Forgot password error:', error);
+  //     return false;
+  //   }
+  // }
+
+  // private generateOtpTemplate(otp: string): string {
+  //   return `
+  //     <!DOCTYPE html>
+  //     <html>
+  //     <head>
+  //       <meta charset="utf-8">
+  //       <style>
+  //         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; }
+  //         .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; border-radius: 8px; }
+  //         .header { text-align: center; padding-bottom: 20px; border-bottom: 1px solid #eee; }
+  //         .content { padding: 30px 20px; text-align: center; background-color: #ffffff; border-radius: 8px; margin-top: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+  //         .otp-code { font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #4F46E5; margin: 20px 0; padding: 15px; background-color: #f0fdf4; border-radius: 8px; display: inline-block; }
+  //         .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #888; }
+  //       </style>
+  //     </head>
+  //     <body>
+  //       <div class="container">
+  //         <div class="header">
+  //           <h2>Mini CRM Security</h2>
+  //         </div>
+  //         <div class="content">
+  //           <p>Hello,</p>
+  //           <p>You requested to reset your password. Please use the following One-Time Password (OTP) to proceed:</p>
+
+  //           <div class="otp-code">${otp}</div>
+
+  //           <p>This code is valid for <strong>10 minutes</strong>.</p>
+  //           <p>If you did not request this, please ignore this email.</p>
+  //         </div>
+  //         <div class="footer">
+  //           <p>&copy; ${new Date().getFullYear()} Mini CRM. All rights reserved.</p>
+  //         </div>
+  //       </div>
+  //     </body>
+  //     </html>
+  //   `;
+  // }
+
+  // async verifyOtp(email: string, otp: string, shouldDelete: boolean = false): Promise<string> {
+  //   try {
+  //     const otpRecord = this.otpModel.getOtp(email);
+  //     if (!otpRecord) return "OTP not found";
+
+  //     // Compare hashed OTP
+  //     const isMatch = await bcrypt.compare(otp, otpRecord.otp);
+  //     if (!isMatch) return "Invalid OTP";
+
+  //     const now = new Date();
+  //     const expires = new Date(otpRecord.expiresAt);
+  //     // give a message if otp is expired
+  //     if (now > expires) {
+  //       return "OTP expired";
+  //     }
+
+  //     if (shouldDelete) {
+  //       this.otpModel.deleteOtp(email);
+  //     }
+
+  //     return "OTP verified";
+  //   } catch (error) {
+  //     console.error('Verify OTP error:', error);
+  //     return "OTP verification failed";
+  //   }
+  // }
+
+  // async resetPassword(email: string, otp: string, newPassword: string): Promise<boolean> {
+  //   try {
+  //     // Verify OTP and consume it (delete it)
+  //     const verificationResult = await this.verifyOtp(email, otp, true);
+
+  //     if (verificationResult !== "OTP verified") {
+  //       return false;
+  //     }
+
+  //     const user = this.userModel.findByEmail(email);
+  //     if (!user) return false;
+
+  //     const newPasswordHash = await this.hashPassword(newPassword);
+  //     const updated = this.userModel.updatePassword(user.id, newPasswordHash);
+
+  //     // OTP is already deleted by verifyOtp(..., true)
+
+  //     return updated;
+  //   } catch (error) {
+  //     console.error('Reset password error:', error);
+  //     return false;
+  //   }
+  // }
+
+  async forgotPassword(email: string): Promise<boolean> {
+    try {
+      const user = this.userModel.findByEmail(email);
+      if (!user) {
+        return false;
+      }
+
+      // Generate 6 digit OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      // Expires in 10 minutes
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+
+
+      // ...
+
+      // Hash OTP before saving
+      const hashedOtp = await bcrypt.hash(otp, 10);
+      this.otpModel.saveOtp(email, hashedOtp, expiresAt);
+
+      // Send email using SystemEmailHelper
+      // This uses the explicit "sendViaSystemSmtp" logic as requested
+      const emailSent = await SystemEmailHelper.sendViaSystemSmtp(
+        email,
+        'Reset Your Password - OTP',
+        `Your OTP to reset password is: ${otp}. It expires in 10 minutes.`,
+        this.generateOtpTemplate(otp)
+      );
+
+      if (!emailSent) {
+        console.error('Failed to send OTP email');
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Forgot password error:', error);
+      return false;
+    }
+  }
+
+  private generateOtpTemplate(otp: string): string {
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; border-radius: 8px; }
+          .header { text-align: center; padding-bottom: 20px; border-bottom: 1px solid #eee; }
+          .content { padding: 30px 20px; text-align: center; background-color: #ffffff; border-radius: 8px; margin-top: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+          .otp-code { font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #4F46E5; margin: 20px 0; padding: 15px; background-color: #f0fdf4; border-radius: 8px; display: inline-block; }
+          .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #888; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h2>Mini CRM Security</h2>
+          </div>
+          <div class="content">
+            <p>Hello,</p>
+            <p>You requested to reset your password. Please use the following One-Time Password (OTP) to proceed:</p>
+            
+            <div class="otp-code">${otp}</div>
+            
+            <p>This code is valid for <strong>10 minutes</strong>.</p>
+            <p>If you did not request this, please ignore this email.</p>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} Mini CRM. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+  }
+
+  async verifyOtp(email: string, otp: string, shouldDelete: boolean = false): Promise<string> {
+    try {
+      const otpRecord = this.otpModel.getOtp(email);
+      if (!otpRecord) return "OTP not found";
+
+      // Compare hashed OTP
+      const isMatch = await bcrypt.compare(otp, otpRecord.otp);
+      if (!isMatch) return "Invalid OTP";
+
+      const now = new Date();
+      const expires = new Date(otpRecord.expiresAt);
+      // give a message if otp is expired
+      if (now > expires) {
+        return "OTP expired";
+      }
+
+      if (shouldDelete) {
+        this.otpModel.deleteOtp(email);
+      }
+
+      return "OTP verified";
+    } catch (error) {
+      console.error('Verify OTP error:', error);
+      return "OTP verification failed";
+    }
+  }
+
+  async resetPassword(email: string, otp: string, newPassword: string): Promise<boolean> {
+    try {
+      // Verify OTP and consume it (delete it)
+      const verificationResult = await this.verifyOtp(email, otp, true);
+
+      if (verificationResult !== "OTP verified") {
+        return false;
+      }
+
+      const user = this.userModel.findByEmail(email);
+      if (!user) return false;
+
+      const newPasswordHash = await this.hashPassword(newPassword);
+      const updated = this.userModel.updatePassword(user.id, newPasswordHash);
+
+      // OTP is already deleted by verifyOtp(..., true)
+
+      return updated;
+    } catch (error) {
+      console.error('Reset password error:', error);
+      return false;
+    }
   }
 }
 

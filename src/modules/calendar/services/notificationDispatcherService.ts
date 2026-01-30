@@ -2,7 +2,7 @@ import { EventNotificationModel, EventNotification } from '../models/EventNotifi
 import { CalendarEventModel } from '../models/CalendarEvent';
 import { NotificationSchedulerService } from './notificationSchedulerService';
 import { Server as SocketIOServer } from 'socket.io';
-import nodemailer from 'nodemailer';
+import { SystemEmailHelper } from '../../../shared/utils/SystemEmailHelper';
 
 interface EmailService {
     sendEmail(to: string, subject: string, body: string, htmlBody?: string): Promise<boolean>;
@@ -171,49 +171,13 @@ Your CRM Calendar
             `.trim();
 
             try {
-                // Use system SMTP instead of user's connected account
-                await this.sendViaSystemSmtp(user.email, subject, textBody, htmlBody);
+                // Use Shared SystemEmailHelper
+                await SystemEmailHelper.sendViaSystemSmtp(user.email, subject, textBody, htmlBody);
                 this.notificationModel.markSent(notification.id, 'email');
             } catch (error: any) {
                 console.error(`Failed to send email for notification ${notification.id}:`, error);
                 // Don't fail the whole notification, just log the email failure
             }
         }
-    }
-
-    /**
-     * Send email using the system-wide SMTP configuration from .env
-     */
-    private async sendViaSystemSmtp(to: string, subject: string, text: string, html: string): Promise<void> {
-        const smtpHost = process.env.SMTP_HOST;
-        const smtpPort = parseInt(process.env.SMTP_PORT || '587');
-        const smtpUser = process.env.SMTP_USER;
-        const smtpPass = process.env.SMTP_PASS;
-        const smtpSecure = process.env.SMTP_SECURE === 'true';
-
-        if (!smtpHost || !smtpUser || !smtpPass) {
-            console.warn('⚠️ System SMTP not configured in .env. Skipping email notification.');
-            return;
-        }
-
-        const transporter = nodemailer.createTransport({
-            host: smtpHost,
-            port: smtpPort,
-            secure: smtpSecure, // true for 465, false for other ports
-            auth: {
-                user: smtpUser,
-                pass: smtpPass,
-            },
-        });
-
-        await transporter.sendMail({
-            from: `"CRM System" <${smtpUser}>`,
-            to,
-            subject,
-            text,
-            html,
-        });
-
-        console.log(`📧 System email sent to ${to}`);
     }
 }

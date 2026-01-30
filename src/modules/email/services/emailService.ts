@@ -5,6 +5,7 @@ import { RealTimeNotificationService } from "./realTimeNotificationService";
 import { simpleParser } from 'mailparser';
 import { DealActivityModel } from "../../pipelines/models/DealActivity";
 import { HistoricalSyncService } from "./historicalSyncService";
+import nodemailer from 'nodemailer';
 
 export class EmailService {
   private emailModel: EmailModel;
@@ -74,7 +75,8 @@ export class EmailService {
       htmlBody?: string;
       attachments?: EmailAttachment[];
       dealId?: number;
-    }
+    },
+    options?: { skipSave?: boolean }
   ): Promise<string> {
     let account: EmailAccount | null;
 
@@ -99,6 +101,10 @@ export class EmailService {
 
     // Send email via connector service
     const messageId = await this.connectorService.sendEmail(account, emailData);
+
+    if (options?.skipSave) {
+      return messageId;
+    }
 
     // Create email record in database with composite ID to prevent conflicts
     const uniqueEmailId = `${account.id}-${messageId}`;
