@@ -392,7 +392,7 @@ export class DealController {
                 limit: limit ? Number(limit) : undefined
             });
 
-            const message = result.deals.length === 0 ? 'no archive deals' : 'Archived deals fetched successfully';
+            const message = result.deals.length === 0 ? 'No archived deals found' : 'Archived deals fetched successfully';
             return ResponseHandler.success(res, result, message);
         } catch (error: any) {
             console.error('Error fetching archived deals:', error);

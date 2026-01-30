@@ -225,11 +225,11 @@ export class DealModel {
         let query = `SELECT d.* FROM deals d
             JOIN pipelines p ON d.pipelineId = p.id
             WHERE (d.userId = ? OR EXISTS (
-                SELECT 1 FROM json_each(d.ownerIds) 
+                SELECT 1 FROM json_each(COALESCE(d.ownerIds, '[]')) 
                 WHERE json_each.value = ?
             ))
             AND (p.userId = ? OR EXISTS (
-                SELECT 1 FROM json_each(p.ownerIds) 
+                SELECT 1 FROM json_each(COALESCE(p.ownerIds, '[]')) 
                 WHERE json_each.value = ?
             ))`;
 
@@ -268,11 +268,12 @@ export class DealModel {
             params.push(searchTerm, searchTerm);
         }
 
-        query += ' ORDER BY createdAt DESC';
+        query += ' ORDER BY d.createdAt DESC';
 
         // Get total count
-        const countQuery = query.replace('SELECT *', 'SELECT COUNT(*) as count');
-        const countResult = this.db.prepare(countQuery).get(...params) as { count: number };
+        const countQuery = query.replace(/SELECT\s+d\.\*/i, 'SELECT COUNT(*) as count');
+        const countResult = this.db.prepare(countQuery).get(...params) as { count: number } | undefined;
+        const total = countResult ? countResult.count : 0;
 
         // Add pagination
         if (filters.limit) {
@@ -287,13 +288,13 @@ export class DealModel {
             deals: results.map(r => ({
                 ...r,
                 isRotten: Boolean(r.isRotten),
-                status: r.status.toUpperCase(),
+                status: (r.status || 'OPEN').toUpperCase(),
                 email: r.email ? JSON.parse(r.email) : null,
                 phone: r.phone ? JSON.parse(r.phone) : null,
                 labelIds: r.labelIds ? JSON.parse(r.labelIds) : null,
                 ownerIds: r.ownerIds ? JSON.parse(r.ownerIds) : []
             })),
-            total: countResult.count
+            total: total
         };
     }
 
@@ -453,11 +454,11 @@ export class DealModel {
             JOIN pipelines p ON d.pipelineId = p.id
             WHERE d.deletedAt IS NOT NULL 
             AND (d.userId = ? OR EXISTS (
-                SELECT 1 FROM json_each(d.ownerIds) 
+                SELECT 1 FROM json_each(COALESCE(d.ownerIds, '[]')) 
                 WHERE json_each.value = ?
             ))
             AND (p.userId = ? OR EXISTS (
-                SELECT 1 FROM json_each(p.ownerIds) 
+                SELECT 1 FROM json_each(COALESCE(p.ownerIds, '[]')) 
                 WHERE json_each.value = ?
             ))`;
 
@@ -466,8 +467,9 @@ export class DealModel {
         query += ' ORDER BY deletedAt DESC';
 
         // Get total count
-        const countQuery = query.replace('SELECT *', 'SELECT COUNT(*) as count');
-        const countResult = this.db.prepare(countQuery).get(...params) as { count: number };
+        const countQuery = query.replace(/SELECT\s+d\.\*/i, 'SELECT COUNT(*) as count');
+        const countResult = this.db.prepare(countQuery).get(...params) as { count: number } | undefined;
+        const total = countResult ? countResult.count : 0;
 
         // Add pagination
         if (filters.limit) {
@@ -482,13 +484,13 @@ export class DealModel {
             deals: results.map(r => ({
                 ...r,
                 isRotten: Boolean(r.isRotten),
-                status: r.status.toUpperCase(),
+                status: (r.status || 'OPEN').toUpperCase(),
                 email: r.email ? JSON.parse(r.email) : null,
                 phone: r.phone ? JSON.parse(r.phone) : null,
                 labelIds: r.labelIds ? JSON.parse(r.labelIds) : null,
                 ownerIds: r.ownerIds ? JSON.parse(r.ownerIds) : []
             })),
-            total: countResult.count
+            total: total
         };
     }
 
@@ -504,11 +506,11 @@ export class DealModel {
             JOIN pipeline_stages ps ON d.stageId = ps.id
             WHERE d.deletedAt IS NULL AND d.archivedAt IS NULL
             AND (d.userId = ? OR EXISTS (
-                SELECT 1 FROM json_each(d.ownerIds) 
+                SELECT 1 FROM json_each(COALESCE(d.ownerIds, '[]')) 
                 WHERE json_each.value = ?
             ))
             AND (p.userId = ? OR EXISTS (
-                SELECT 1 FROM json_each(p.ownerIds) 
+                SELECT 1 FROM json_each(COALESCE(p.ownerIds, '[]')) 
                 WHERE json_each.value = ?
             ))
             AND d.status = 'OPEN' 
@@ -548,11 +550,11 @@ export class DealModel {
             JOIN pipelines p ON d.pipelineId = p.id
             WHERE (d.title LIKE ? OR d.description LIKE ? OR d.source LIKE ?)
             AND (d.userId = ? OR EXISTS (
-                SELECT 1 FROM json_each(d.ownerIds) 
+                SELECT 1 FROM json_each(COALESCE(d.ownerIds, '[]')) 
                 WHERE json_each.value = ?
             ))
             AND (p.userId = ? OR EXISTS (
-                SELECT 1 FROM json_each(p.ownerIds) 
+                SELECT 1 FROM json_each(COALESCE(p.ownerIds, '[]')) 
                 WHERE json_each.value = ?
             ))
         `;
@@ -574,7 +576,7 @@ export class DealModel {
             .map(r => ({
                 ...r,
                 isRotten: Boolean(r.isRotten),
-                status: r.status.toUpperCase(),
+                status: (r.status || 'OPEN').toUpperCase(),
                 email: r.email ? JSON.parse(r.email) : null,
                 phone: r.phone ? JSON.parse(r.phone) : null,
                 labelIds: r.labelIds ? JSON.parse(r.labelIds) : null,
