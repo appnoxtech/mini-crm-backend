@@ -38,9 +38,9 @@ export interface EmailDraft {
     // Metadata
     isScheduled?: boolean;
     scheduledFor?: Date;
-    providerId?: string; // For Gmail/Outlook
-    remoteUid?: string;  // For IMAP
-    isTrashed?: boolean; // Whether this draft is in trash
+
+    // Provider sync
+    providerDraftId?: string;
 }
 
 /**
@@ -64,6 +64,8 @@ export interface CreateDraftInput {
     accountEntityIds?: string[];
     isScheduled?: boolean;
     scheduledFor?: Date;
+    // Provider sync
+    providerDraftId?: string;
 }
 
 /**
@@ -83,6 +85,8 @@ export interface UpdateDraftInput {
     accountEntityIds?: string[];
     isScheduled?: boolean;
     scheduledFor?: Date;
+    // Provider sync
+    providerDraftId?: string;
 }
 
 /**
