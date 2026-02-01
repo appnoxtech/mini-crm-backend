@@ -16,6 +16,7 @@ export class DraftController {
     createDraft = async (req: Request, res: Response): Promise<void> => {
         try {
             const userId = (req as any).user.id;
+            console.log('DraftController.createDraft - UserID:', userId, 'Body:', JSON.stringify(req.body, null, 2));
             const input: CreateDraftInput = req.body;
 
             const draft = await this.draftService.createDraft(userId, input);

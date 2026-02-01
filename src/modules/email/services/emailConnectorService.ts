@@ -732,9 +732,9 @@ export class EmailConnectorService {
         user: smtpConfig.username,
         pass: smtpConfig.password
       },
-      connectionTimeout: 10000, // 10 second timeout
-      greetingTimeout: 10000,
-      socketTimeout: 15000,
+      connectionTimeout: 30000, // 30 second timeout
+      greetingTimeout: 30000,
+      socketTimeout: 45000,
       tls: {
         rejectUnauthorized: false // Only for development/testing
       }
@@ -1415,6 +1415,314 @@ export class EmailConnectorService {
     } catch (error) {
       console.error(`Failed to fetch Outlook status for ${messageId}:`, error);
       throw error;
+    }
+  }
+  /**
+   * Save a draft to the provider (create or update)
+   * Returns the provider's draft ID
+   */
+  async saveDraft(
+    account: EmailAccount,
+    emailData: {
+      to: string[];
+      cc?: string[];
+      bcc?: string[];
+      subject: string;
+      body: string;
+      htmlBody?: string;
+      attachments?: EmailAttachment[];
+    },
+    existingProviderDraftId?: string
+  ): Promise<string> {
+    if (account.provider === 'gmail') {
+      return this.saveGmailDraft(account, emailData, existingProviderDraftId);
+    } else if (account.provider === 'outlook') {
+      return this.saveOutlookDraft(account, emailData, existingProviderDraftId);
+    } else if (account.provider === 'imap' || account.provider === 'custom') {
+      return this.saveIMAPDraft(account, emailData, existingProviderDraftId);
+    }
+    throw new Error(`Draft saving not supported for provider: ${account.provider}`);
+  }
+
+  /**
+   * Delete a draft from the provider
+   */
+  async deleteDraft(account: EmailAccount, providerDraftId: string): Promise<void> {
+    if (!providerDraftId) return;
+
+    if (account.provider === 'gmail') {
+      return this.deleteGmailDraft(account, providerDraftId);
+    } else if (account.provider === 'outlook') {
+      return this.deleteOutlookDraft(account, providerDraftId);
+    } else if (account.provider === 'imap' || account.provider === 'custom') {
+      return this.deleteIMAPDraft(account, providerDraftId);
+    }
+  }
+
+  // --- Gmail Draft Implementation ---
+
+  private async saveGmailDraft(
+    account: EmailAccount,
+    emailData: {
+      to: string[];
+      cc?: string[];
+      bcc?: string[];
+      subject: string;
+      body: string;
+      htmlBody?: string;
+      attachments?: EmailAttachment[];
+    },
+    existingDraftId?: string
+  ): Promise<string> {
+    await this.connectGmail(account);
+
+    // Create RFC 2822 formatted email message
+    // Note: Gmail Drafts API expects the message in 'raw' format, similar to sending
+    const emailLines = [
+      `To: ${emailData.to.join(', ')}`,
+      ...(emailData.cc && emailData.cc.length ? [`Cc: ${emailData.cc.join(', ')}`] : []),
+      ...(emailData.bcc && emailData.bcc.length ? [`Bcc: ${emailData.bcc.join(', ')}`] : []),
+      `Subject: ${emailData.subject}`,
+      `MIME-Version: 1.0`,
+      `Content-Type: ${emailData.htmlBody ? 'text/html' : 'text/plain'}; charset=utf-8`,
+      '',
+      emailData.htmlBody || emailData.body
+    ];
+
+    const rawMessage = emailLines.join('\r\n');
+    const encodedMessage = Buffer.from(rawMessage).toString('base64').replace(/\+/g, '-').replace(/\//g, '_');
+
+    const draftBody = {
+      message: {
+        raw: encodedMessage
+      }
+    };
+
+    try {
+      let response;
+      if (existingDraftId) {
+        // Update existing draft
+        try {
+          response = await this.gmailClient.users.drafts.update({
+            userId: 'me',
+            id: existingDraftId,
+            requestBody: draftBody
+          });
+        } catch (error: any) {
+          // If update fails (e.g. draft deleted externally), create a new one
+          if (error.code === 404) {
+            response = await this.gmailClient.users.drafts.create({
+              userId: 'me',
+              requestBody: draftBody
+            });
+          } else {
+            throw error;
+          }
+        }
+      } else {
+        // Create new draft
+        response = await this.gmailClient.users.drafts.create({
+          userId: 'me',
+          requestBody: draftBody
+        });
+      }
+
+      return response.data.id;
+    } catch (error: any) {
+      console.error('Failed to save Gmail draft:', error);
+      throw new Error(`Gmail draft save failed: ${error.message}`);
+    }
+  }
+
+  private async deleteGmailDraft(account: EmailAccount, draftId: string): Promise<void> {
+    await this.connectGmail(account);
+    try {
+      await this.gmailClient.users.drafts.delete({
+        userId: 'me',
+        id: draftId
+      });
+    } catch (error: any) {
+      if (error.code === 404) return; // Already deleted
+      console.error(`Failed to delete Gmail draft ${draftId}:`, error);
+      throw error;
+    }
+  }
+
+  // --- Outlook Draft Implementation ---
+
+  private async saveOutlookDraft(
+    account: EmailAccount,
+    emailData: {
+      to: string[];
+      cc?: string[];
+      bcc?: string[];
+      subject: string;
+      body: string;
+      htmlBody?: string;
+      attachments?: EmailAttachment[];
+    },
+    existingDraftId?: string
+  ): Promise<string> {
+    await this.connectOutlook(account);
+
+    const message = {
+      subject: emailData.subject,
+      body: {
+        contentType: emailData.htmlBody ? 'HTML' : 'Text',
+        content: emailData.htmlBody || emailData.body
+      },
+      toRecipients: emailData.to.map(email => ({ emailAddress: { address: email } })),
+      ccRecipients: emailData.cc?.map(email => ({ emailAddress: { address: email } })),
+      bccRecipients: emailData.bcc?.map(email => ({ emailAddress: { address: email } }))
+    };
+
+    try {
+      let response;
+      if (existingDraftId) {
+        // Update existing draft
+        // Graph API uses PATCH /me/messages/{id} for updates
+        try {
+          response = await this.outlookClient.api(`/me/messages/${existingDraftId}`).update(message);
+          return existingDraftId;
+        } catch (error: any) {
+          // If not found, create new
+          if (error.statusCode === 404) {
+            response = await this.outlookClient.api('/me/messages').post(message);
+            return response.id;
+          }
+          throw error;
+        }
+      } else {
+        // Create new draft
+        // Graph API uses POST /me/messages (without send) to create a draft
+        response = await this.outlookClient.api('/me/messages').post(message);
+        return response.id;
+      }
+    } catch (error: any) {
+      console.error('Failed to save Outlook draft:', error);
+      throw new Error(`Outlook draft save failed: ${error.message}`);
+    }
+  }
+
+  private async deleteOutlookDraft(account: EmailAccount, draftId: string): Promise<void> {
+    await this.connectOutlook(account);
+    try {
+      await this.outlookClient.api(`/me/messages/${draftId}`).delete();
+    } catch (error: any) {
+      if (error.statusCode === 404) return; // Already deleted
+      console.error(`Failed to delete Outlook draft ${draftId}:`, error);
+      throw error;
+    }
+  }
+
+  // --- IMAP Draft Implementation ---
+
+  private async saveIMAPDraft(
+    account: EmailAccount,
+    emailData: {
+      to: string[];
+      cc?: string[];
+      bcc?: string[];
+      subject: string;
+      body: string;
+      htmlBody?: string;
+      attachments?: EmailAttachment[];
+    },
+    existingDraftId?: string // This is the UID
+  ): Promise<string> {
+    // 1. Compose the email
+    const mailOptions: any = {
+      from: account.email,
+      to: emailData.to.join(', '),
+      cc: emailData.cc?.join(', '),
+      bcc: emailData.bcc?.join(', '),
+      subject: emailData.subject,
+      text: emailData.body,
+      html: emailData.htmlBody,
+      attachments: emailData.attachments?.map(att => ({
+        filename: att.filename,
+        path: att.url,
+        content: att.content,
+        encoding: att.encoding
+      }))
+    };
+
+    const composer = new MailComposer(mailOptions);
+    const messageBuffer = await composer.compile().build();
+
+    const client = await this.connectIMAP(account);
+
+    // Prevent crash on error
+    client.on('error', (err) => {
+      console.error('IMAP Client Error during draft save:', err);
+    });
+
+    try {
+      // 2. Identify Drafts folder
+      let draftsPath = 'Drafts';
+      const mailboxes = await client.list();
+      const draftBox = mailboxes.find((box: any) =>
+        (box.specialUse === '\\Drafts' || box.name.toLowerCase().includes('draft'))
+      );
+      if (draftBox) {
+        draftsPath = draftBox.path;
+      }
+
+      const lock = await client.getMailboxLock(draftsPath);
+      try {
+        // 3. If updating, delete the old one first
+        if (existingDraftId) {
+          try {
+            // Mark as deleted
+            await client.messageFlagsAdd(existingDraftId, ['\\Deleted'], { uid: true });
+            // Expunge is often auto, or we can leave it marked deleted
+          } catch (e) {
+            console.warn(`Failed to delete old draft UID ${existingDraftId}`, e);
+          }
+        }
+
+        // 4. Append new draft
+        // \Draft flag is technically the correct flag, or just putting it in Drafts folder
+        const appendResult = await client.append(draftsPath, messageBuffer, ['\\Draft', '\\Seen']);
+
+        // ImapFlow append returns { uid: number, seq: number, uidvalidity: bigint }
+        // We use UID as the provider ID
+        return (appendResult as any).uid.toString();
+
+      } finally {
+        lock.release();
+      }
+    } catch (error: any) {
+      console.error('Failed to save IMAP draft:', error);
+      throw new Error(`IMAP draft save failed: ${error.message}`);
+    } finally {
+      await client.logout();
+    }
+  }
+
+  private async deleteIMAPDraft(account: EmailAccount, draftId: string): Promise<void> {
+    const client = await this.connectIMAP(account);
+    try {
+      // Identify Drafts folder (same logic)
+      let draftsPath = 'Drafts';
+      const mailboxes = await client.list();
+      const draftBox = mailboxes.find((box: any) =>
+        (box.specialUse === '\\Drafts' || box.name.toLowerCase().includes('draft'))
+      );
+      if (draftBox) {
+        draftsPath = draftBox.path;
+      }
+
+      await client.mailboxOpen(draftsPath);
+
+      // Delete by UID
+      await client.messageFlagsAdd(draftId, ['\\Deleted'], { uid: true });
+      // Optionally expunge
+    } catch (error: any) {
+      console.warn(`Failed to delete IMAP draft ${draftId}:`, error);
+      // Don't throw for delete
+    } finally {
+      await client.logout();
     }
   }
 }
