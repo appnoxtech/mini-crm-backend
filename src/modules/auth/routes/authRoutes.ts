@@ -24,5 +24,9 @@ export function createAuthRoutes(authController: AuthController): Router {
   // role routes
   router.put('/change-account-role', authMiddleware, (req: any, res: any) => authController.changeAccountRole(req, res));
 
+  router.post('/forgot-password', (req: any, res: any) => authController.forgotPassword(req, res));
+  router.post('/verify-otp', (req: any, res: any) => authController.verifyOtp(req, res));
+  router.post('/reset-password', (req: any, res: any) => authController.resetPassword(req, res));
+
   return router;
 }

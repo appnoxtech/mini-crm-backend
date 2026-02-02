@@ -15,6 +15,7 @@ dotenv.config();
 
 // Import models
 import { UserModel } from './modules/auth/models/User';
+import { OtpModel } from './modules/auth/models/Otp';
 import { LeadModel } from './modules/leads/models/Lead';
 import { EmailModel } from './modules/email/models/emailModel';
 import { PipelineModel } from './modules/pipelines/models/Pipeline';
@@ -146,6 +147,7 @@ db.pragma('synchronous = NORMAL');
 
 // Initialize models
 const userModel = new UserModel(db);
+const otpModel = new OtpModel(db);
 const leadModel = new LeadModel(db);
 const emailModel = new EmailModel(db);
 const pipelineModel = new PipelineModel(db);
@@ -173,6 +175,7 @@ const eventNotificationModel = new EventNotificationModel(db);
 
 // Initialize database tables
 userModel.initialize();
+otpModel.initialize();
 leadModel.initialize();
 emailModel.initialize();
 emailModel.initializeHistoricalSyncSchema(); // Initialize UID tracking for historical sync
@@ -200,12 +203,13 @@ importModel.initialize();
 
 
 // Initialize services
-const authService = new AuthService(userModel, personModel);
 const leadService = new LeadService(leadModel);
 const oauthService = new OAuthService();
 const emailConnectorService = new EmailConnectorService(oauthService);
 const notificationService = new RealTimeNotificationService();
 const emailService = new EmailService(emailModel, emailConnectorService, notificationService, dealActivityModel);
+// Move AuthService here because it depends on EmailService
+const authService = new AuthService(userModel, otpModel, emailService, personModel);
 const emailQueueService = new EmailQueueService(emailService, emailModel);
 const pipelineService = new PipelineService(pipelineModel, pipelineStageModel);
 const pipelineStageService = new PipelineStageService(pipelineStageModel, pipelineModel);

@@ -3,7 +3,7 @@ import { AuthService } from '../services/authService';
 import { AuthenticatedRequest, AuthUser } from '../../../shared/types';
 import { UserModel } from '../models/User';
 import bcrypt from 'bcryptjs';
-import { ResponseHandler } from '../../../shared/responses/responses';
+import { ResponseHandler, ErrorCodes } from '../../../shared/responses/responses';
 
 export class AuthController {
   private authService: AuthService;
@@ -226,6 +226,80 @@ export class AuthController {
     } catch (error) {
       console.error('Account role change error:', error);
       return ResponseHandler.internalError(res, 'Failed to change account role');
+    }
+  }
+
+
+  async forgotPassword(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+
+      let { email } = req.body as any;
+
+      if (!email || typeof email !== 'string') {
+        return ResponseHandler.validationError(res, 'Valid email is required');
+      }
+
+      const success = await this.authService.forgotPassword(email);
+
+      if (!success) {
+        return ResponseHandler.error(res, 'Failed to forgot password', 401);
+      }
+      return ResponseHandler.success(res, 'Forgot password successfully');
+
+    } catch (error) {
+      console.error('Forgot password error:', error);
+      return ResponseHandler.internalError(res, 'Failed to forgot password');
+    }
+  }
+
+  async verifyOtp(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      let { email, otp } = req.body as any;
+
+      if (!email || typeof email !== 'string' || !otp) {
+        return ResponseHandler.validationError(res, 'Valid email and OTP are required');
+      }
+
+      const verificationResult = await this.authService.verifyOtp(email, otp);
+
+      if (verificationResult !== 'OTP verified') {
+        let errorCode = ErrorCodes.VALIDATION_ERROR;
+        if (verificationResult === 'OTP expired') errorCode = ErrorCodes.OTP_EXPIRED;
+        else if (verificationResult === 'Invalid OTP') errorCode = ErrorCodes.OTP_INVALID;
+        else if (verificationResult === 'OTP not found') errorCode = ErrorCodes.OTP_NOT_FOUND;
+
+        return ResponseHandler.error(res, verificationResult, 400, errorCode);
+      }
+      return ResponseHandler.success(res, { valid: true }, 'OTP verified successfully');
+
+    } catch (error) {
+      console.error('Verify OTP error:', error);
+      return ResponseHandler.internalError(res, 'Failed to verify OTP');
+    }
+  }
+
+  async resetPassword(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      let { email, otp, newPassword } = req.body as any;
+
+      if (!email && req.user) {
+        email = req.user.email;
+      }
+
+      if (!email || typeof email !== 'string' || !otp || !newPassword) {
+        return ResponseHandler.validationError(res, 'Valid email, OTP, and new password are required');
+      }
+
+      const success = await this.authService.resetPassword(email, otp, newPassword);
+
+      if (!success) {
+        return ResponseHandler.error(res, 'Failed to reset password. Invalid OTP or user not found.', 400);
+      }
+      return ResponseHandler.success(res, 'Password reset successfully');
+
+    } catch (error) {
+      console.error('Reset password error:', error);
+      return ResponseHandler.internalError(res, 'Failed to reset password');
     }
   }
 
