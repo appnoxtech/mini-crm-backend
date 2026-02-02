@@ -40,6 +40,9 @@ export interface EmailDraft {
     // Metadata
     isScheduled?: boolean;
     scheduledFor?: Date;
+
+    // Provider sync
+    providerDraftId?: string;
 }
 
 /**
@@ -63,6 +66,8 @@ export interface CreateDraftInput {
     enableTracking?: boolean;
     isScheduled?: boolean;
     scheduledFor?: Date;
+    // Provider sync
+    providerDraftId?: string;
 }
 
 /**
@@ -82,6 +87,8 @@ export interface UpdateDraftInput {
     enableTracking?: boolean;
     isScheduled?: boolean;
     scheduledFor?: Date;
+    // Provider sync
+    providerDraftId?: string;
 }
 
 /**

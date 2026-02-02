@@ -1622,4 +1622,53 @@ export class EmailService {
       console.error(`Failed to refresh Outlook flags for account ${account.id}:`, error.message);
     }
   }
+  async saveDraft(
+    userId: string,
+    draftInput: {
+      accountId: string;
+      to: string[];
+      cc?: string[];
+      bcc?: string[];
+      subject: string;
+      body: string;
+      htmlBody?: string;
+      attachments?: EmailAttachment[];
+    },
+    existingProviderDraftId?: string
+  ): Promise<string> {
+    const account = await this.emailModel.getEmailAccountById(draftInput.accountId);
+    if (!account) {
+      throw new Error('Email account not found');
+    }
+
+    if (String(account.userId) !== String(userId)) {
+      console.error(`Auth mismatch: account.userId=${account.userId} (${typeof account.userId}), userId=${userId} (${typeof userId})`);
+      throw new Error('Unauthorized access to email account');
+    }
+
+    try {
+      return await this.connectorService.saveDraft(account, draftInput, existingProviderDraftId);
+    } catch (error) {
+      console.warn('Failed to sync draft to provider:', error);
+      // We rethrow so the DraftService knows that sync failed, but it can decide to catch and ignore
+      throw error;
+    }
+  }
+
+  async deleteDraftProvider(
+    userId: string,
+    accountId: string,
+    providerDraftId: string
+  ): Promise<void> {
+    const account = await this.emailModel.getEmailAccountById(accountId);
+    if (!account) return;
+
+    if (account.userId !== userId) return;
+
+    try {
+      await this.connectorService.deleteDraft(account, providerDraftId);
+    } catch (error) {
+      console.warn('Failed to delete draft from provider:', error);
+    }
+  }
 }

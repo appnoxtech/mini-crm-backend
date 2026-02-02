@@ -46,7 +46,24 @@ export class DraftService {
             }
         }
 
-        return this.draftModel.createDraft(userId, input);
+        const draft = await this.draftModel.createDraft(userId, input);
+        console.log("DB Draft", draft);
+
+
+        // Sync to provider
+        try {
+            const providerDraftId = await this.emailService.saveDraft(userId, input);
+            if (providerDraftId) {
+                await this.draftModel.updateDraft(draft.id, userId, { providerDraftId });
+                // Update local object to return correct data
+                draft.providerDraftId = providerDraftId;
+            }
+        } catch (error) {
+            console.warn('Failed to sync draft to provider during creation:', error);
+            // We continue even if sync fails, user still has local draft
+        }
+
+        return draft;
     }
 
     /**
@@ -100,13 +117,73 @@ export class DraftService {
             }
         }
 
-        return this.draftModel.updateDraft(draftId, userId, updates);
+        // Sync to provider
+        try {
+            // Need identifying info from original or updates
+            // Need identifying info from original or updates
+            // We need to pass the complete state to saveDraft usually, or at least enough to construct the email
+            // We need to pass the complete state to saveDraft usually, or at least enough to construct the email
+            // But emailService.saveDraft expects a specific shape. 
+            // Let's refetch the draft after local update (or before) to get full data?
+            // Actually, we haven't updated local yet. Let's update local first for consistency, 
+            // then sync, then update providerId if changed.
+
+            // Wait, if we update local first, then sync fails, we are fine (local is ahead).
+            // But to sync, we need the merged data.
+
+            // Let's optimize: Update local first.
+            const localUpdated = await this.draftModel.updateDraft(draftId, userId, updates);
+            if (!localUpdated) return null; // Should not happen as we checked existence
+
+            // Now sync using the fresh local data
+            // We need to construct the input expected by saveDraft
+            const syncInput = {
+                accountId: localUpdated.accountId,
+                to: localUpdated.to,
+                cc: localUpdated.cc,
+                bcc: localUpdated.bcc,
+                subject: localUpdated.subject,
+                body: localUpdated.body,
+                htmlBody: localUpdated.htmlBody,
+                attachments: localUpdated.attachments
+            };
+
+            const providerDraftId = await this.emailService.saveDraft(
+                userId,
+                syncInput,
+                localUpdated.providerDraftId
+            );
+
+            if (providerDraftId && providerDraftId !== localUpdated.providerDraftId) {
+                await this.draftModel.updateDraft(draftId, userId, { providerDraftId });
+                localUpdated.providerDraftId = providerDraftId;
+            }
+
+            return localUpdated;
+
+        } catch (error) {
+            console.warn('Failed to sync draft update to provider:', error);
+            // Fallback: return the local update even if sync failed
+            return this.draftModel.updateDraft(draftId, userId, updates);
+        }
     }
 
     /**
      * Delete a draft
      */
     async deleteDraft(draftId: string, userId: string): Promise<boolean> {
+        // Get draft first to find provider ID
+        const draft = await this.draftModel.getDraftById(draftId, userId);
+
+        if (draft && draft.providerDraftId) {
+            try {
+                await this.emailService.deleteDraftProvider(userId, draft.accountId, draft.providerDraftId);
+            } catch (error) {
+                console.warn('Failed to delete provider draft:', error);
+                // Continue to delete local
+            }
+        }
+
         return this.draftModel.deleteDraft(draftId, userId);
     }
 
@@ -135,6 +212,15 @@ export class DraftService {
                     attachments: draft.attachments,
                 }
             );
+
+            // Delete the draft from provider if it exists there
+            if (draft.providerDraftId) {
+                try {
+                    await this.emailService.deleteDraftProvider(userId, draft.accountId, draft.providerDraftId);
+                } catch (cleanupError) {
+                    console.warn('Failed to cleanup provider draft after sending:', cleanupError);
+                }
+            }
 
             // Delete the draft after successful send
             await this.draftModel.deleteDraft(draftId, userId);

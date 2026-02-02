@@ -19,6 +19,7 @@ import { UserModel } from './modules/auth/models/User';
 import { OtpModel } from './modules/auth/models/Otp';
 import { LeadModel } from './modules/leads/models/Lead';
 import { EmailModel } from './modules/email/models/emailModel';
+import { DraftModel } from './modules/email/models/draftModel';
 import { PipelineModel } from './modules/pipelines/models/Pipeline';
 import { PipelineStageModel } from './modules/pipelines/models/PipelineStage';
 import { DealModel } from './modules/pipelines/models/Deal';
@@ -36,11 +37,13 @@ import { WebhookController } from './modules/calls/controllers/webhookController
 import { createCallRoutes } from './modules/calls/routes/callRoutes';
 import { createWebhookRoutes } from './modules/calls/routes/webhookRoutes';
 
+
 // Import services
 import { AuthService } from './modules/auth/services/authService';
 import { LeadService } from './modules/leads/services/leadService';
 import { EmailService } from './modules/email/services/emailService';
 import { EmailConnectorService } from './modules/email/services/emailConnectorService';
+import { DraftService } from './modules/email/services/draftService';
 import { OAuthService } from './modules/email/services/oauthService';
 import { EmailQueueService } from './modules/email/services/emailQueueService';
 import { RealTimeNotificationService } from './modules/email/services/realTimeNotificationService';
@@ -69,6 +72,7 @@ import { gmailPushService } from './modules/email/services/gmailPushService';
 import { AuthController } from './modules/auth/controllers/authController';
 import { LeadController } from './modules/leads/controllers/leadController';
 import { EmailController } from './modules/email/controllers/emailController';
+import { DraftController } from './modules/email/controllers/draftController';
 import { PipelineController } from './modules/pipelines/controllers/pipelineController';
 import { DealController } from './modules/pipelines/controllers/dealController';
 import { ProductController } from './modules/pipelines/controllers/productController';
@@ -82,6 +86,7 @@ import { ProfileController } from './modules/management/persons/controllers/prof
 import { createAuthRoutes } from './modules/auth/routes/authRoutes';
 import { createLeadRoutes } from './modules/leads/routes/leadRoutes';
 import { createEmailRoutes } from './modules/email/routes/emailRoutes';
+import { createDraftRoutes } from './modules/email/routes/draftRoutes';
 import { createSummarizationRoutes } from './modules/email/routes/summarizationRoutes';
 import { createPipelineRoutes } from './modules/pipelines/routes/pipelineRoutes';
 import { createDealRoutes } from './modules/pipelines/routes/dealRoutes';
@@ -129,6 +134,7 @@ import { createCalendarRoutes } from './modules/calendar/routes/calendarRoutes';
 import { startReminderProcessor } from './cron/reminderProcessor';
 
 
+
 const app = express();
 const server = createServer(app);
 const io = new SocketIOServer(server, {
@@ -151,6 +157,7 @@ const userModel = new UserModel(db);
 const otpModel = new OtpModel(db);
 const leadModel = new LeadModel(db);
 const emailModel = new EmailModel(db);
+const draftModel = new DraftModel(db);
 const pipelineModel = new PipelineModel(db);
 const pipelineStageModel = new PipelineStageModel(db);
 const dealModel = new DealModel(db);
@@ -179,6 +186,7 @@ userModel.initialize();
 otpModel.initialize();
 leadModel.initialize();
 emailModel.initialize();
+draftModel.initialize();
 emailModel.initializeHistoricalSyncSchema(); // Initialize UID tracking for historical sync
 pipelineModel.initialize();
 pipelineStageModel.initialize();
@@ -211,6 +219,7 @@ const notificationService = new RealTimeNotificationService();
 const emailService = new EmailService(emailModel, emailConnectorService, notificationService, dealActivityModel);
 // Move AuthService here because it depends on EmailService
 const authService = new AuthService(userModel, otpModel, emailService, personModel);
+const draftService = new DraftService(draftModel, emailService);
 const emailQueueService = new EmailQueueService(emailService, emailModel);
 const pipelineService = new PipelineService(pipelineModel, pipelineStageModel);
 const pipelineStageService = new PipelineStageService(pipelineStageModel, pipelineModel);
@@ -264,7 +273,8 @@ gmailPushService.initialize(emailService, notificationService);
 // Initialize controllers
 const authController = new AuthController(authService, userModel);
 const leadController = new LeadController(leadService);
-const emailController = new EmailController(emailService, oauthService, emailQueueService, notificationService);
+const emailController = new EmailController(emailService, draftService, oauthService, emailQueueService, notificationService);
+const draftController = new DraftController(draftService);
 const summarizationController = new SummarizationController(emailModel, DB_PATH);
 const pipelineController = new PipelineController(pipelineService, pipelineStageService);
 const dealController = new DealController(dealService);
@@ -312,6 +322,7 @@ app.use((req, res, next) => {
 app.use('/api/auth', createAuthRoutes(authController));
 app.use('/api/leads', createLeadRoutes(leadController));
 app.use('/api/emails', createEmailRoutes(emailController));
+app.use('/api/email/drafts', createDraftRoutes(draftController));
 app.use('/api/summarization', createSummarizationRoutes(summarizationController));
 
 
@@ -385,7 +396,9 @@ const localIP = getLocalIP();
 
 // Start the server
 server.listen(PORT, '0.0.0.0', () => {
+
   console.log(`🚀 Server running on http://${localIP}:${PORT}`);
+  console.log(`🚀 Server Local on http://localhost:${PORT}`);
 });
 
 

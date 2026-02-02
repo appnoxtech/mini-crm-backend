@@ -29,6 +29,9 @@ export class DraftModel {
         account_id TEXT NOT NULL,
         user_id TEXT NOT NULL,
         
+        -- Provider Sync
+        provider_draft_id TEXT,
+        
         -- Recipients (stored as JSON arrays)
         to_recipients TEXT NOT NULL,
         cc_recipients TEXT,
@@ -85,7 +88,7 @@ export class DraftModel {
 
         const stmt = this.db.prepare(`
       INSERT INTO email_drafts (
-        id, account_id, user_id,
+        id, account_id, user_id, provider_draft_id,
         to_recipients, cc_recipients, bcc_recipients,
         subject, body, html_body,
         attachments,
@@ -95,7 +98,7 @@ export class DraftModel {
         is_scheduled, scheduled_for,
         created_at, updated_at
       ) VALUES (
-        ?, ?, ?,
+        ?, ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?,
         ?,
@@ -111,6 +114,7 @@ export class DraftModel {
             id,
             input.accountId,
             userId,
+            input.providerDraftId || null,
             JSON.stringify(input.to),
             input.cc ? JSON.stringify(input.cc) : null,
             input.bcc ? JSON.stringify(input.bcc) : null,
@@ -277,6 +281,10 @@ export class DraftModel {
             updateFields.push('scheduled_for = ?');
             params.push(updates.scheduledFor ? updates.scheduledFor.toISOString() : null);
         }
+        if (updates.providerDraftId !== undefined) {
+            updateFields.push('provider_draft_id = ?');
+            params.push(updates.providerDraftId);
+        }
 
         // Always update the updated_at timestamp
         updateFields.push('updated_at = ?');
@@ -355,6 +363,7 @@ export class DraftModel {
             enableTracking: row.enable_tracking === 1,
             isScheduled: row.is_scheduled === 1,
             scheduledFor: row.scheduled_for ? new Date(row.scheduled_for) : undefined,
+            providerDraftId: row.provider_draft_id || undefined,
             createdAt: new Date(row.created_at),
             updatedAt: new Date(row.updated_at),
         };

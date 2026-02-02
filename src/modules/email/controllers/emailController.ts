@@ -60,19 +60,25 @@ function getProviderDefaults(provider: string): {
   };
 }
 
+import { DraftService } from "../services/draftService";
+import { ListDraftsOptions } from "../models/draftTypes";
+
 export class EmailController {
   private emailService: EmailService;
+  private draftService: DraftService; // Add DraftService property
   private oauthService: OAuthService;
   private queueService: EmailQueueService | undefined;
   private notificationService: RealTimeNotificationService | undefined;
 
   constructor(
     emailService: EmailService,
+    draftService: DraftService, // Inject DraftService
     oauthService: OAuthService,
     queueService?: EmailQueueService,
     notificationService?: RealTimeNotificationService,
   ) {
     this.emailService = emailService;
+    this.draftService = draftService; // Assign DraftService
     this.oauthService = oauthService;
     this.queueService = queueService;
     this.notificationService = notificationService;
@@ -1222,6 +1228,45 @@ export class EmailController {
         } catch (err) {
           console.error("Error triggering background syncs:", err);
         }
+      }
+
+      // Special handling for 'drafts' folder: Use DraftService
+      if ((folder as string) === 'drafts') {
+        const draftOptions: ListDraftsOptions = {
+          limit: limit ? parseInt(limit as string) : 50,
+          offset: offset ? parseInt(offset as string) : 0,
+          search: search as string,
+          accountId: effectiveAccountId,
+        };
+
+        const draftResult = await this.draftService.listDrafts(req.user.id.toString(), draftOptions);
+
+        // Map drafts to Email interface structure for compatibility
+        const mappedDrafts = draftResult.drafts.map(draft => ({
+          id: draft.id,
+          messageId: draft.id, // Use draft ID as message ID
+          threadId: draft.threadId,
+          accountId: draft.accountId,
+          from: '', // Drafts typically don't have a 'from' until sent, or it's the account's email
+          to: draft.to,
+          cc: draft.cc,
+          bcc: draft.bcc,
+          subject: draft.subject,
+          body: draft.body,
+          htmlBody: draft.htmlBody,
+          snippet: draft.body?.substring(0, 100),
+          isRead: true,
+          isIncoming: false,
+          sentAt: draft.updatedAt, // Use updated time as "sent" time for sorting
+          createdAt: draft.createdAt,
+          updatedAt: draft.updatedAt,
+          folder: 'drafts',
+          attachments: draft.attachments || [],
+          hasAttachments: (draft.attachments?.length || 0) > 0,
+          // Other fields can be defaults/undefined
+        }));
+
+        return ResponseHandler.success(res, { emails: mappedDrafts, total: draftResult.total }, "Drafts Fetched Successfully");
       }
 
       const emails = await this.emailService.getEmailsForUser(
