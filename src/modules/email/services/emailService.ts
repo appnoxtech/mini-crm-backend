@@ -375,8 +375,12 @@ export class EmailService {
         needsUpdate = true;
       }
 
-      if (parsed.folder && existing.folder === null) {
+      // Update folder if it changed (handles moves between Inbox/Trash/etc)
+      if (parsed.folder && existing.folder !== parsed.folder) {
+        console.log(`[Sync] Email ${existing.id} folder changed: ${existing.folder} -> ${parsed.folder}`);
         updates.folder = parsed.folder;
+        updates.uid = parsed.uid; // Also update UID since it changes when moving folders
+        updates.labelIds = [parsed.folder]; // Update labels to match
         needsUpdate = true;
       }
 
@@ -1154,8 +1158,8 @@ export class EmailService {
         const { uid, folder, messageId } = email;
         if (uid && folder) {
           if (moveToTrash) {
-            // Move to Trash folder via IMAP
-            await this.connectorService.moveImapEmailToTrash(account, folder, uid);
+            // Move to Trash folder via IMAP (pass messageId for robust finding if folder invalid)
+            await this.connectorService.moveImapEmailToTrash(account, folder, uid, messageId);
           } else {
             // Move back to INBOX from Trash (pass messageId to find correct UID)
             await this.connectorService.moveImapEmailFromTrash(account, uid, messageId);
@@ -1567,6 +1571,7 @@ export class EmailService {
         const flagMap = await this.connectorService.refreshIMAPFlags(account, folder.path, uidsToRefresh);
 
         // Compare with DB and update if needed
+        // Compare with DB and update if needed
         for (const [uid, flags] of flagMap.entries()) {
           const isReadOnServer = flags.includes('\\Seen');
 
@@ -1574,6 +1579,81 @@ export class EmailService {
           const existing = await this.emailModel.findEmailByImapUid(account.id, folder.label, uid);
           if (existing && existing.isRead !== isReadOnServer) {
             await this.emailModel.markEmailAsRead(existing.id, account.userId, isReadOnServer);
+          }
+        }
+
+        // Handle UIDs that are MISSING on server (Deleted/Moved)
+        const foundUids = new Set(flagMap.keys());
+        const missingUids = uidsToRefresh.filter(u => !foundUids.has(u));
+
+        if (missingUids.length > 0) {
+          console.log(`[Sync] Found ${missingUids.length} missing UIDs in ${folder.label}. Processing removals...`);
+
+          for (const missingUid of missingUids) {
+            const existing = await this.emailModel.findEmailByImapUid(account.id, folder.label, missingUid);
+            if (!existing) {
+              console.log(`[Sync] Could not find email with UID ${missingUid} in folder ${folder.label} for account ${account.id}. Skipping.`);
+              continue;
+            }
+
+            if (folder.label === 'TRASH' || folder.label === 'SPAM') {
+              // Check if it moved back to INBOX or SENT (restored) before permanently deleting
+              let restoredTo: string | null = null;
+              let restoredUid: number | null = null;
+
+              // Check common folders where email might have been moved
+              const foldersToCheck = ['INBOX', 'Sent', 'INBOX.Sent', 'Sent Items'];
+              for (const checkFolder of foldersToCheck) {
+                try {
+                  const result = await this.connectorService.searchImapEmailByMessageId(account, checkFolder, existing.messageId);
+                  if (result) {
+                    restoredTo = checkFolder === 'INBOX' ? 'INBOX' : 'SENT';
+                    restoredUid = result.uid;
+                    break;
+                  }
+                } catch (searchErr) {
+                  // Ignore errors for individual folder checks
+                }
+              }
+
+              if (restoredTo) {
+                console.log(`[Sync] Email ${existing.id} was restored to ${restoredTo} on server. Updating local record.`);
+                await this.emailModel.updateEmail(existing.id, {
+                  folder: restoredTo,
+                  labelIds: [restoredTo],
+                  uid: restoredUid || null as any,
+                  updatedAt: new Date()
+                });
+              } else {
+                // Permanently delete if truly gone from Trash/Spam
+                console.log(`[Sync] Deleting missing email ${existing.id} from ${folder.label}`);
+                await this.emailModel.deleteEmailPermanently(existing.id, account.userId);
+              }
+            } else {
+              // Soft delete (Move to Trash) if gone from Inbox/Sent/etc
+              // Try to find the new UID in TRASH folder
+              let trashUid: number | null = null;
+              const trashFolders = ['Trash', 'INBOX.Trash', 'Deleted', 'Deleted Items'];
+              for (const trashFolder of trashFolders) {
+                try {
+                  const result = await this.connectorService.searchImapEmailByMessageId(account, trashFolder, existing.messageId);
+                  if (result) {
+                    trashUid = result.uid;
+                    break;
+                  }
+                } catch (searchErr) {
+                  // Ignore errors for individual folder checks
+                }
+              }
+
+              console.log(`[Sync] Soft deleting (moving to trash) missing email ${existing.id} from ${folder.label}${trashUid ? ` (found in Trash with UID ${trashUid})` : ''}`);
+              await this.emailModel.updateEmail(existing.id, {
+                folder: 'TRASH',
+                labelIds: ['TRASH'],
+                uid: trashUid || null as any, // Use found UID or null
+                updatedAt: new Date()
+              });
+            }
           }
         }
       }

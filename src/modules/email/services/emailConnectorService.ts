@@ -1472,18 +1472,56 @@ export class EmailConnectorService {
   }
 
   /**
-   * Move IMAP email to Trash folder
+   * Search for an email by Message-ID in a specific IMAP folder
+   * Returns the UID if found, null otherwise
    */
-  async moveImapEmailToTrash(account: EmailAccount, sourceFolder: string, uid: number): Promise<void> {
+  async searchImapEmailByMessageId(account: EmailAccount, folderPath: string, messageId: string): Promise<{ uid: number } | null> {
     const client = await this.connectIMAP(account);
     try {
-      await client.mailboxOpen(sourceFolder);
+      // Try to open the folder
+      try {
+        await client.mailboxOpen(folderPath);
+      } catch (err) {
+        // Folder might not exist or be named differently (e.g., INBOX vs INBOX.Trash)
+        // Try common variations
+        const variations = [folderPath, `INBOX.${folderPath}`, folderPath.toUpperCase()];
+        let opened = false;
+        for (const variant of variations) {
+          try {
+            await client.mailboxOpen(variant);
+            opened = true;
+            break;
+          } catch (e) { /* ignore */ }
+        }
+        if (!opened) return null;
+      }
 
-      // Try to find the Trash folder - common names
-      const trashFolders = ['Trash', 'Deleted', 'Deleted Items', 'INBOX.Trash', '[Gmail]/Trash'];
+      const cleanMessageId = messageId.replace(/[<>]/g, '');
+      const searchResults = await client.search({
+        header: { 'Message-ID': cleanMessageId }
+      }, { uid: true });
+
+      if (searchResults && searchResults.length > 0 && searchResults[0] !== undefined) {
+        return { uid: searchResults[0] };
+      }
+      return null;
+    } catch (error) {
+      console.error(`Failed to search for email by Message-ID in ${folderPath}:`, error);
+      return null;
+    } finally {
+      await client.logout();
+    }
+  }
+
+  /**
+ * Move IMAP email to Trash folder
+ * Accepts messageId to handle cases where source folder might have changed or is invalid
+ */
+  async moveImapEmailToTrash(account: EmailAccount, sourceFolder: string, uid: number, messageId?: string): Promise<void> {
+    const client = await this.connectIMAP(account);
+    try {
+      // Try to identify the real Trash folder first
       let trashFolder = 'Trash';
-
-      // Try to list folders to find the actual trash folder
       try {
         const folders = await client.list();
         for (const folder of folders) {
@@ -1498,17 +1536,68 @@ export class EmailConnectorService {
         console.warn('Could not list folders, using default Trash folder');
       }
 
-      // Move the message to Trash
-      await client.messageMove(`${uid}`, trashFolder, { uid: true });
-      console.log(`[IMAP] Moved UID ${uid} from ${sourceFolder} to ${trashFolder}`);
+      let sourceOpened = false;
+      try {
+        await client.mailboxOpen(sourceFolder);
+        sourceOpened = true;
+      } catch (err: any) {
+        console.warn(`[IMAP] Could not open source folder ${sourceFolder}: ${err.message}`);
+      }
+
+      if (sourceOpened) {
+        // Normal path: Move usage UID
+        try {
+          await client.messageMove(`${uid}`, trashFolder, { uid: true });
+          console.log(`[IMAP] Moved UID ${uid} from ${sourceFolder} to ${trashFolder}`);
+          return;
+        } catch (moveErr) {
+          console.warn(`[IMAP] Failed to move UID ${uid} from ${sourceFolder}:`, moveErr);
+          // Fallthrough to recovery if messageId is present
+        }
+      }
+
+      // Recovery path: If source open failed or move failed, try finding by Message-ID
+      if (messageId) {
+        console.log(`[IMAP] Attempting to find message ${messageId} in other folders...`);
+        const cleanMessageId = messageId.replace(/[<>]/g, '');
+
+        // List of folders to check (include Hostinger specific INBOX. prefixes)
+        const commonFolders = ['INBOX', 'Sent', 'Archive', 'Junk', 'Spam', 'INBOX.Trash', 'INBOX.Spam', 'INBOX.Junk', 'INBOX.Sent', 'INBOX.Archive'];
+        // Note: We already listed folders above, could reuse that list but simplified here for perf
+
+        for (const checkFolder of commonFolders) {
+          try {
+            if (checkFolder === trashFolder) continue;
+
+            const mailbox = await client.mailboxOpen(checkFolder);
+            if (!mailbox) continue;
+
+            const searchResults = await client.search({
+              header: { 'Message-ID': cleanMessageId }
+            }, { uid: true });
+
+            if (searchResults && searchResults.length > 0) {
+              const foundUid = searchResults[0];
+              await client.messageMove(`${foundUid}`, trashFolder, { uid: true });
+              console.log(`[IMAP] Recovered: Moved UID ${foundUid} from ${checkFolder} to ${trashFolder}`);
+              return;
+            }
+          } catch (e) {
+            // Ignore folder access errors during search
+          }
+        }
+        console.warn(`[IMAP] Could not find message ${messageId} to trash.`);
+      }
+
     } catch (error) {
       console.error(`Failed to move IMAP message to trash:`, error);
-      throw error;
+      // Don't throw if we can't find it - it's effectively "gone" or inaccessible, 
+      // and we don't want to crash the sync for other items.
+      // throw error; 
     } finally {
       await client.logout();
     }
   }
-
   /**
  * Move IMAP email from Trash back to Inbox
  * Searches by Message-ID since UIDs change after moving between folders

@@ -208,10 +208,16 @@ export class ParallelImapSyncService {
 
             for (const folder of folders) {
                 try {
+                    // For TRASH and SPAM, always fetch all emails since moved emails keep their original date
+                    // Using date filter would miss older emails that were just moved to trash
+                    const folderSearchCriteria = (folder.label === 'TRASH' || folder.label === 'SPAM')
+                        ? { all: true }
+                        : searchCriteria;
+
                     const folderMessages = await this.fetchFolderEmails(
                         client,
                         folder,
-                        searchCriteria,
+                        folderSearchCriteria,
                         batchSize
                     );
                     messages.push(...folderMessages);
@@ -331,7 +337,7 @@ export class ParallelImapSyncService {
             maxConnections: 20,
             batchSize: 5,
             lastSyncTime,
-            foldersToSync: ['INBOX', 'SENT'],
+            foldersToSync: ['INBOX', 'SENT', 'TRASH'],
         });
     }
 

@@ -317,9 +317,9 @@ export class EmailModel {
       email.updatedAt.toISOString()
     );
 
-    // 2. Save account-specific metadata
+    // 2. Save account-specific metadata (UPSERT to handle folder moves)
     const stmt = this.db.prepare(`
-      INSERT INTO emails (
+      INSERT OR REPLACE INTO emails (
         id, messageId, threadId, accountId, from_address, to_addresses, cc_addresses, bcc_addresses,
         subject, snippet, isRead, isIncoming, sentAt, receivedAt, contactIds, dealIds,
         accountEntityIds, trackingPixelId, opens, clicks, createdAt, updatedAt, labelIds, uid, folder, providerId
@@ -385,7 +385,7 @@ export class EmailModel {
     const stmt = this.db.prepare(`
       SELECT e.*, ec.body, ec.htmlBody, ec.attachments 
       FROM emails e 
-      JOIN email_contents ec ON e.messageId = ec.messageId
+      LEFT JOIN email_contents ec ON e.messageId = ec.messageId
       WHERE e.accountId = ? AND e.folder = ? AND e.uid = ?
     `);
     const row = stmt.get(accountId, folder, uid) as any;
