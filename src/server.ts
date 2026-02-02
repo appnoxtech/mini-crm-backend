@@ -8,6 +8,7 @@ import { startThreadSummaryJob } from './cron/summarizeThreads';
 import { startEmailSyncJob } from './cron/emailSync';
 import { startTokenRefreshJob } from './cron/tokenRefresh';
 import { startRunPodJobProcessor } from './cron/runpodJobProcessor';
+import { startTrashCleanupJob } from './cron/trashCleanup';
 import os from 'os';
 
 // Load environment variables
@@ -401,6 +402,9 @@ startTokenRefreshJob(DB_PATH);
 
 // Start calendar reminder processor cron job
 startReminderProcessor(notificationDispatcherService);
+
+// Start trash cleanup cron job (deletes emails older than 30 days)
+startTrashCleanupJob(DB_PATH);
 
 
 // Start RunPod async job processor (NO REDIS REQUIRED!)

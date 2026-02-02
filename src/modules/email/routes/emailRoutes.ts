@@ -62,6 +62,13 @@ export function createEmailRoutes(emailController: EmailController): Router {
 
   router.post('/:emailId/archive', (req: any, res) => emailController.archiveEmail(req, res));
   router.post('/:emailId/unarchive', (req: any, res) => emailController.unarchiveEmail(req, res));
+
+  // Trash (soft delete) and permanent delete routes
+  router.post('/:emailId/trash', (req: any, res) => emailController.trashEmail(req, res));
+  router.post('/:emailId/restore', (req: any, res) => emailController.restoreFromTrash(req, res));
+  router.delete('/trash/all', (req: any, res) => emailController.deleteAllTrash(req, res));
+  router.delete('/:emailId', (req: any, res) => emailController.deleteEmailPermanently(req, res));
+
   router.get('/:emailId', (req: any, res) => emailController.getEmailById(req, res));
 
   // Unified Read/Unread Status

@@ -1032,6 +1032,151 @@ export class EmailModel {
     return result.changes > 0;
   }
 
+  /**
+   * Move email to trash by adding TRASH label and removing from INBOX
+   */
+  trashEmail(emailId: string, userId: string): boolean {
+    const email = this.getEmailById(emailId, userId);
+    if (!email) return false;
+
+    let labels = email.labelIds || [];
+    // Remove from INBOX and ARCHIVE
+    labels = labels.filter((l) => l !== 'INBOX' && l !== 'ARCHIVE');
+    // Add TRASH label if not present
+    if (!labels.includes('TRASH')) {
+      labels.push('TRASH');
+    }
+
+    const stmt = this.db.prepare(
+      `UPDATE emails SET labelIds = ?, updatedAt = ? WHERE id = ?`
+    );
+    const result = stmt.run(
+      JSON.stringify(labels),
+      new Date().toISOString(),
+      emailId
+    );
+    return result.changes > 0;
+  }
+
+  /**
+   * Restore email from trash back to inbox
+   */
+  restoreFromTrash(emailId: string, userId: string): boolean {
+    const email = this.getEmailById(emailId, userId);
+    if (!email) return false;
+
+    let labels = email.labelIds || [];
+    // Remove TRASH label
+    labels = labels.filter((l) => l !== 'TRASH');
+    // Add INBOX back
+    if (!labels.includes('INBOX')) {
+      labels.push('INBOX');
+    }
+
+    const stmt = this.db.prepare(
+      `UPDATE emails SET labelIds = ?, updatedAt = ? WHERE id = ?`
+    );
+    const result = stmt.run(
+      JSON.stringify(labels),
+      new Date().toISOString(),
+      emailId
+    );
+    return result.changes > 0;
+  }
+
+  /**
+   * Permanently delete an email from the database
+   */
+  deleteEmailPermanently(emailId: string, userId: string): boolean {
+    const email = this.getEmailById(emailId, userId);
+    if (!email) return false;
+
+    // Delete from email_contents first (using messageId)
+    const deleteContentStmt = this.db.prepare(
+      `DELETE FROM email_contents WHERE messageId = ?`
+    );
+    deleteContentStmt.run(email.messageId);
+
+    // Delete from emails table
+    const deleteEmailStmt = this.db.prepare(
+      `DELETE FROM emails WHERE id = ? AND accountId IN (SELECT id FROM email_accounts WHERE userId = ?)`
+    );
+    const result = deleteEmailStmt.run(emailId, userId);
+
+    return result.changes > 0;
+  }
+
+  /**
+   * Get all emails in trash for a user
+   */
+  getTrashEmails(userId: string): Email[] {
+    const stmt = this.db.prepare(`
+      SELECT e.* 
+      FROM emails e
+      JOIN email_accounts ea ON e.accountId = ea.id
+      WHERE ea.userId = ? 
+      AND e.labelIds LIKE '%TRASH%'
+      ORDER BY e.receivedAt DESC
+    `);
+
+    const rows = stmt.all(userId) as any[];
+    return rows.map((row: any) => this.mapRowToEmail(row));
+  }
+
+  /**
+   * Get emails in trash that are older than the specified date
+   * Used for auto-cleanup of old trash emails
+   */
+  getTrashEmailsOlderThan(daysOld: number = 30): { emailId: string; userId: string; accountId: string }[] {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+
+    const stmt = this.db.prepare(`
+      SELECT e.id as emailId, e.accountId, ea.userId 
+      FROM emails e
+      JOIN email_accounts ea ON e.accountId = ea.id
+      WHERE e.labelIds LIKE '%TRASH%' 
+      AND e.updatedAt < ?
+    `);
+
+    const rows = stmt.all(cutoffDate.toISOString()) as any[];
+    return rows.map(row => ({
+      emailId: row.emailId,
+      userId: row.userId,
+      accountId: row.accountId
+    }));
+  }
+
+  /**
+   * Permanently delete old trash emails (batch operation)
+   * Returns the count of deleted emails
+   */
+  purgeOldTrashEmails(daysOld: number = 30): number {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+
+    // First, delete contents for these emails
+    const deleteContentStmt = this.db.prepare(`
+      DELETE FROM email_contents 
+      WHERE messageId IN (
+        SELECT messageId FROM emails 
+        WHERE labelIds LIKE '%TRASH%' 
+        AND updatedAt < ?
+      )
+    `);
+    deleteContentStmt.run(cutoffDate.toISOString());
+
+    // Then delete the emails themselves
+    const deleteEmailsStmt = this.db.prepare(`
+      DELETE FROM emails 
+      WHERE labelIds LIKE '%TRASH%' 
+      AND updatedAt < ?
+    `);
+    const result = deleteEmailsStmt.run(cutoffDate.toISOString());
+
+    return result.changes;
+  }
+
   // Mark email as read/unread
   markEmailAsRead(
     emailId: string,

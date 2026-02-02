@@ -1417,4 +1417,293 @@ export class EmailConnectorService {
       throw error;
     }
   }
+
+  // ========== TRASH AND DELETE METHODS ==========
+
+  /**
+   * Move Gmail email to trash
+   */
+  async trashGmailEmail(account: EmailAccount, messageId: string): Promise<void> {
+    await this.connectGmail(account);
+    try {
+      await this.gmailClient.users.messages.trash({
+        userId: 'me',
+        id: messageId
+      });
+      console.log(`[Gmail] Moved message ${messageId} to trash`);
+    } catch (error) {
+      console.error(`Failed to trash Gmail message ${messageId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Restore Gmail email from trash
+   */
+  async untrashGmailEmail(account: EmailAccount, messageId: string): Promise<void> {
+    await this.connectGmail(account);
+    try {
+      await this.gmailClient.users.messages.untrash({
+        userId: 'me',
+        id: messageId
+      });
+      console.log(`[Gmail] Restored message ${messageId} from trash`);
+    } catch (error) {
+      console.error(`Failed to untrash Gmail message ${messageId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Permanently delete Gmail email
+   */
+  async deleteGmailEmailPermanently(account: EmailAccount, messageId: string): Promise<void> {
+    await this.connectGmail(account);
+    try {
+      await this.gmailClient.users.messages.delete({
+        userId: 'me',
+        id: messageId
+      });
+      console.log(`[Gmail] Permanently deleted message ${messageId}`);
+    } catch (error) {
+      console.error(`Failed to permanently delete Gmail message ${messageId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Move IMAP email to Trash folder
+   */
+  async moveImapEmailToTrash(account: EmailAccount, sourceFolder: string, uid: number): Promise<void> {
+    const client = await this.connectIMAP(account);
+    try {
+      await client.mailboxOpen(sourceFolder);
+
+      // Try to find the Trash folder - common names
+      const trashFolders = ['Trash', 'Deleted', 'Deleted Items', 'INBOX.Trash', '[Gmail]/Trash'];
+      let trashFolder = 'Trash';
+
+      // Try to list folders to find the actual trash folder
+      try {
+        const folders = await client.list();
+        for (const folder of folders) {
+          const lowerName = folder.path.toLowerCase();
+          if (lowerName.includes('trash') || lowerName.includes('deleted') ||
+            folder.specialUse === '\\Trash') {
+            trashFolder = folder.path;
+            break;
+          }
+        }
+      } catch (listError) {
+        console.warn('Could not list folders, using default Trash folder');
+      }
+
+      // Move the message to Trash
+      await client.messageMove(`${uid}`, trashFolder, { uid: true });
+      console.log(`[IMAP] Moved UID ${uid} from ${sourceFolder} to ${trashFolder}`);
+    } catch (error) {
+      console.error(`Failed to move IMAP message to trash:`, error);
+      throw error;
+    } finally {
+      await client.logout();
+    }
+  }
+
+  /**
+ * Move IMAP email from Trash back to Inbox
+ * Searches by Message-ID since UIDs change after moving between folders
+ */
+  async moveImapEmailFromTrash(account: EmailAccount, uid: number, messageId?: string): Promise<void> {
+    const client = await this.connectIMAP(account);
+    try {
+      // Common trash folder names
+      const trashFolderNames = ['Trash', 'INBOX.Trash', 'Deleted', 'Deleted Items', 'Deleted Messages', '[Gmail]/Trash'];
+
+      let restored = false;
+      let trashFolder = 'Trash';
+
+      // Try to find the actual Trash folder
+      try {
+        const folders = await client.list();
+        for (const folder of folders) {
+          const lowerName = folder.path.toLowerCase();
+          if (lowerName.includes('trash') || lowerName.includes('deleted') ||
+            folder.specialUse === '\\Trash') {
+            trashFolder = folder.path;
+            break;
+          }
+        }
+      } catch (listError) {
+        console.warn('Could not list folders, using default Trash folder');
+      }
+
+      // If we have a Message-ID, search for the email in trash folders
+      if (messageId) {
+        const cleanMessageId = messageId.replace(/[<>]/g, '');
+
+        for (const folder of [trashFolder, ...trashFolderNames]) {
+          try {
+            await client.mailboxOpen(folder);
+
+            const searchResults = await client.search({
+              header: { 'Message-ID': cleanMessageId }
+            }, { uid: true });
+
+            if (searchResults && searchResults.length > 0) {
+              const foundUid = searchResults[0];
+              console.log(`[IMAP] Found message in ${folder} with UID ${foundUid}`);
+
+              await client.messageMove(`${foundUid}`, 'INBOX', { uid: true });
+              console.log(`[IMAP] Moved UID ${foundUid} from ${folder} to INBOX`);
+              restored = true;
+              break;
+            }
+          } catch (folderErr: any) {
+            if (!folderErr.message?.includes('NONEXISTENT') && !folderErr.message?.includes('does not exist')) {
+              console.log(`[IMAP] Could not check folder ${folder}: ${folderErr.message}`);
+            }
+          }
+        }
+      }
+
+      // Fallback: try with original UID in detected trash folder
+      if (!restored) {
+        try {
+          await client.mailboxOpen(trashFolder);
+          await client.messageMove(`${uid}`, 'INBOX', { uid: true });
+          console.log(`[IMAP] Moved UID ${uid} from ${trashFolder} to INBOX`);
+          restored = true;
+        } catch (fallbackErr: any) {
+          console.log(`[IMAP] Fallback restore from ${trashFolder} failed: ${fallbackErr.message}`);
+        }
+      }
+
+      if (!restored) {
+        console.warn(`[IMAP] Could not find message to restore (Message-ID: ${messageId}, Original UID: ${uid})`);
+      }
+    } catch (error) {
+      console.error(`Failed to restore IMAP message from trash:`, error);
+      throw error;
+    } finally {
+      await client.logout();
+    }
+  }
+  /**
+ * Permanently delete IMAP email by Message-ID
+ * Searches in Trash folder first (since moved emails get new UIDs), then falls back to provided folder
+ */
+  async deleteImapEmailPermanently(account: EmailAccount, folder: string, uid: number, messageId?: string): Promise<void> {
+    const client = await this.connectIMAP(account);
+    try {
+      // Common trash folder names across different email providers
+      const trashFolderNames = ['Trash', 'INBOX.Trash', 'Deleted', 'Deleted Items', 'Deleted Messages', '[Gmail]/Trash'];
+
+      let deleted = false;
+
+      // If we have a Message-ID, search for it in Trash folders first
+      if (messageId) {
+        // Clean Message-ID (remove < > if present)
+        const cleanMessageId = messageId.replace(/[<>]/g, '');
+
+        for (const trashFolder of trashFolderNames) {
+          try {
+            const mailbox = await client.mailboxOpen(trashFolder);
+            if (!mailbox) continue;
+
+            // Search by Message-ID header
+            const searchResults = await client.search({
+              header: { 'Message-ID': cleanMessageId }
+            }, { uid: true });
+
+            if (searchResults && searchResults.length > 0) {
+              // Found the message in this trash folder
+              const foundUid = searchResults[0];
+              console.log(`[IMAP] Found message in ${trashFolder} with UID ${foundUid}`);
+
+              await client.messageFlagsAdd(`${foundUid}`, ['\\Deleted'], { uid: true });
+              await client.messageDelete(`${foundUid}`, { uid: true });
+
+              console.log(`[IMAP] Permanently deleted UID ${foundUid} from ${trashFolder}`);
+              deleted = true;
+              break;
+            }
+          } catch (folderErr: any) {
+            // Folder doesn't exist or access denied, try next
+            if (!folderErr.message?.includes('NONEXISTENT') && !folderErr.message?.includes('does not exist')) {
+              console.log(`[IMAP] Could not check folder ${trashFolder}: ${folderErr.message}`);
+            }
+          }
+        }
+      }
+
+      // Fallback: try original folder with original UID
+      if (!deleted) {
+        try {
+          await client.mailboxOpen(folder);
+          await client.messageFlagsAdd(`${uid}`, ['\\Deleted'], { uid: true });
+          await client.messageDelete(`${uid}`, { uid: true });
+          console.log(`[IMAP] Permanently deleted UID ${uid} from ${folder}`);
+          deleted = true;
+        } catch (fallbackErr: any) {
+          console.log(`[IMAP] Fallback delete from ${folder} failed: ${fallbackErr.message}`);
+        }
+      }
+
+      if (!deleted) {
+        console.warn(`[IMAP] Could not find message to delete (Message-ID: ${messageId}, Original: ${folder}/${uid})`);
+      }
+    } catch (error) {
+      console.error(`Failed to permanently delete IMAP message:`, error);
+      throw error;
+    } finally {
+      await client.logout();
+    }
+  }
+  /**
+   * Move Outlook email to trash (Deleted Items folder)
+   */
+  async trashOutlookEmail(account: EmailAccount, messageId: string): Promise<void> {
+    await this.connectOutlook(account);
+    try {
+      // Move to deletedItems folder
+      await this.outlookClient.api(`/me/messages/${messageId}/move`).post({
+        destinationId: 'deleteditems'
+      });
+      console.log(`[Outlook] Moved message ${messageId} to Deleted Items`);
+    } catch (error) {
+      console.error(`Failed to trash Outlook message ${messageId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Restore Outlook email from Deleted Items to Inbox
+   */
+  async untrashOutlookEmail(account: EmailAccount, messageId: string): Promise<void> {
+    await this.connectOutlook(account);
+    try {
+      // Move back to inbox
+      await this.outlookClient.api(`/me/messages/${messageId}/move`).post({
+        destinationId: 'inbox'
+      });
+      console.log(`[Outlook] Restored message ${messageId} to Inbox`);
+    } catch (error) {
+      console.error(`Failed to restore Outlook message ${messageId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Permanently delete Outlook email
+   */
+  async deleteOutlookEmailPermanently(account: EmailAccount, messageId: string): Promise<void> {
+    await this.connectOutlook(account);
+    try {
+      await this.outlookClient.api(`/me/messages/${messageId}`).delete();
+      console.log(`[Outlook] Permanently deleted message ${messageId}`);
+    } catch (error) {
+      console.error(`Failed to permanently delete Outlook message ${messageId}:`, error);
+      throw error;
+    }
+  }
 }

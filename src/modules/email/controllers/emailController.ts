@@ -1442,4 +1442,118 @@ export class EmailController {
     return this.getEmails(req, res);
   }
 
+  /**
+   * Move email to trash (soft delete)
+   */
+  async trashEmail(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        return ResponseHandler.unauthorized(res, "User not authenticated");
+      }
+
+      const { emailId } = req.params;
+      if (!emailId) {
+        return ResponseHandler.error(res, "Email ID is required");
+      }
+
+      const success = await this.emailService.trashEmail(
+        emailId,
+        req.user.id.toString()
+      );
+
+      if (!success) {
+        return ResponseHandler.notFound(res, "Email not found");
+      }
+
+      return ResponseHandler.success(res, "Email moved to trash successfully");
+    } catch (error: any) {
+      console.error("Error trashing email:", error);
+      return ResponseHandler.internalError(res, "Failed to move email to trash");
+    }
+  }
+
+  /**
+   * Restore email from trash
+   */
+  async restoreFromTrash(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        return ResponseHandler.unauthorized(res, "User not authenticated");
+      }
+
+      const { emailId } = req.params;
+      if (!emailId) {
+        return ResponseHandler.error(res, "Email ID is required");
+      }
+
+      const success = await this.emailService.restoreFromTrash(
+        emailId,
+        req.user.id.toString()
+      );
+
+      if (!success) {
+        return ResponseHandler.notFound(res, "Email not found in trash");
+      }
+
+      return ResponseHandler.success(res, "Email restored from trash successfully");
+    } catch (error: any) {
+      console.error("Error restoring email from trash:", error);
+      return ResponseHandler.internalError(res, "Failed to restore email from trash");
+    }
+  }
+
+  /**
+   * Permanently delete email
+   */
+  async deleteEmailPermanently(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        return ResponseHandler.unauthorized(res, "User not authenticated");
+      }
+
+      const { emailId } = req.params;
+      if (!emailId) {
+        return ResponseHandler.error(res, "Email ID is required");
+      }
+
+      const success = await this.emailService.deleteEmailPermanently(
+        emailId,
+        req.user.id.toString()
+      );
+
+      if (!success) {
+        return ResponseHandler.notFound(res, "Email not found");
+      }
+
+      return ResponseHandler.success(res, "Email permanently deleted");
+    } catch (error: any) {
+      console.error("Error permanently deleting email:", error);
+      return ResponseHandler.internalError(res, "Failed to permanently delete email");
+    }
+  }
+
+  /**
+   * Delete all emails in trash permanently
+   */
+  async deleteAllTrash(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        return ResponseHandler.unauthorized(res, "User not authenticated");
+      }
+
+      const result = await this.emailService.deleteAllTrash(
+        req.user.id.toString()
+      );
+
+      return ResponseHandler.success(res, {
+        message: `Successfully deleted ${result.deleted} emails from trash`,
+        deleted: result.deleted,
+        failed: result.failed
+      });
+    } catch (error: any) {
+      console.error("Error deleting all trash:", error);
+      return ResponseHandler.internalError(res, "Failed to delete all trash");
+    }
+  }
+
 }
