@@ -26,7 +26,7 @@ export class DraftModel {
       CREATE TABLE IF NOT EXISTS email_drafts (
         id TEXT PRIMARY KEY,
         account_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
+        user_id INTEGER NOT NULL,
         
         -- Provider Sync
         provider_draft_id TEXT,

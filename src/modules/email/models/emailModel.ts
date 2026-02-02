@@ -458,7 +458,8 @@ export class EmailModel {
     } else if (folder === "spam") {
       rawWhere += ` AND (e."labelIds"::text LIKE '%SPAM%' OR e."labelIds"::text LIKE '%JUNK%') AND NOT (e."labelIds"::text LIKE '%TRASH%')`;
     } else if (folder === "drafts" || folder === "drfts") {
-      rawWhere += ` AND e."labelIds"::text LIKE '%DRAFT%' AND NOT (e."labelIds"::text LIKE '%TRASH%')`;
+      whereClause += ` AND (e.folder = 'DRAFT' OR e.labelIds LIKE '%DRAFT%')`;
+
     } else if (folder === "trash") {
       rawWhere += ` AND e."labelIds"::text LIKE '%TRASH%'`;
     } else if (folder === "archive") {

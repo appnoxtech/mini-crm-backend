@@ -312,7 +312,7 @@ export class ParallelImapSyncService {
             maxConnections: 20,
             batchSize: 5,
             lastSyncTime,
-            // Removed foldersToSync restriction to ensure ALL folders are aligned
+            foldersToSync: ['INBOX', 'SENT', 'DRAFT'],
         });
     }
 
