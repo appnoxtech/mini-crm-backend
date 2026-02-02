@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { prisma } from '../../../shared/prisma';
 
 export interface EventReminder {
     id: number;
@@ -9,115 +9,116 @@ export interface EventReminder {
 }
 
 export class EventReminderModel {
-    private db: Database.Database;
-
-    constructor(db: Database.Database) {
-        this.db = db;
-    }
+    constructor(_db?: any) { }
 
     initialize(): void {
-        this.db.exec(`
-            CREATE TABLE IF NOT EXISTS event_reminders (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                eventId INTEGER NOT NULL,
-                reminderMinutesBefore INTEGER NOT NULL,
-                isDefault INTEGER DEFAULT 0,
-                createdAt TEXT NOT NULL,
-                FOREIGN KEY (eventId) REFERENCES calendar_events(id) ON DELETE CASCADE
-            )
-        `);
-
-        this.db.exec(`
-            CREATE INDEX IF NOT EXISTS idx_event_reminders_eventId ON event_reminders(eventId);
-        `);
+        // No-op with Prisma
     }
 
-    create(data: { eventId: number; reminderMinutesBefore: number; isDefault?: boolean }): EventReminder {
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare(`
-            INSERT INTO event_reminders (eventId, reminderMinutesBefore, isDefault, createdAt)
-            VALUES (?, ?, ?, ?)
-        `);
-
-        const result = stmt.run(
-            data.eventId,
-            data.reminderMinutesBefore,
-            data.isDefault ? 1 : 0,
-            now
-        );
-
-        return this.findById(result.lastInsertRowid as number)!;
+    private mapPrismaToReminder(reminder: any): EventReminder {
+        return {
+            id: reminder.id,
+            eventId: reminder.eventId,
+            reminderMinutesBefore: reminder.reminderMinutesBefore,
+            isDefault: reminder.isDefault,
+            createdAt: reminder.createdAt.toISOString()
+        };
     }
 
-    findById(id: number): EventReminder | null {
-        const row = this.db.prepare(`SELECT * FROM event_reminders WHERE id = ?`).get(id) as any;
-        return row ? this.mapRow(row) : null;
+    async create(data: { eventId: number; reminderMinutesBefore: number; isDefault?: boolean }): Promise<EventReminder> {
+        const reminder = await prisma.eventReminder.create({
+            data: {
+                eventId: data.eventId,
+                reminderMinutesBefore: data.reminderMinutesBefore,
+                isDefault: data.isDefault || false
+            }
+        });
+
+        return this.mapPrismaToReminder(reminder);
     }
 
-    findByEventId(eventId: number): EventReminder[] {
-        const rows = this.db.prepare(`
-            SELECT * FROM event_reminders
-            WHERE eventId = ?
-            ORDER BY reminderMinutesBefore ASC
-        `).all(eventId) as any[];
-
-        return rows.map(row => this.mapRow(row));
+    async findById(id: number): Promise<EventReminder | null> {
+        const reminder = await prisma.eventReminder.findUnique({
+            where: { id }
+        });
+        return reminder ? this.mapPrismaToReminder(reminder) : null;
     }
 
-    update(id: number, data: { reminderMinutesBefore?: number }): EventReminder | null {
-        const existing = this.findById(id);
-        if (!existing) return null;
+    async findByEventId(eventId: number): Promise<EventReminder[]> {
+        const reminders = await prisma.eventReminder.findMany({
+            where: { eventId },
+            orderBy: { reminderMinutesBefore: 'asc' }
+        });
 
-        if (data.reminderMinutesBefore !== undefined) {
-            this.db.prepare(`
-                UPDATE event_reminders
-                SET reminderMinutesBefore = ?
-                WHERE id = ?
-            `).run(data.reminderMinutesBefore, id);
+        return reminders.map((r: any) => this.mapPrismaToReminder(r));
+    }
+
+    async update(id: number, data: { reminderMinutesBefore?: number }): Promise<EventReminder | null> {
+        if (data.reminderMinutesBefore === undefined) {
+            return this.findById(id);
         }
 
-        return this.findById(id);
+        const updated = await prisma.eventReminder.update({
+            where: { id },
+            data: { reminderMinutesBefore: data.reminderMinutesBefore }
+        });
+
+        return this.mapPrismaToReminder(updated);
     }
 
-    delete(id: number): boolean {
-        const result = this.db.prepare(`DELETE FROM event_reminders WHERE id = ?`).run(id);
-        return result.changes > 0;
+    async delete(id: number): Promise<boolean> {
+        try {
+            await prisma.eventReminder.delete({
+                where: { id }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 
-    deleteByEventId(eventId: number): boolean {
-        const result = this.db.prepare(`DELETE FROM event_reminders WHERE eventId = ?`).run(eventId);
-        return result.changes > 0;
+    async deleteByEventId(eventId: number): Promise<boolean> {
+        try {
+            await prisma.eventReminder.deleteMany({
+                where: { eventId }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 
-    deleteDefaultByEventId(eventId: number): boolean {
-        const result = this.db.prepare(`
-            DELETE FROM event_reminders WHERE eventId = ? AND isDefault = 1
-        `).run(eventId);
-        return result.changes > 0;
+    async deleteDefaultByEventId(eventId: number): Promise<boolean> {
+        try {
+            await prisma.eventReminder.deleteMany({
+                where: { eventId, isDefault: true }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 
-    hasCustomReminders(eventId: number): boolean {
-        const row = this.db.prepare(`
-            SELECT COUNT(*) as count FROM event_reminders
-            WHERE eventId = ? AND isDefault = 0
-        `).get(eventId) as { count: number };
-
-        return row.count > 0;
+    async hasCustomReminders(eventId: number): Promise<boolean> {
+        const count = await prisma.eventReminder.count({
+            where: { eventId, isDefault: false }
+        });
+        return count > 0;
     }
 
-    ensureDefaultReminder(eventId: number, defaultMinutes: number = 30): EventReminder | null {
+    async ensureDefaultReminder(eventId: number, defaultMinutes: number = 30): Promise<EventReminder | null> {
         // Only add default if no custom reminders exist
-        if (this.hasCustomReminders(eventId)) {
+        if (await this.hasCustomReminders(eventId)) {
             return null;
         }
 
         // Check if default already exists
-        const existing = this.db.prepare(`
-            SELECT * FROM event_reminders WHERE eventId = ? AND isDefault = 1
-        `).get(eventId) as any;
+        const existing = await prisma.eventReminder.findFirst({
+            where: { eventId, isDefault: true }
+        });
 
         if (existing) {
-            return this.mapRow(existing);
+            return this.mapPrismaToReminder(existing);
         }
 
         return this.create({
@@ -125,15 +126,5 @@ export class EventReminderModel {
             reminderMinutesBefore: defaultMinutes,
             isDefault: true
         });
-    }
-
-    private mapRow(row: any): EventReminder {
-        return {
-            id: row.id,
-            eventId: row.eventId,
-            reminderMinutesBefore: row.reminderMinutesBefore,
-            isDefault: Boolean(row.isDefault),
-            createdAt: row.createdAt
-        };
     }
 }

@@ -52,9 +52,9 @@ export class AuthService {
     }
   }
 
-  async createUser(email: string, name: string, password: string): Promise<AuthUser> {
+  async createUser(email: string, name: string, password: string, role: string = 'user'): Promise<AuthUser> {
     const passwordHash = await this.hashPassword(password);
-    const user = this.userModel.createUser(email, name, passwordHash, 'user');
+    const user = await this.userModel.createUser(email, name, passwordHash, role);
 
     return {
       id: user.id,
@@ -66,7 +66,7 @@ export class AuthService {
 
   async authenticateUser(email: string, password: string): Promise<AuthUser | null> {
     try {
-      const user = this.userModel.findByEmail(email);
+      const user = await this.userModel.findByEmail(email);
       if (!user) {
         return null;
       }
@@ -77,7 +77,7 @@ export class AuthService {
       }
       const { passwordHash, ...safeUser } = user;
       safeUser.profileImg = JSON.parse(safeUser.profileImg || '[]');
-      return safeUser;
+      return safeUser as unknown as AuthUser;
     } catch (error) {
       console.error('Authentication error:', error);
       return null;
@@ -85,29 +85,28 @@ export class AuthService {
   }
 
   async getProfile(id: number): Promise<AuthUser | null> {
-    const user = this.userModel.findById(id);
+    const user = await this.userModel.findById(id);
     if (!user) return null;
 
     return {
       ...user,
       profileImg: JSON.parse(user.profileImg || '[]')
-    };
+    } as unknown as AuthUser;
   }
 
-
   async updateUser(id: number, updates: Partial<{ name: string; email: string }>): Promise<AuthUser | null> {
-    const user = this.userModel.updateUser(id, updates);
+    const user = await this.userModel.updateUser(id, updates as any);
     if (!user) return null;
 
     return {
       ...user,
-      profileImg: JSON.parse(user.profileImg || '[]')
+      profileImg: Array.isArray(user.profileImg) ? user.profileImg : JSON.parse((user.profileImg as any) || '[]')
     };
   }
 
   async changePassword(id: number, currentPassword: string, newPassword: string): Promise<boolean> {
     try {
-      const user = this.userModel.findById(id);
+      const user = await this.userModel.findById(id);
       if (!user) {
         return false;
       }
@@ -118,7 +117,7 @@ export class AuthService {
       }
 
       const newPasswordHash = await this.hashPassword(newPassword);
-      return this.userModel.updatePassword(id, newPasswordHash);
+      return await this.userModel.updatePassword(id, newPasswordHash);
     } catch (error) {
       console.error('Password change error:', error);
       return false;
@@ -127,7 +126,7 @@ export class AuthService {
 
   async changeAccountRole(id: number, role: string): Promise<boolean> {
     try {
-      return this.userModel.updateAccountRole(id, role);
+      return await this.userModel.updateAccountRole(id, role);
     } catch (error) {
       console.error('Account role change error:', error);
       return false;
@@ -142,7 +141,7 @@ export class AuthService {
     const trimmedSearch = searchTerm.trim();
 
     // Search in users table
-    const users = this.userModel.searchByPersonName(trimmedSearch);
+    const users = await this.userModel.searchByPersonName(trimmedSearch);
     const formattedUsers = users.map(user => ({
       id: user.id,
       name: user.name,
@@ -152,8 +151,8 @@ export class AuthService {
     }));
 
     // Search in persons table
-    const persons = this.personModel.searchByPersonName(trimmedSearch);
-    const formattedPersons = persons.map(person => ({
+    const persons = await this.personModel.searchByPersonName(trimmedSearch);
+    const formattedPersons = persons.map((person: any) => ({
       id: person.id,
       name: `${person.firstName} ${person.lastName || ''}`.trim(),
       email: person.emails?.[0]?.email || '',
@@ -302,7 +301,7 @@ export class AuthService {
 
   async forgotPassword(email: string): Promise<boolean> {
     try {
-      const user = this.userModel.findByEmail(email);
+      const user = await this.userModel.findByEmail(email);
       if (!user) {
         return false;
       }
@@ -318,7 +317,7 @@ export class AuthService {
 
       // Hash OTP before saving
       const hashedOtp = await bcrypt.hash(otp, 10);
-      this.otpModel.saveOtp(email, hashedOtp, expiresAt);
+      await this.otpModel.saveOtp(email, hashedOtp, expiresAt);
 
       // Send email using SystemEmailHelper
       // This uses the explicit "sendViaSystemSmtp" logic as requested
@@ -381,7 +380,7 @@ export class AuthService {
 
   async verifyOtp(email: string, otp: string, shouldDelete: boolean = false): Promise<string> {
     try {
-      const otpRecord = this.otpModel.getOtp(email);
+      const otpRecord = await this.otpModel.getOtp(email);
       if (!otpRecord) return "OTP not found";
 
       // Compare hashed OTP
@@ -396,7 +395,7 @@ export class AuthService {
       }
 
       if (shouldDelete) {
-        this.otpModel.deleteOtp(email);
+        await this.otpModel.deleteOtp(email);
       }
 
       return "OTP verified";
@@ -415,11 +414,11 @@ export class AuthService {
         return false;
       }
 
-      const user = this.userModel.findByEmail(email);
+      const user = await this.userModel.findByEmail(email);
       if (!user) return false;
 
       const newPasswordHash = await this.hashPassword(newPassword);
-      const updated = this.userModel.updatePassword(user.id, newPasswordHash);
+      const updated = await this.userModel.updatePassword(user.id, newPasswordHash);
 
       // OTP is already deleted by verifyOtp(..., true)
 

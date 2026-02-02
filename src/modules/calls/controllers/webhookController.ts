@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { CallService } from '../services/callService';
 import { getTwilioService } from '../services/twilioService';
-import { getWebhookUrls, getTwilioConfig } from '../config/twilioConfig';
+import { getWebhookUrls } from '../config/twilioConfig';
 
 /**
  * WebhookController
@@ -72,7 +72,7 @@ export class WebhookController {
                 console.log(`[Webhook] Outbound call ${callId} connecting to ${toNumber}`);
             } else {
                 // Incoming call - route to agent
-                const result = this.callService.handleIncomingCall(
+                const result = await this.callService.handleIncomingCall(
                     CallSid,
                     From,
                     To,
@@ -128,11 +128,8 @@ export class WebhookController {
                 CallDuration
             } = req.body;
 
-            // Get callId from query if provided
-            const callId = req.query.callId ? parseInt(req.query.callId as string, 10) : undefined;
-
             // Find and update the call
-            const call = this.callService.updateCallStatus(
+            const call = await this.callService.updateCallStatus(
                 CallSid,
                 CallStatus,
                 CallDuration ? parseInt(CallDuration, 10) : undefined
@@ -196,7 +193,7 @@ export class WebhookController {
             }
 
             // Save recording metadata
-            const recording = this.callService.handleRecordingReady(
+            const recording = await this.callService.handleRecordingReady(
                 CallSid,
                 RecordingSid,
                 RecordingUrl + '.mp3', // Add format extension
@@ -208,7 +205,7 @@ export class WebhookController {
                 // Emit real-time update
                 if (this.io) {
                     // Find the call to get its ID
-                    const call = this.callService.getCallByTwilioSid(CallSid);
+                    const call = await this.callService.getCallByTwilioSid(CallSid);
                     if (call) {
                         this.io.emit('call:recording-ready', {
                             type: 'call:recording-ready',
@@ -255,12 +252,11 @@ export class WebhookController {
             }
 
             // Find the recording by RecordingSid
-            // Note: This would need to be implemented in CallModel
             console.log(`[Webhook] Transcription completed for recording ${RecordingSid}`);
             console.log(`[Webhook] Transcription text: ${TranscriptionText?.substring(0, 100)}...`);
 
             // TODO: Update the recording with transcription data
-            // this.callService.updateRecordingTranscription(RecordingSid, TranscriptionText, TranscriptionSid);
+            // await this.callService.updateRecordingTranscription(RecordingSid, TranscriptionText, TranscriptionSid);
 
             res.status(200).send('OK');
         } catch (error: any) {

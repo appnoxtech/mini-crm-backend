@@ -1,5 +1,6 @@
-import Database from 'better-sqlite3';
+import { prisma } from '../../../shared/prisma';
 import { BaseEntity } from '../../../shared/types';
+import { Prisma } from '@prisma/client';
 
 export interface PipelineStage extends BaseEntity {
     pipelineId: number;
@@ -13,215 +14,183 @@ export type searchResult = {
     name: string;
     id: number;
     description?: string;
-    isDefault: boolean;
-    isActive: boolean;
+    isDefault?: boolean;
+    isActive?: boolean;
 }
 
 export class PipelineStageModel {
-    private db: Database.Database;
-
-    constructor(db: Database.Database) {
-        this.db = db;
-    }
+    constructor(_db?: any) { }
 
     initialize(): void {
-        this.db.exec(`
-      CREATE TABLE IF NOT EXISTS pipeline_stages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        pipelineId INTEGER NOT NULL,
-        name TEXT NOT NULL,
-        orderIndex INTEGER NOT NULL,
-        rottenDays INTEGER,
-        probability INTEGER DEFAULT 0,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL,
-        FOREIGN KEY (pipelineId) REFERENCES pipelines(id) ON DELETE CASCADE,
-        UNIQUE(pipelineId, orderIndex)
-      )
-    `);
-
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_pipeline_stages_pipelineId ON pipeline_stages(pipelineId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_pipeline_stages_orderIndex ON pipeline_stages(orderIndex)');
+        // No-op with Prisma
     }
 
-    create(data: Omit<PipelineStage, 'id' | 'createdAt' | 'updatedAt'>): PipelineStage {
-        const now = new Date().toISOString();
+    async create(data: Omit<PipelineStage, 'id' | 'createdAt' | 'updatedAt'>): Promise<PipelineStage> {
+        const stage = await prisma.pipelineStage.create({
+            data: {
+                pipelineId: data.pipelineId,
+                name: data.name,
+                orderIndex: data.orderIndex,
+                rottenDays: data.rottenDays || null,
+                probability: data.probability
+            }
+        });
 
-        const stmt = this.db.prepare(`
-      INSERT INTO pipeline_stages (pipelineId, name, orderIndex, rottenDays, probability, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-
-        const result = stmt.run(
-            data.pipelineId,
-            data.name,
-            data.orderIndex,
-            data.rottenDays || null,
-            data.probability,
-            now,
-            now
-        );
-
-        return this.findById(result.lastInsertRowid as number)!;
+        return this.mapPrismaStageToStage(stage);
     }
 
-    searchByStageName(name: string): searchResult[] {
-        const stmt = this.db.prepare('SELECT * FROM pipeline_stages WHERE name LIKE ?');
-        const results = stmt.all(name) as any[];
-        return results.map(r => ({
-            ...r,
-            isDefault: Boolean(r.isDefault),
-            isActive: Boolean(r.isActive),
-            dealRotting: Boolean(r.dealRotting)
-        }));
+    async findById(id: number): Promise<PipelineStage | null> {
+        const stage = await prisma.pipelineStage.findUnique({
+            where: { id }
+        });
+        return stage ? this.mapPrismaStageToStage(stage) : null;
     }
 
-    findById(id: number): PipelineStage | undefined {
-        const stmt = this.db.prepare('SELECT * FROM pipeline_stages WHERE id = ?');
-        return stmt.get(id) as PipelineStage | undefined;
+    async findByPipelineId(pipelineId: number): Promise<PipelineStage[]> {
+        const stages = await prisma.pipelineStage.findMany({
+            where: { pipelineId },
+            orderBy: { orderIndex: 'asc' }
+        });
+        return stages.map((s: any) => this.mapPrismaStageToStage(s));
     }
 
-    findByPipelineId(pipelineId: number): PipelineStage[] {
-        const stmt = this.db.prepare('SELECT * FROM pipeline_stages WHERE pipelineId = ? ORDER BY orderIndex');
-        return stmt.all(pipelineId) as PipelineStage[];
-    }
-
-    bulkUpdate(pipelineId: number, stagesData: Array<{
+    async bulkUpdate(pipelineId: number, stagesData: Array<{
         stageId: number;
         name: string;
         orderIndex: number;
         probability?: number;
         rottenDays?: number;
-    }>): void {
-        const now = new Date().toISOString();
+    }>): Promise<void> {
+        // Step 1: Set all to negative temporary values to avoid unique constraint conflicts
+        let count = 1;
+        for (const stageData of stagesData) {
+            await prisma.pipelineStage.update({
+                where: { id: stageData.stageId },
+                data: { orderIndex: -(count++) }
+            });
+        }
 
-        // Step 1: Set all to negative temporary orderIndex values to avoid conflicts
-        const tempStmt = this.db.prepare('UPDATE pipeline_stages SET orderIndex = ? WHERE id = ? AND pipelineId = ?');
-        stagesData.forEach((stageData, index) => {
-            tempStmt.run(-(index + 1), stageData.stageId, pipelineId);
-        });
-
-        // Step 2: Update all fields with actual positive orderIndex values
-        const updateStmt = this.db.prepare(`
-        UPDATE pipeline_stages 
-        SET name = ?, orderIndex = ?, probability = ?, rottenDays = ?, updatedAt = ?
-        WHERE id = ? AND pipelineId = ?
-    `);
-
-        stagesData.forEach((stageData) => {
-            updateStmt.run(
-                stageData.name,
-                stageData.orderIndex,
-                stageData.probability ?? 0,
-                stageData.rottenDays ?? null,
-                now,
-                stageData.stageId,
-                pipelineId
-            );
-        });
+        // Step 2: Update with final values
+        for (const stageData of stagesData) {
+            await prisma.pipelineStage.update({
+                where: { id: stageData.stageId },
+                data: {
+                    name: stageData.name,
+                    orderIndex: stageData.orderIndex,
+                    probability: stageData.probability ?? 0,
+                    rottenDays: stageData.rottenDays ?? null,
+                    updatedAt: new Date()
+                }
+            });
+        }
     }
 
-    update(id: number, data: Partial<Omit<PipelineStage, 'id' | 'pipelineId' | 'createdAt' | 'updatedAt'>>): PipelineStage | null {
-        const stage = this.findById(id);
-        if (!stage) {
+    async update(id: number, data: Partial<Omit<PipelineStage, 'id' | 'pipelineId' | 'createdAt' | 'updatedAt'>>): Promise<PipelineStage | null> {
+        try {
+            const updated = await prisma.pipelineStage.update({
+                where: { id },
+                data: {
+                    ...(data.name !== undefined && { name: data.name }),
+                    ...(data.orderIndex !== undefined && { orderIndex: data.orderIndex }),
+                    ...(data.rottenDays !== undefined && { rottenDays: data.rottenDays }),
+                    ...(data.probability !== undefined && { probability: data.probability }),
+                    updatedAt: new Date()
+                }
+            });
+            return this.mapPrismaStageToStage(updated);
+        } catch (error) {
             return null;
         }
-
-        const now = new Date().toISOString();
-        const updates: string[] = [];
-        const values: any[] = [];
-
-        if (data.name !== undefined) {
-            updates.push('name = ?');
-            values.push(data.name);
-        }
-        if (data.orderIndex !== undefined) {
-            updates.push('orderIndex = ?');
-            values.push(data.orderIndex);
-        }
-        if (data.rottenDays !== undefined) {
-            updates.push('rottenDays = ?');
-            values.push(data.rottenDays);
-        }
-        if (data.probability !== undefined) {
-            updates.push('probability = ?');
-            values.push(data.probability);
-        }
-
-        if (updates.length === 0) {
-            return stage;
-        }
-
-        updates.push('updatedAt = ?');
-        values.push(now);
-        values.push(id);
-
-        const stmt = this.db.prepare(`
-      UPDATE pipeline_stages 
-      SET ${updates.join(', ')}
-      WHERE id = ?
-    `);
-
-        stmt.run(...values);
-        return this.findById(id) || null;
     }
 
-    reorder(pipelineId: number, stageOrder: number[]): void {
-        // Step 1: Set all to negative temporary values to avoid conflicts
-        const tempStmt = this.db.prepare('UPDATE pipeline_stages SET orderIndex = ? WHERE id = ? AND pipelineId = ?');
-        stageOrder.forEach((stageId, index) => {
-            tempStmt.run(-(index + 1), stageId, pipelineId);
-        });
-
-        // Step 2: Set to actual positive values
-        const finalStmt = this.db.prepare('UPDATE pipeline_stages SET orderIndex = ? WHERE id = ? AND pipelineId = ?');
-        stageOrder.forEach((stageId, index) => {
-            finalStmt.run(index, stageId, pipelineId);
-        });
-    }
-
-    delete(id: number, moveDealsToStageId?: number): boolean {
-        const stage = this.findById(id);
-        if (!stage) {
-            return false;
+    async reorder(pipelineId: number, stageOrder: number[]): Promise<void> {
+        // Step 1: Temporary negative values
+        for (let i = 0; i < stageOrder.length; i++) {
+            await prisma.pipelineStage.update({
+                where: { id: stageOrder[i], pipelineId },
+                data: { orderIndex: -(i + 1) }
+            });
         }
 
-        // Check if stage has deals
-        const dealCount = this.db.prepare('SELECT COUNT(*) as count FROM deals WHERE stageId = ?').get(id) as { count: number };
+        // Step 2: Final values
+        for (let i = 0; i < stageOrder.length; i++) {
+            await prisma.pipelineStage.update({
+                where: { id: stageOrder[i], pipelineId },
+                data: { orderIndex: i }
+            });
+        }
+    }
 
-        if (dealCount.count > 0) {
+    async searchByStageName(name: string): Promise<searchResult[]> {
+        const results = await prisma.pipelineStage.findMany({
+            where: {
+                name: { contains: name, mode: 'insensitive' }
+            }
+        });
+
+        return results.map((r: any) => ({
+            id: r.id,
+            name: r.name
+        } as any));
+    }
+
+    async delete(id: number, moveDealsToStageId?: number): Promise<boolean> {
+        const stage = await this.findById(id);
+        if (!stage) return false;
+
+        const dealCount = await prisma.deal.count({
+            where: { stageId: id }
+        });
+
+        if (dealCount > 0) {
             if (!moveDealsToStageId) {
                 throw new Error('Cannot delete stage with existing deals. Please specify a stage to move deals to.');
             }
-
-            // Move deals to specified stage
-            this.db.prepare('UPDATE deals SET stageId = ? WHERE stageId = ?').run(moveDealsToStageId, id);
+            await prisma.deal.updateMany({
+                where: { stageId: id },
+                data: { stageId: moveDealsToStageId }
+            });
         }
 
-        const stmt = this.db.prepare('DELETE FROM pipeline_stages WHERE id = ?');
-        const result = stmt.run(id);
-        return result.changes > 0;
+        await prisma.pipelineStage.delete({
+            where: { id }
+        });
+        return true;
     }
 
-    getStageWithDealCount(pipelineId: number): Array<PipelineStage & { dealCount: number; totalValue: number }> {
-        const stmt = this.db.prepare(`
-      SELECT 
-        ps.*,
-        COUNT(d.id) as dealCount,
-        SUM(CASE WHEN d.value IS NOT NULL THEN d.value ELSE 0 END) as totalValue
-      FROM pipeline_stages ps
-      LEFT JOIN deals d ON ps.id = d.stageId AND d.status = 'open'
-      WHERE ps.pipelineId = ?
-      GROUP BY ps.id
-      ORDER BY ps.orderIndex
-    `);
+    async getStageWithDealCount(pipelineId: number): Promise<Array<PipelineStage & { dealCount: number; totalValue: number }>> {
+        const stages = await prisma.pipelineStage.findMany({
+            where: { pipelineId },
+            orderBy: { orderIndex: 'asc' },
+            include: {
+                deals: {
+                    where: { status: 'OPEN' },
+                    select: { value: true }
+                }
+            }
+        });
 
-        const results = stmt.all(pipelineId) as any[];
+        return stages.map((s: any) => {
+            const dealCount = s.deals.length;
+            const totalValue = s.deals.reduce((acc: number, d: any) => acc + (d.value || 0), 0);
+            return {
+                ...this.mapPrismaStageToStage(s),
+                dealCount,
+                totalValue
+            };
+        });
+    }
 
-        return results.map(r => ({
-            ...r,
-            dealCount: r.dealCount || 0,
-            totalValue: r.totalValue || 0
-        }));
+    private mapPrismaStageToStage(s: any): PipelineStage {
+        return {
+            id: s.id,
+            pipelineId: s.pipelineId,
+            name: s.name,
+            orderIndex: s.orderIndex,
+            rottenDays: s.rottenDays || undefined,
+            probability: s.probability,
+            createdAt: s.createdAt.toISOString(),
+            updatedAt: s.updatedAt.toISOString()
+        };
     }
 }

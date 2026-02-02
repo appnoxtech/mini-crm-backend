@@ -2,7 +2,7 @@ import { Lead, LeadHistory } from '../models/Lead';
 import { AuthenticatedRequest } from '../../../shared/types';
 
 export class LeadService {
-  constructor(private leadModel: any) {}
+  constructor(private leadModel: any) { }
 
   async createLead(userId: number, leadData: {
     name: string;
@@ -14,7 +14,7 @@ export class LeadService {
       throw new Error('Name is required');
     }
 
-    return this.leadModel.createLead({
+    return await this.leadModel.createLead({
       ...leadData,
       name: leadData.name.trim(),
       company: leadData.company?.trim(),
@@ -28,11 +28,11 @@ export class LeadService {
     limit?: number;
     offset?: number;
   } = {}): Promise<{ leads: Lead[]; count: number }> {
-    return this.leadModel.findByUserId(userId, options);
+    return await this.leadModel.findByUserId(userId, options);
   }
 
   async getLeadById(id: number, userId: number): Promise<Lead | null> {
-    const lead = this.leadModel.findById(id);
+    const lead = await this.leadModel.findById(id);
     if (!lead || lead.userId !== userId) {
       return null;
     }
@@ -44,11 +44,11 @@ export class LeadService {
       throw new Error('Invalid stage');
     }
 
-    return this.leadModel.updateStage(id, userId, stage);
+    return await this.leadModel.updateStage(id, userId, stage);
   }
 
   async addActivity(id: number, userId: number, type: string, text: string): Promise<void> {
-    const lead = this.leadModel.findById(id);
+    const lead = await this.leadModel.findById(id);
     if (!lead || lead.userId !== userId) {
       throw new Error('Lead not found');
     }
@@ -57,20 +57,20 @@ export class LeadService {
       throw new Error('Type and text are required');
     }
 
-    this.leadModel.addHistory(id, type, text.trim());
+    await this.leadModel.addHistory(id, type, text.trim());
   }
 
   async getLeadHistory(id: number, userId: number): Promise<LeadHistory[]> {
-    const lead = this.leadModel.findById(id);
+    const lead = await this.leadModel.findById(id);
     if (!lead || lead.userId !== userId) {
       throw new Error('Lead not found');
     }
 
-    return this.leadModel.getHistory(id);
+    return await this.leadModel.getHistory(id);
   }
 
   async deleteLead(id: number, userId: number): Promise<boolean> {
-    return this.leadModel.deleteLead(id, userId);
+    return await this.leadModel.deleteLead(id, userId);
   }
 
   async getStats(userId: number): Promise<{
@@ -81,6 +81,6 @@ export class LeadService {
     totalValue: number;
     wonValue: number;
   }> {
-    return this.leadModel.getStats(userId);
+    return await this.leadModel.getStats(userId);
   }
 }

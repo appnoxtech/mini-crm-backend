@@ -35,7 +35,7 @@ export class LabelService {
         const limit = filters.limit || 20;
         const offset = (page - 1) * limit;
 
-        const result = this.labelModel.findByUserId(userId, {
+        const result = await this.labelModel.findByUserId(userId, {
             ...filters,
             limit,
             offset
@@ -54,7 +54,7 @@ export class LabelService {
     }
 
     async getlabelByPipelineId(pipelineId: number, userId: number): Promise<Label[] | null> {
-        const label = this.labelModel.findByPipelineId(pipelineId);
+        const label = await this.labelModel.findByPipelineId(pipelineId);
         if (!label) {
             return null;
         }
@@ -62,7 +62,7 @@ export class LabelService {
     }
 
     async getlabelByOrganizationId(organizationId: number, userId: number): Promise<Label[] | null> {
-        const label = this.labelModel.findByOrganizationId(organizationId);
+        const label = await this.labelModel.findByOrganizationId(organizationId);
         if (!label) {
             return null;
         }
@@ -70,7 +70,7 @@ export class LabelService {
     }
 
     async getlabelByPersonId(personId: number, userId: number): Promise<Label[] | null> {
-        const label = this.labelModel.findByPersonId(personId);
+        const label = await this.labelModel.findByPersonId(personId);
         if (!label) {
             return null;
         }
@@ -78,19 +78,19 @@ export class LabelService {
     }
 
     async updatelabel(labelId: number, data: Partial<Label>): Promise<Label | null> {
-        const label = this.labelModel.findById(labelId);
+        const label = await this.labelModel.findById(labelId);
         if (!label) {
             return null;
         }
 
-        return this.labelModel.update(labelId, data) || null;
+        return (await this.labelModel.update(labelId, data)) || null;
     }
 
     async deletelabel(labelId: number): Promise<boolean> {
-        const label = this.labelModel.findById(labelId);
+        const label = await this.labelModel.findById(labelId);
         if (!label) {
             return false;
         }
-        return this.labelModel.delete(labelId);
+        return await this.labelModel.delete(labelId);
     }
 }

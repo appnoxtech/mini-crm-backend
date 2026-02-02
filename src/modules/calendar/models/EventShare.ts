@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { prisma } from '../../../shared/prisma';
 
 export interface EventShare {
     id: number;
@@ -9,166 +9,147 @@ export interface EventShare {
 }
 
 export class EventShareModel {
-    private db: Database.Database;
-
-    constructor(db: Database.Database) {
-        this.db = db;
-    }
+    constructor(_db?: any) { }
 
     initialize(): void {
-        // Check if table exists first
-        const tableExists = this.db.prepare(`
-            SELECT name FROM sqlite_master WHERE type='table' AND name='event_shares'
-        `).get();
-
-        if (!tableExists) {
-            // Table doesn't exist - create it fresh
-            console.log('Creating event_shares table...');
-            this.db.exec(`
-                CREATE TABLE event_shares (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    eventId INTEGER NOT NULL,
-                    sharedWithUserId INTEGER NOT NULL,
-                    participantType TEXT NOT NULL DEFAULT 'user',
-                    createdAt TEXT NOT NULL,
-                    FOREIGN KEY (eventId) REFERENCES calendar_events(id) ON DELETE CASCADE,
-                    UNIQUE(eventId, sharedWithUserId, participantType)
-                )
-            `);
-        } else {
-            // Table exists - check if we need to migrate to add participantType
-            const tableInfo = this.db.prepare("PRAGMA table_info(event_shares)").all() as any[];
-            const hasParticipantType = tableInfo.some(col => col.name === 'participantType');
-
-            if (!hasParticipantType) {
-                console.log('Migrating event_shares to add participantType and remove strict FK...');
-                // Recreate table to remove strict FK and add new column
-                this.db.transaction(() => {
-                    this.db.exec(`
-                        CREATE TABLE event_shares_new (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            eventId INTEGER NOT NULL,
-                            sharedWithUserId INTEGER NOT NULL,
-                            participantType TEXT NOT NULL DEFAULT 'user',
-                            createdAt TEXT NOT NULL,
-                            FOREIGN KEY (eventId) REFERENCES calendar_events(id) ON DELETE CASCADE,
-                            UNIQUE(eventId, sharedWithUserId, participantType)
-                        )
-                    `);
-
-                    this.db.exec(`
-                        INSERT INTO event_shares_new (id, eventId, sharedWithUserId, createdAt)
-                        SELECT id, eventId, sharedWithUserId, createdAt FROM event_shares
-                    `);
-
-                    this.db.exec(`DROP TABLE event_shares`);
-                    this.db.exec(`ALTER TABLE event_shares_new RENAME TO event_shares`);
-                })();
-            }
-        }
-
-        this.db.exec(`
-            CREATE INDEX IF NOT EXISTS idx_event_shares_eventId ON event_shares(eventId);
-            CREATE INDEX IF NOT EXISTS idx_event_shares_sharedWithUserId ON event_shares(sharedWithUserId);
-            CREATE INDEX IF NOT EXISTS idx_event_shares_participantType ON event_shares(participantType);
-        `);
+        // No-op with Prisma
     }
 
-    share(eventId: number, sharedWithUserId: number, participantType: 'user' | 'person' = 'user'): EventShare | null {
-        try {
-            const now = new Date().toISOString();
-            const stmt = this.db.prepare(`
-                INSERT INTO event_shares (eventId, sharedWithUserId, participantType, createdAt)
-                VALUES (?, ?, ?, ?)
-            `);
+    private mapPrismaToShare(share: any): EventShare {
+        return {
+            id: share.id,
+            eventId: share.eventId,
+            sharedWithUserId: share.sharedWithUserId,
+            participantType: share.participantType as 'user' | 'person',
+            createdAt: share.createdAt.toISOString()
+        };
+    }
 
-            const result = stmt.run(eventId, sharedWithUserId, participantType, now);
-            return this.findById(result.lastInsertRowid as number);
-        } catch (error: any) {
-            // UNIQUE constraint violation - already shared
-            if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-                return this.findByEventAndParticipant(eventId, sharedWithUserId, participantType);
-            }
+    async share(eventId: number, sharedWithUserId: number, participantType: 'user' | 'person' = 'user'): Promise<EventShare | null> {
+        try {
+            const share = await prisma.eventShare.upsert({
+                where: {
+                    eventId_sharedWithUserId_participantType: {
+                        eventId,
+                        sharedWithUserId,
+                        participantType
+                    }
+                },
+                update: {},
+                create: {
+                    eventId,
+                    sharedWithUserId,
+                    participantType
+                }
+            });
+            return this.mapPrismaToShare(share);
+        } catch (error) {
+            console.error('Error sharing event:', error);
             throw error;
         }
     }
 
-    findById(id: number): EventShare | null {
-        const row = this.db.prepare(`SELECT * FROM event_shares WHERE id = ?`).get(id) as any;
-        return row ? this.mapRow(row) : null;
+    async findById(id: number): Promise<EventShare | null> {
+        const share = await prisma.eventShare.findUnique({
+            where: { id }
+        });
+        return share ? this.mapPrismaToShare(share) : null;
     }
 
-    findByEventAndParticipant(eventId: number, sharedWithUserId: number, participantType: string): EventShare | null {
-        const row = this.db.prepare(`
-            SELECT * FROM event_shares WHERE eventId = ? AND sharedWithUserId = ? AND participantType = ?
-        `).get(eventId, sharedWithUserId, participantType) as any;
-        return row ? this.mapRow(row) : null;
+    async findByEventAndParticipant(eventId: number, sharedWithUserId: number, participantType: string): Promise<EventShare | null> {
+        const share = await prisma.eventShare.findUnique({
+            where: {
+                eventId_sharedWithUserId_participantType: {
+                    eventId,
+                    sharedWithUserId,
+                    participantType
+                }
+            }
+        });
+        return share ? this.mapPrismaToShare(share) : null;
     }
 
-    findByEventId(eventId: number): EventShare[] {
-        const rows = this.db.prepare(`
-            SELECT * FROM event_shares WHERE eventId = ?
-        `).all(eventId) as any[];
+    async findByEventId(eventId: number): Promise<EventShare[]> {
+        const shares = await prisma.eventShare.findMany({
+            where: { eventId }
+        });
 
-        return rows.map(row => this.mapRow(row));
+        return shares.map((s: any) => this.mapPrismaToShare(s));
     }
 
-    findSharedWithUser(userId: number): EventShare[] {
-        const rows = this.db.prepare(`
-            SELECT * FROM event_shares WHERE sharedWithUserId = ?
-        `).all(userId) as any[];
+    async findSharedWithUser(userId: number): Promise<EventShare[]> {
+        const shares = await prisma.eventShare.findMany({
+            where: { sharedWithUserId: userId, participantType: 'user' }
+        });
 
-        return rows.map(row => this.mapRow(row));
+        return shares.map((s: any) => this.mapPrismaToShare(s));
     }
 
-    getSharedUserIds(eventId: number): number[] {
-        const rows = this.db.prepare(`
-            SELECT sharedWithUserId FROM event_shares WHERE eventId = ?
-        `).all(eventId) as { sharedWithUserId: number }[];
+    async getSharedUserIds(eventId: number): Promise<number[]> {
+        const shares = await prisma.eventShare.findMany({
+            where: { eventId, participantType: 'user' },
+            select: { sharedWithUserId: true }
+        });
 
-        return rows.map(row => row.sharedWithUserId);
+        return shares.map((s: any) => s.sharedWithUserId);
     }
 
-    unshare(eventId: number, sharedWithUserId: number, participantType: string = 'user'): boolean {
-        const result = this.db.prepare(`
-            DELETE FROM event_shares WHERE eventId = ? AND sharedWithUserId = ? AND participantType = ?
-        `).run(eventId, sharedWithUserId, participantType);
-
-        return result.changes > 0;
+    async unshare(eventId: number, sharedWithUserId: number, participantType: string = 'user'): Promise<boolean> {
+        try {
+            await prisma.eventShare.delete({
+                where: {
+                    eventId_sharedWithUserId_participantType: {
+                        eventId,
+                        sharedWithUserId,
+                        participantType
+                    }
+                }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 
-    unshareAll(eventId: number): boolean {
-        const result = this.db.prepare(`DELETE FROM event_shares WHERE eventId = ?`).run(eventId);
-        return result.changes > 0;
+    async unshareAll(eventId: number): Promise<boolean> {
+        try {
+            await prisma.eventShare.deleteMany({
+                where: { eventId }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 
-    isSharedWith(eventId: number, userId: number, type: string = 'user'): boolean {
-        const row = this.db.prepare(`
-            SELECT 1 FROM event_shares WHERE eventId = ? AND sharedWithUserId = ? AND participantType = ?
-        `).get(eventId, userId, type);
+    async isSharedWith(eventId: number, userId: number, type: string = 'user'): Promise<boolean> {
+        const count = await prisma.eventShare.count({
+            where: {
+                eventId,
+                sharedWithUserId: userId,
+                participantType: type
+            }
+        });
 
-        return !!row;
+        return count > 0;
     }
 
-    getSharedUsersDetails(eventId: number): { id: number, name: string, email: string, type: string }[] {
-        // Fetch users
-        const users = this.db.prepare(`
-            SELECT u.id, u.name, u.email, 'user' as type
-            FROM event_shares es
-            JOIN users u ON es.sharedWithUserId = u.id
-            WHERE es.eventId = ? AND es.participantType = 'user'
-        `).all(eventId) as any[];
+    async getSharedUsersDetails(eventId: number): Promise<{ id: number, name: string, email: string, type: string }[]> {
+        const shares = await prisma.eventShare.findMany({
+            where: { eventId, participantType: 'user' }
+        });
 
-        return users;
-    }
+        const userIds = shares.map((s: any) => s.sharedWithUserId);
+        const users = await prisma.user.findMany({
+            where: { id: { in: userIds } },
+            select: { id: true, name: true, email: true }
+        });
 
-    private mapRow(row: any): EventShare {
-        return {
-            id: row.id,
-            eventId: row.eventId,
-            sharedWithUserId: row.sharedWithUserId,
-            participantType: row.participantType as 'user' | 'person',
-            createdAt: row.createdAt
-        };
+        return users.map((u: any) => ({
+            id: u.id,
+            name: u.name,
+            email: u.email,
+            type: 'user'
+        }));
     }
 }

@@ -1,38 +1,41 @@
 import { Request, Response } from 'express';
 import { AuthService } from '../services/authService';
-import { AuthenticatedRequest, AuthUser } from '../../../shared/types';
+import { AuthenticatedRequest } from '../../../shared/types';
 import { UserModel } from '../models/User';
-import bcrypt from 'bcryptjs';
 import { ResponseHandler, ErrorCodes } from '../../../shared/responses/responses';
+import { EmailModel } from '../../email/models/emailModel';
+import { OAuthService } from '../../email/services/oauthService';
 
 export class AuthController {
   private authService: AuthService;
   private userModel: UserModel;
+  private emailModel: EmailModel;
+  private oauthService: OAuthService;
 
   constructor(authService: AuthService, userModel: UserModel) {
     this.authService = authService;
     this.userModel = userModel;
+    this.emailModel = new EmailModel();
+    this.oauthService = new OAuthService();
   }
 
   async register(req: Request, res: Response): Promise<void> {
     try {
-      const { name, email, password } = req.body as any;
+      const { name, email, password, role = 'user' } = req.body as any;
 
       if (!name || !email || !password) {
-        res.status(400).json({ error: 'Missing required fields: name, email, password' });
-        return;
+        return ResponseHandler.validationError(res, 'Missing required fields: name, email, password');
       }
 
       // Check if user already exists
-      const existingUser = this.userModel.findByEmail(email);
+      const existingUser = await this.userModel.findByEmail(email);
 
       if (existingUser) {
         return ResponseHandler.conflict(res, 'User already exists', { email });
       }
 
       // Create user using auth service
-      const user = await this.authService.createUser(email, name, password);
-      //const token = this.authService.generateToken(user);
+      const user = await this.authService.createUser(email, name, password, role);
 
       if (!user) {
         return ResponseHandler.error(res, "Failed to create user", 500);
@@ -40,6 +43,7 @@ export class AuthController {
 
       return ResponseHandler.created(res, user, 'User Registered Successfully');
     } catch (error: any) {
+      console.error('Registration error:', error);
       return ResponseHandler.internalError(res, 'Registration failed');
     }
   }
@@ -62,18 +66,7 @@ export class AuthController {
       let emailSetupStatus = 'not_setup';
 
       try {
-        // Import email service to check for existing email account
-        const { EmailService } = require('../../email/services/emailService');
-        const { EmailModel } = require('../../email/models/emailModel');
-        const Database = require('better-sqlite3');
-
-        const db = new Database('data.db', { timeout: 10000 });
-        db.pragma('journal_mode = WAL');
-        db.pragma('synchronous = NORMAL');
-        const emailModel = new EmailModel(db);
-        const emailService = new EmailService(emailModel);
-
-        const existingAccount = await emailService.getEmailAccountByUserId(user.id.toString());
+        const existingAccount = await this.emailModel.getEmailAccountByUserId(user.id.toString());
 
         if (existingAccount) {
           emailAccount = {
@@ -86,33 +79,22 @@ export class AuthController {
           // Validate OAuth tokens if they exist
           if (existingAccount.accessToken && (existingAccount.provider === 'gmail' || existingAccount.provider === 'outlook')) {
             try {
-              // Import OAuth service to validate tokens
-              const { OAuthService } = require('../../email/services/oauthService');
-              const oauthService = new OAuthService();
-
               // Try to get valid access token (this will refresh if needed)
-              await oauthService.getValidAccessToken(existingAccount);
+              await this.oauthService.getValidAccessToken(existingAccount);
               emailSetupStatus = 'connected';
-
-              console.log(`User ${user.email} has valid email account with ${existingAccount.provider}`);
             } catch (tokenError: any) {
               console.warn(`OAuth tokens for user ${user.email} need refresh:`, tokenError.message);
               emailSetupStatus = 'needs_reauth';
             }
           } else {
             emailSetupStatus = 'connected';
-
           }
         }
-
-        db.close();
       } catch (emailError) {
         console.warn('Error checking email account during login:', emailError);
-        // Don't fail login if email check fails
       }
 
       return ResponseHandler.success(res, { user, token, emailAccount, emailSetupStatus }, "Login Successfully");
-
     } catch (error) {
       console.error('Login error:', error);
       return ResponseHandler.internalError(res, 'Login Failed');
@@ -122,13 +104,11 @@ export class AuthController {
   async getProfile(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const tokenUser = req.user;
-
       if (!tokenUser) {
         return ResponseHandler.forbidden(res, 'User not authenticated');
       }
 
       const user = await this.authService.getProfile(tokenUser.id);
-
       if (!user) {
         return ResponseHandler.notFound(res, 'User not found');
       }
@@ -140,16 +120,14 @@ export class AuthController {
     }
   }
 
-
   async updateProfile(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-
       if (!req.user) {
         return ResponseHandler.forbidden(res, 'User not authenticated');
       }
 
       const { name, email } = req.body as any;
-      const updates: Partial<{ name: string; email: string }> = {};
+      const updates: any = {};
 
       if (name !== undefined) {
         if (!name.trim()) {
@@ -166,17 +144,15 @@ export class AuthController {
       }
 
       if (Object.keys(updates).length === 0) {
-        res.status(400).json({ error: 'No valid updates provided' });
-        return;
+        return ResponseHandler.validationError(res, 'No valid updates provided');
       }
 
       const updatedUser = await this.authService.updateUser(req.user.id, updates);
       if (!updatedUser) {
-        return ResponseHandler.validationError(res, 'User not found');
+        return ResponseHandler.notFound(res, 'User not found');
       }
 
-      return ResponseHandler.success(res, updatedUser, "Profile Update Successfully", 200);
-
+      return ResponseHandler.success(res, updatedUser, "Profile Update Successfully");
     } catch (error) {
       console.error('Profile update error:', error);
       return ResponseHandler.internalError(res, 'Failed to update profile');
@@ -186,75 +162,63 @@ export class AuthController {
   async changePassword(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       if (!req.user) {
-        res.status(401).json({ error: 'User not authenticated' });
-        return;
+        return ResponseHandler.unauthorized(res, 'User not authenticated');
       }
 
       const { currentPassword, newPassword } = req.body as any;
-
-
       const success = await this.authService.changePassword(req.user.id, currentPassword, newPassword);
 
       if (!success) {
-        return ResponseHandler.error(res, 'Current password is incorrect', 401);
+        return ResponseHandler.validationError(res, 'Current password is incorrect');
       }
-      return ResponseHandler.success(res, 'Password updated successfully');
-
+      return ResponseHandler.success(res, null, 'Password updated successfully');
     } catch (error) {
       console.error('Password change error:', error);
       return ResponseHandler.internalError(res, 'Failed to change password');
     }
   }
 
-
   async changeAccountRole(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       if (!req.user) {
-        res.status(401).json({ error: 'User not authenticated' });
-        return;
+        return ResponseHandler.unauthorized(res, 'User not authenticated');
       }
 
       const { role } = req.body as any;
-
       const success = await this.authService.changeAccountRole(req.user.id, role);
 
       if (!success) {
-        return ResponseHandler.error(res, 'Failed to change account role', 401);
+        return ResponseHandler.error(res, 'Failed to change account role');
       }
-      return ResponseHandler.success(res, 'Account role updated successfully');
-
+      return ResponseHandler.success(res, null, 'Account role updated successfully');
     } catch (error) {
       console.error('Account role change error:', error);
       return ResponseHandler.internalError(res, 'Failed to change account role');
     }
   }
 
-
-  async forgotPassword(req: AuthenticatedRequest, res: Response): Promise<void> {
+  async forgotPassword(req: Request, res: Response): Promise<void> {
     try {
-
-      let { email } = req.body as any;
+      const { email } = req.body as any;
 
       if (!email || typeof email !== 'string') {
         return ResponseHandler.validationError(res, 'Valid email is required');
       }
 
       const success = await this.authService.forgotPassword(email);
-
       if (!success) {
-        return ResponseHandler.error(res, 'Failed to forgot password', 401);
+        return ResponseHandler.error(res, 'Failed to initiate forgot password');
       }
-      return ResponseHandler.success(res, 'Forgot password successfully');
-
+      return ResponseHandler.success(res, null, 'Reset instructions sent successfully');
     } catch (error) {
       console.error('Forgot password error:', error);
-      return ResponseHandler.internalError(res, 'Failed to forgot password');
+      return ResponseHandler.internalError(res, 'Failed to initiate forgot password');
     }
   }
 
-  async verifyOtp(req: AuthenticatedRequest, res: Response): Promise<void> {
+  async verifyOtp(req: Request, res: Response): Promise<void> {
     try {
-      let { email, otp } = req.body as any;
+      const { email, otp } = req.body as any;
 
       if (!email || typeof email !== 'string' || !otp) {
         return ResponseHandler.validationError(res, 'Valid email and OTP are required');
@@ -271,7 +235,6 @@ export class AuthController {
         return ResponseHandler.error(res, verificationResult, 400, errorCode);
       }
       return ResponseHandler.success(res, { valid: true }, 'OTP verified successfully');
-
     } catch (error) {
       console.error('Verify OTP error:', error);
       return ResponseHandler.internalError(res, 'Failed to verify OTP');
@@ -295,38 +258,26 @@ export class AuthController {
       if (!success) {
         return ResponseHandler.error(res, 'Failed to reset password. Invalid OTP or user not found.', 400);
       }
-      return ResponseHandler.success(res, 'Password reset successfully');
-
+      return ResponseHandler.success(res, null, 'Password reset successfully');
     } catch (error) {
       console.error('Reset password error:', error);
       return ResponseHandler.internalError(res, 'Failed to reset password');
     }
   }
 
-  async searchByPersonName(
-    req: AuthenticatedRequest,
-    res: Response
-  ): Promise<void> {
+  async searchByPersonName(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       if (!req.user) {
-        res.status(401).json({ error: 'User not authenticated' });
-        return;
+        return ResponseHandler.unauthorized(res, 'User not authenticated');
       }
 
-      const search =
-        typeof req.query.search === 'string'
-          ? req.query.search
-          : '';
-
-      console.log('user search:', search);
-
+      const search = typeof req.query.search === 'string' ? req.query.search : '';
       const users = await this.authService.searchByPersonName(search);
 
-      return ResponseHandler.success(res, users, "Successfully Search");
+      return ResponseHandler.success(res, users, "Successfully Searched");
     } catch (error) {
       console.error('Error searching users:', error);
-      res.status(500).json({ error: 'Failed to search users' });
+      return ResponseHandler.internalError(res, 'Failed to search users');
     }
   }
-
 }

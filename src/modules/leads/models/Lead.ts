@@ -1,5 +1,6 @@
-import Database from 'better-sqlite3';
+import { prisma } from '../../../shared/prisma';
 import { BaseEntity } from '../../../shared/types';
+import { Prisma } from '@prisma/client';
 
 export interface Lead extends BaseEntity {
   name: string;
@@ -20,215 +21,185 @@ export interface LeadHistory {
 }
 
 export class LeadModel {
-  private db: Database.Database;
-
-  constructor(db: Database.Database) {
-    this.db = db;
-  }
+  constructor(_db?: any) { }
 
   initialize(): void {
-    // Create leads table
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS leads (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        company TEXT,
-        value REAL,
-        stage TEXT NOT NULL DEFAULT 'OPEN',
-        notes TEXT,
-        userId INTEGER NOT NULL,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL,
-        closedAt TEXT,
-        FOREIGN KEY (userId) REFERENCES users(id)
-      )
-    `);
-
-    // Create lead_history table
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS lead_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        leadId INTEGER NOT NULL,
-        type TEXT NOT NULL,
-        text TEXT NOT NULL,
-        at TEXT NOT NULL,
-        FOREIGN KEY (leadId) REFERENCES leads(id) ON DELETE CASCADE
-      )
-    `);
-
-    // Create indexes
-    this.db.exec('CREATE INDEX IF NOT EXISTS idx_leads_userId ON leads(userId)');
-    this.db.exec('CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(stage)');
-    this.db.exec('CREATE INDEX IF NOT EXISTS idx_leads_createdAt ON leads(createdAt)');
-    this.db.exec('CREATE INDEX IF NOT EXISTS idx_lead_history_leadId ON lead_history(leadId)');
+    // No-op with Prisma
   }
 
-  createLead(leadData: Omit<Lead, 'id' | 'createdAt' | 'updatedAt'>): Lead {
-    const now = new Date().toISOString();
-    const stmt = this.db.prepare(`
-      INSERT INTO leads (name, company, value, notes, stage, userId, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, 'OPEN', ?, ?, ?)
-    `);
-
-    const result = stmt.run(
-      leadData.name,
-      leadData.company || null,
-      leadData.value || null,
-      leadData.notes || null,
-      leadData.userId,
-      now,
-      now
-    );
-
-    const lead = this.findById(result.lastInsertRowid as number);
-    if (!lead) throw new Error('Failed to create lead');
+  async createLead(leadData: Omit<Lead, 'id' | 'createdAt' | 'updatedAt'>): Promise<Lead> {
+    const lead = await prisma.lead.create({
+      data: {
+        name: leadData.name,
+        company: leadData.company || null,
+        value: leadData.value || null,
+        notes: leadData.notes || null,
+        stage: 'OPEN',
+        userId: leadData.userId
+      }
+    });
 
     // Add initial history entry
-    this.addHistory(lead.id, 'status', 'Stage → Open');
+    await this.addHistory(lead.id, 'status', 'Stage → Open');
 
-    return lead;
+    return this.mapPrismaLeadToLead(lead);
   }
 
-  findById(id: number): Lead | undefined {
-    const stmt = this.db.prepare('SELECT * FROM leads WHERE id = ?');
-    return stmt.get(id) as Lead | undefined;
+  async findById(id: number): Promise<Lead | null> {
+    const lead = await prisma.lead.findUnique({
+      where: { id }
+    });
+    return lead ? this.mapPrismaLeadToLead(lead) : null;
   }
 
-  findByUserId(userId: number, options: {
+  async findByUserId(userId: number, options: {
     stage?: string;
     search?: string;
     limit?: number;
     offset?: number;
-  } = {}): { leads: Lead[]; count: number } {
-    let query = 'SELECT * FROM leads WHERE userId = ?';
-    const params: any[] = [userId];
+  } = {}): Promise<{ leads: Lead[]; count: number }> {
+    const where: any = { userId };
 
     if (options.stage && options.stage !== 'All') {
-      query += ' AND stage = ?';
-      params.push(options.stage);
+      where.stage = options.stage;
     }
 
     if (options.search) {
-      query += ' AND (name LIKE ? OR company LIKE ? OR notes LIKE ?)';
-      const searchTerm = `%${options.search}%`;
-      params.push(searchTerm, searchTerm, searchTerm);
+      where.OR = [
+        { name: { contains: options.search, mode: 'insensitive' } },
+        { company: { contains: options.search, mode: 'insensitive' } },
+        { notes: { contains: options.search, mode: 'insensitive' } }
+      ];
     }
 
-    query += ' ORDER BY createdAt DESC';
-
-    if (options.limit) {
-      query += ' LIMIT ? OFFSET ?';
-      params.push(options.limit, options.offset || 0);
-    }
-
-    const leads = this.db.prepare(query).all(...params) as Lead[];
-
-    // Get total count
-    let countQuery = 'SELECT COUNT(*) as count FROM leads WHERE userId = ?';
-    const countParams: any[] = [userId];
-
-    if (options.stage && options.stage !== 'All') {
-      countQuery += ' AND stage = ?';
-      countParams.push(options.stage);
-    }
-
-    if (options.search) {
-      countQuery += ' AND (name LIKE ? OR company LIKE ? OR notes LIKE ?)';
-      const searchTerm = `%${options.search}%`;
-      countParams.push(searchTerm, searchTerm, searchTerm);
-    }
-
-    const countResult = this.db.prepare(countQuery).get(...countParams) as { count: number };
+    const [leads, count] = await Promise.all([
+      prisma.lead.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: options.limit,
+        skip: options.offset || 0
+      }),
+      prisma.lead.count({ where })
+    ]);
 
     return {
-      leads,
-      count: countResult.count
+      leads: leads.map((l: any) => this.mapPrismaLeadToLead(l)),
+      count
     };
   }
 
-  updateStage(id: number, userId: number, stage: 'OPEN' | 'WON' | 'LOST'): Lead | null {
-    const lead = this.findById(id);
-    if (!lead || lead.userId !== userId) {
-      return null;
-    }
-
-    const now = new Date().toISOString();
+  async updateStage(id: number, userId: number, stage: 'OPEN' | 'WON' | 'LOST'): Promise<Lead | null> {
+    const now = new Date();
     const closedAt = stage === 'WON' ? now : null;
 
-    const stmt = this.db.prepare(`
-      UPDATE leads 
-      SET stage = ?, updatedAt = ?, closedAt = ?
-      WHERE id = ? AND userId = ?
-    `);
+    try {
+      const lead = await prisma.lead.update({
+        where: { id, userId },
+        data: {
+          stage,
+          closedAt,
+          updatedAt: now
+        }
+      });
 
-    stmt.run(stage, now, closedAt, id, userId);
+      // Add history entry
+      await this.addHistory(id, 'status', `Stage → ${stage}`);
 
-    // Add history entry
-    this.addHistory(id, 'status', `Stage → ${stage}`);
-
-    return this.findById(id) || null;
+      return this.mapPrismaLeadToLead(lead);
+    } catch (error) {
+      return null;
+    }
   }
 
-  addHistory(leadId: number, type: string, text: string): void {
-    const now = new Date().toISOString();
-    const stmt = this.db.prepare(`
-      INSERT INTO lead_history (leadId, type, text, at)
-      VALUES (?, ?, ?, ?)
-    `);
-
-    stmt.run(leadId, type, text, now);
+  async addHistory(leadId: number, type: string, text: string): Promise<void> {
+    await prisma.leadHistory.create({
+      data: {
+        leadId,
+        type,
+        text,
+        at: new Date()
+      }
+    });
   }
 
-  getHistory(leadId: number): LeadHistory[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lead_history 
-      WHERE leadId = ? 
-      ORDER BY at DESC
-    `);
+  async getHistory(leadId: number): Promise<LeadHistory[]> {
+    const rows = await prisma.leadHistory.findMany({
+      where: { leadId },
+      orderBy: { at: 'desc' }
+    });
 
-    return stmt.all(leadId) as LeadHistory[];
+    return rows.map((row: any) => ({
+      id: row.id,
+      leadId: row.leadId,
+      type: row.type,
+      text: row.text,
+      at: row.at.toISOString()
+    }));
   }
 
-  deleteLead(id: number, userId: number): boolean {
-    const lead = this.findById(id);
-    if (!lead || lead.userId !== userId) {
+  async deleteLead(id: number, userId: number): Promise<boolean> {
+    try {
+      await prisma.lead.delete({
+        where: { id, userId }
+      });
+      return true;
+    } catch (error) {
       return false;
     }
-
-    const stmt = this.db.prepare('DELETE FROM leads WHERE id = ? AND userId = ?');
-    const result = stmt.run(id, userId);
-    return result.changes > 0;
   }
 
-  getStats(userId: number): {
+  async getStats(userId: number): Promise<{
     total: number;
     openCount: number;
     wonCount: number;
     lostCount: number;
     totalValue: number;
     wonValue: number;
-  } {
-    const stmt = this.db.prepare(`
-      SELECT 
-        COUNT(*) as total,
-        SUM(CASE WHEN stage = 'OPEN' THEN 1 ELSE 0 END) as openCount,
-        SUM(CASE WHEN stage = 'WON' THEN 1 ELSE 0 END) as wonCount,
-        SUM(CASE WHEN stage = 'LOST' THEN 1 ELSE 0 END) as lostCount,
-        SUM(CASE WHEN value IS NOT NULL THEN value ELSE 0 END) as totalValue,
-        SUM(CASE WHEN stage = 'WON' AND value IS NOT NULL THEN value ELSE 0 END) as wonValue
-      FROM leads 
-      WHERE userId = ?
-    `);
+  }> {
+    const stats = await prisma.lead.groupBy({
+      by: ['stage'],
+      where: { userId },
+      _count: { _all: true },
+      _sum: { value: true }
+    });
 
-    const result = stmt.get(userId) as any;
+    const result = {
+      total: 0,
+      openCount: 0,
+      wonCount: 0,
+      lostCount: 0,
+      totalValue: 0,
+      wonValue: 0
+    };
 
+    stats.forEach((s: any) => {
+      const count = s._count._all;
+      const sum = s._sum.value || 0;
+      result.total += count;
+      result.totalValue += sum;
+      if (s.stage === 'OPEN') result.openCount = count;
+      if (s.stage === 'WON') {
+        result.wonCount = count;
+        result.wonValue = sum;
+      }
+      if (s.stage === 'LOST') result.lostCount = count;
+    });
+
+    return result;
+  }
+
+  private mapPrismaLeadToLead(lead: any): Lead {
     return {
-      total: result.total || 0,
-      openCount: result.openCount || 0,
-      wonCount: result.wonCount || 0,
-      lostCount: result.lostCount || 0,
-      totalValue: result.totalValue || 0,
-      wonValue: result.wonValue || 0
+      id: lead.id,
+      name: lead.name,
+      company: lead.company || undefined,
+      value: lead.value || undefined,
+      stage: lead.stage as any,
+      notes: lead.notes || undefined,
+      userId: lead.userId,
+      createdAt: lead.createdAt.toISOString(),
+      updatedAt: lead.updatedAt.toISOString(),
+      closedAt: lead.closedAt?.toISOString() || undefined
     };
   }
 }

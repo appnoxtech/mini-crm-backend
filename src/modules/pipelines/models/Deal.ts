@@ -1,6 +1,6 @@
-import Database from 'better-sqlite3';
+import { prisma } from '../../../shared/prisma';
 import { BaseEntity } from '../../../shared/types';
-import { Label } from '../models/Label';
+import { Prisma } from '@prisma/client';
 
 export interface Deal extends BaseEntity {
     title: string;
@@ -29,605 +29,372 @@ export interface Deal extends BaseEntity {
     isRotten: boolean;
     labelIds?: number[];
     source?: string;
-    labels?: string;
-    customFields?: string;
-    deletedAt?: string; // Soft delete timestamp
-    archivedAt?: string; // Archive timestamp
+    customFields?: any;
+    deletedAt?: string;
+    archivedAt?: string;
 }
 
 export class DealModel {
-    private db: Database.Database;
-
-    constructor(db: Database.Database) {
-        this.db = db;
-    }
+    constructor(_db?: any) { }
 
     initialize(): void {
-        this.db.exec(`
-  CREATE TABLE IF NOT EXISTS deals (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    value REAL DEFAULT 0,
-    currency TEXT DEFAULT 'USD',
-    pipelineId INTEGER NOT NULL,
-    stageId INTEGER NOT NULL,
-    email TEXT,
-    phone TEXT,
-    description TEXT,
-    expectedCloseDate TEXT,
-    actualCloseDate TEXT,
-    probability INTEGER DEFAULT 0,
-    userId INTEGER NOT NULL,
-    assignedTo INTEGER,
-    status TEXT DEFAULT 'open',
-    lostReason TEXT,
-    lastActivityAt TEXT,
-    isRotten BOOLEAN DEFAULT 0,
-    createdAt TEXT NOT NULL,
-    updatedAt TEXT NOT NULL,
-    deletedAt TEXT,
-    archivedAt TEXT,
-
-    FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (pipelineId) REFERENCES pipelines(id) ON DELETE RESTRICT,
-    FOREIGN KEY (stageId) REFERENCES pipeline_stages(id) ON DELETE RESTRICT,
-    FOREIGN KEY (assignedTo) REFERENCES users(id) ON DELETE SET NULL
-  )
-`);
-
-        // Add missing columns if they don't exist (for existing databases)
-        const columnsToAdd = [
-            { name: 'personId', definition: 'INTEGER' },
-            { name: 'organizationId', definition: 'INTEGER' },
-            { name: 'source', definition: 'TEXT' },
-            { name: 'labelIds', definition: 'TEXT' },
-            { name: 'customFields', definition: 'TEXT' },
-            { name: 'ownerIds', definition: 'TEXT' },
-            { name: 'isVisibleToAll', definition: 'BOOLEAN DEFAULT 1' },
-            { name: 'deletedAt', definition: 'TEXT' },
-            { name: 'archivedAt', definition: 'TEXT' }
-        ];
-
-        for (const column of columnsToAdd) {
-            try {
-                this.db.exec(`ALTER TABLE deals ADD COLUMN ${column.name} ${column.definition}`);
-
-            } catch (error) {
-                // Column already exists, ignore error
-            }
-        }
-
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_userId ON deals(userId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_pipelineId ON deals(pipelineId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_stageId ON deals(stageId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_status ON deals(status)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_expectedCloseDate ON deals(expectedCloseDate)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_personId ON deals(personId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_organizationId ON deals(organizationId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_isVisibleToAll ON deals(isVisibleToAll)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_deletedAt ON deals(deletedAt)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_deals_archivedAt ON deals(archivedAt)');
+        // No-op with Prisma
     }
 
-    create(data: Omit<Deal, 'id' | 'createdAt' | 'updatedAt'>): Deal {
-        const now = new Date().toISOString();
-
-        const stmt = this.db.prepare(`
-  INSERT INTO deals (
-    title, value, currency, pipelineId, stageId,
-    personId, organizationId,
-    email, phone, description, expectedCloseDate, actualCloseDate, probability,
-    userId, assignedTo, ownerIds, isVisibleToAll, status, lostReason, lastActivityAt, isRotten, source,
-    labelIds, customFields, createdAt, updatedAt, deletedAt, archivedAt
-  )
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`);
-
-        const result = stmt.run(
-            data.title,
-            data.value,
-            data.currency,
-            data.pipelineId,
-            data.stageId,
-            data.personId || null,
-            data.organizationId || null,
-            data.email ? JSON.stringify(data.email) : null,
-            data.phone ? JSON.stringify(data.phone) : null,
-            data.description || null,
-            data.expectedCloseDate || null,
-            data.actualCloseDate || null,
-            data.probability,
-            data.userId,
-            data.assignedTo || null,
-            data.ownerIds ? JSON.stringify(data.ownerIds) : null,
-            data.isVisibleToAll ? 1 : 0,
-            data.status.toUpperCase(),
-            data.lostReason || null,
-            data.lastActivityAt || now,
-            data.isRotten ? 1 : 0,
-            data.source || null,
-            data.labelIds ? JSON.stringify(data.labelIds) : null,
-            data.customFields || null,
-            now,
-            now,
-            null, // deletedAt
-            null  // archivedAt
-        );
-
-        return this.findById(result.lastInsertRowid as number)!;
-    }
-
-    // Helper method to check if user can access deal
-    private canUserAccessDeal(deal: any, userId: number): boolean {
-        const dealOwnerIds = deal.ownerIds ? JSON.parse(deal.ownerIds) : [];
-        if (deal.userId !== userId && !dealOwnerIds.includes(userId)) return false;
-
-        // Check pipeline access
-        const pipeline = this.db.prepare('SELECT userId, ownerIds FROM pipelines WHERE id = ?').get(deal.pipelineId) as any;
-        if (!pipeline) return false;
-
-        const pipelineOwnerIds = pipeline.ownerIds ? JSON.parse(pipeline.ownerIds) : [];
-        return pipeline.userId === userId || pipelineOwnerIds.includes(userId);
-    }
-
-    findById(id: number, userId?: number, includeDeleted: boolean = false, includeArchived: boolean = false): Deal | null {
-        let query = 'SELECT * FROM deals WHERE id = ?';
-        if (!includeDeleted) {
-            query += ' AND deletedAt IS NULL';
-        }
-        if (!includeArchived) {
-            query += ' AND archivedAt IS NULL';
-        }
-
-        const stmt = this.db.prepare(query);
-        const result = stmt.get(id) as any;
-        if (!result) return null;
-
-        // Check permissions if userId is provided
-        if (userId !== undefined && !this.canUserAccessDeal(result, userId)) {
-            return null;
-        }
-
-        const labelIds = result.labelIds ? JSON.parse(result.labelIds) : [];
-
-        let labels: Label[] = [];
-        if (labelIds.length > 0) {
-            const placeholders = labelIds.map(() => '?').join(',');
-            const labelsStmt = this.db.prepare(
-                `SELECT * FROM label WHERE id IN (${placeholders})`
-            );
-            labels = labelsStmt.all(...labelIds) as Label[];
-        }
-
-        return {
-            ...result,
-            isRotten: Boolean(result.isRotten),
-            status: result.status.toUpperCase(),
-            email: result.email ? JSON.parse(result.email) : null,
-            phone: result.phone ? JSON.parse(result.phone) : null,
-            labelIds,
-            labels,
-            ownerIds: result.ownerIds ? JSON.parse(result.ownerIds) : []
-        };
-    }
-
-    findByUserId(userId: number, filters: {
-        pipelineId?: number;
-        stageId?: number;
-        status?: string;
-        search?: string;
-        limit?: number;
-        offset?: number;
-        includeDeleted?: boolean;
-        includeArchived?: boolean;
-        onlyArchived?: boolean;
-    } = {}): { deals: Deal[]; total: number } {
-        let query = `SELECT d.* FROM deals d
-            JOIN pipelines p ON d.pipelineId = p.id
-            WHERE (d.userId = ? OR EXISTS (
-                SELECT 1 FROM json_each(COALESCE(d.ownerIds, '[]')) 
-                WHERE json_each.value = ?
-            ))
-            AND (p.userId = ? OR EXISTS (
-                SELECT 1 FROM json_each(COALESCE(p.ownerIds, '[]')) 
-                WHERE json_each.value = ?
-            ))`;
-
-        const params: any[] = [userId, userId, userId, userId];
-
-        // Exclude soft deleted by default
-        if (!filters.includeDeleted) {
-            query += ' AND d.deletedAt IS NULL';
-        }
-
-        // Deal with archiving
-        if (filters.onlyArchived) {
-            query += ' AND d.archivedAt IS NOT NULL';
-        } else if (!filters.includeArchived) {
-            query += ' AND d.archivedAt IS NULL';
-        }
-
-        if (filters.pipelineId) {
-            query += ' AND d.pipelineId = ?';
-            params.push(filters.pipelineId);
-        }
-
-        if (filters.stageId) {
-            query += ' AND d.stageId = ?';
-            params.push(filters.stageId);
-        }
-
-        if (filters.status) {
-            query += ' AND d.status = ?';
-            params.push(filters.status);
-        }
-
-        if (filters.search) {
-            query += ' AND (d.title LIKE ? OR d.description LIKE ?)';
-            const searchTerm = `%${filters.search}%`;
-            params.push(searchTerm, searchTerm);
-        }
-
-        query += ' ORDER BY d.createdAt DESC';
-
-        // Get total count
-        const countQuery = query.replace(/SELECT\s+d\.\*/i, 'SELECT COUNT(*) as count');
-        const countResult = this.db.prepare(countQuery).get(...params) as { count: number } | undefined;
-        const total = countResult ? countResult.count : 0;
-
-        // Add pagination
-        if (filters.limit) {
-            query += ' LIMIT ? OFFSET ?';
-            params.push(filters.limit, filters.offset || 0);
-        }
-
-        const stmt = this.db.prepare(query);
-        const results = stmt.all(...params) as any[];
-
-        return {
-            deals: results.map(r => ({
-                ...r,
-                isRotten: Boolean(r.isRotten),
-                status: (r.status || 'OPEN').toUpperCase(),
-                email: r.email ? JSON.parse(r.email) : null,
-                phone: r.phone ? JSON.parse(r.phone) : null,
-                labelIds: r.labelIds ? JSON.parse(r.labelIds) : null,
-                ownerIds: r.ownerIds ? JSON.parse(r.ownerIds) : []
-            })),
-            total: total
-        };
-    }
-
-    update(
-        id: number,
-        userId: number,
-        data: Partial<Omit<Deal, 'id' | 'userId' | 'createdAt' | 'updatedAt'>>
-    ): Deal | null {
-        const deal = this.findById(id, userId);
-        if (!deal) return null;
-
-        const now = new Date().toISOString();
-        const updates: string[] = [];
-        const values: any[] = [];
-
-        Object.entries(data).forEach(([key, value]) => {
-            if (value === undefined) return;
-
-            if (key === 'isRotten' || key === 'isVisibleToAll') {
-                updates.push(`${key} = ?`);
-                values.push(value ? 1 : 0);
-            }
-            else if ((key === 'labelIds' || key === 'ownerIds') && Array.isArray(value)) {
-                updates.push(`${key} = ?`);
-                values.push(JSON.stringify(value));
-            }
-            else if (key === 'status' && typeof value === 'string') {
-                updates.push(`${key} = ?`);
-                values.push(value.toUpperCase());
-            }
-            else if ((key === 'email' || key === 'phone') && typeof value === 'object') {
-                updates.push(`${key} = ?`);
-                values.push(JSON.stringify(value));
-            }
-            else {
-                updates.push(`${key} = ?`);
-                values.push(value);
+    async create(data: Omit<Deal, 'id' | 'createdAt' | 'updatedAt' | 'isRotten'>): Promise<Deal> {
+        const deal = await prisma.deal.create({
+            data: {
+                title: data.title,
+                value: data.value || 0,
+                currency: data.currency || 'USD',
+                pipelineId: data.pipelineId,
+                stageId: data.stageId,
+                email: (data.email as any) || (Prisma as any).JsonNull,
+                phone: (data.phone as any) || (Prisma as any).JsonNull,
+                description: data.description || null,
+                expectedCloseDate: data.expectedCloseDate ? new Date(data.expectedCloseDate) : null,
+                actualCloseDate: data.actualCloseDate ? new Date(data.actualCloseDate) : null,
+                probability: data.probability || 0,
+                userId: data.userId,
+                assignedTo: data.assignedTo || null,
+                status: data.status || 'OPEN',
+                lostReason: data.lostReason || null,
+                personId: data.personId || null,
+                organizationId: data.organizationId || null,
+                source: data.source || null,
+                labelIds: (data.labelIds as any) || (Prisma as any).JsonNull,
+                customFields: (data.customFields as any) || (Prisma as any).JsonNull,
+                ownerIds: (data.ownerIds as any) || [data.userId],
+                isVisibleToAll: data.isVisibleToAll ?? true,
+                isRotten: false
             }
         });
 
-        if (updates.length === 0) {
-            return deal;
+        return this.mapPrismaDealToDeal(deal);
+    }
+
+    async findById(id: number, userId?: number): Promise<Deal | null> {
+        const deal = await prisma.deal.findUnique({
+            where: { id }
+        });
+        if (!deal) return null;
+        if (userId && deal.userId !== userId && !((deal.ownerIds as number[]) || []).includes(userId) && !deal.isVisibleToAll) {
+            return null;
+        }
+        return this.mapPrismaDealToDeal(deal);
+    }
+
+    async findByUserId(userId: number, options: {
+        pipelineId?: number;
+        stageId?: number;
+        status?: string;
+        limit?: number;
+        offset?: number;
+        search?: string;
+    } = {}): Promise<{ deals: Deal[]; total: number }> {
+        const where: any = {
+            deletedAt: null,
+            archivedAt: null,
+            OR: [
+                { userId },
+                {
+                    ownerIds: {
+                        array_contains: userId
+                    }
+                },
+                { isVisibleToAll: true }
+            ]
+        };
+
+        if (options.pipelineId) where.pipelineId = options.pipelineId;
+        if (options.stageId) where.stageId = options.stageId;
+        if (options.status && options.status !== 'all') where.status = options.status.toUpperCase();
+
+        if (options.search) {
+            where.AND = [
+                {
+                    OR: [
+                        { title: { contains: options.search, mode: 'insensitive' } },
+                        { description: { contains: options.search, mode: 'insensitive' } }
+                    ]
+                }
+            ];
         }
 
-        updates.push('updatedAt = ?');
-        values.push(now);
-        values.push(id);
+        const [deals, total] = await Promise.all([
+            prisma.deal.findMany({
+                where,
+                orderBy: { createdAt: 'desc' },
+                take: options.limit,
+                skip: options.offset || 0,
+                include: {
+                    pipeline: true,
+                    stage: true
+                }
+            }),
+            prisma.deal.count({ where })
+        ]);
 
-        const stmt = this.db.prepare(`
-            UPDATE deals 
-            SET ${updates.join(', ')}
-            WHERE id = ? AND deletedAt IS NULL AND archivedAt IS NULL
-        `);
-
-        stmt.run(...values);
-        return this.findById(id, userId);
+        return {
+            deals: deals.map((d: any) => this.mapPrismaDealToDeal(d)),
+            total
+        };
     }
 
-    // Soft delete
-    delete(id: number, userId: number): boolean {
-        const deal = this.findById(id, userId);
-        if (!deal) return false;
+    async searchDeals(userId: number, search: string, includeDeleted: boolean = false): Promise<Deal[]> {
+        const where: any = {
+            OR: [
+                { title: { contains: search, mode: 'insensitive' } },
+                { description: { contains: search, mode: 'insensitive' } }
+            ]
+        };
 
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare('UPDATE deals SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL');
-        const result = stmt.run(now, now, id);
-        return result.changes > 0;
+        if (!includeDeleted) {
+            where.deletedAt = null;
+        }
+
+        const deals = await prisma.deal.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            take: 50
+        });
+
+        return deals.map((d: any) => this.mapPrismaDealToDeal(d));
     }
 
-    // Hard delete (permanent)
-    hardDelete(id: number, userId: number): boolean {
-        const deal = this.findById(id, userId, true);
-        if (!deal) return false;
+    async update(id: number, userId: number, data: Partial<Deal>): Promise<Deal | null> {
+        try {
+            const updateData: any = {
+                ...(data.title !== undefined && { title: data.title }),
+                ...(data.value !== undefined && { value: data.value }),
+                ...(data.currency !== undefined && { currency: data.currency }),
+                ...(data.pipelineId !== undefined && { pipelineId: data.pipelineId }),
+                ...(data.stageId !== undefined && { stageId: data.stageId }),
+                ...(data.email !== undefined && { email: data.email as any }),
+                ...(data.phone !== undefined && { phone: data.phone as any }),
+                ...(data.description !== undefined && { description: data.description }),
+                ...(data.expectedCloseDate !== undefined && { expectedCloseDate: data.expectedCloseDate ? new Date(data.expectedCloseDate) : null }),
+                ...(data.actualCloseDate !== undefined && { actualCloseDate: data.actualCloseDate ? new Date(data.actualCloseDate) : null }),
+                ...(data.probability !== undefined && { probability: data.probability }),
+                ...(data.assignedTo !== undefined && { assignedTo: data.assignedTo }),
+                ...(data.status !== undefined && { status: data.status }),
+                ...(data.lostReason !== undefined && { lostReason: data.lostReason }),
+                ...(data.personId !== undefined && { personId: data.personId }),
+                ...(data.organizationId !== undefined && { organizationId: data.organizationId }),
+                ...(data.source !== undefined && { source: data.source }),
+                ...(data.labelIds !== undefined && { labelIds: data.labelIds as any }),
+                ...(data.customFields !== undefined && { customFields: data.customFields as any }),
+                ...(data.ownerIds !== undefined && { ownerIds: data.ownerIds as any }),
+                ...(data.isVisibleToAll !== undefined && { isVisibleToAll: data.isVisibleToAll }),
+                ...(data.lastActivityAt !== undefined && { lastActivityAt: new Date(data.lastActivityAt) }),
+                updatedAt: new Date()
+            };
 
-        // Check permissions
-        if (!this.canUserAccessDeal(deal, userId)) {
+            const deal = await prisma.deal.update({
+                where: { id },
+                data: updateData
+            });
+
+            return this.mapPrismaDealToDeal(deal);
+        } catch (error) {
+            return null;
+        }
+    }
+
+    async makeDealAsWon(id: number): Promise<Deal | null> {
+        return this.update(id, 0, { status: 'WON', actualCloseDate: new Date().toISOString() });
+    }
+
+    async makeDealAsLost(id: number, info: { reason?: string, comment?: string }): Promise<Deal | null> {
+        return this.update(id, 0, {
+            status: 'LOST',
+            actualCloseDate: new Date().toISOString(),
+            lostReason: info.reason || info.comment
+        });
+    }
+
+    async resetDeal(id: number): Promise<Deal | null> {
+        return this.update(id, 0, { status: 'OPEN', actualCloseDate: undefined, lostReason: undefined });
+    }
+
+    async delete(id: number, userId: number): Promise<boolean> {
+        try {
+            await prisma.deal.update({
+                where: { id },
+                data: { deletedAt: new Date() }
+            });
+            return true;
+        } catch (error) {
             return false;
         }
-
-        const stmt = this.db.prepare('DELETE FROM deals WHERE id = ?');
-        const result = stmt.run(id);
-        return result.changes > 0;
     }
 
-    // Restore soft deleted deal
-    restore(id: number, userId: number): Deal | null {
-        const deal = this.findById(id, userId, true);
-        if (!deal || !deal.deletedAt) return null;
-
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare('UPDATE deals SET deletedAt = NULL, updatedAt = ? WHERE id = ?');
-        stmt.run(now, id);
-        return this.findById(id, userId);
+    async archive(ids: number[], userId: number): Promise<boolean> {
+        try {
+            await prisma.deal.updateMany({
+                where: { id: { in: ids } },
+                data: { archivedAt: new Date() }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 
-    // Archive deals
-    archive(ids: number[], userId: number): boolean {
-        if (ids.length === 0) return true;
-        const now = new Date().toISOString();
-        const placeholders = ids.map(() => '?').join(',');
-        const stmt = this.db.prepare(`
-            UPDATE deals 
-            SET archivedAt = ?, updatedAt = ? 
-            WHERE id IN (${placeholders}) 
-            AND userId = ? 
-            AND deletedAt IS NULL
-        `);
-        const result = stmt.run(now, now, ...ids, userId);
-        return result.changes > 0;
+    async unarchive(ids: number[], userId: number): Promise<boolean> {
+        try {
+            await prisma.deal.updateMany({
+                where: { id: { in: ids } },
+                data: { archivedAt: null }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 
-    // Unarchive deals
-    unarchive(ids: number[], userId: number): boolean {
-        if (ids.length === 0) return true;
-        const now = new Date().toISOString();
-        const placeholders = ids.map(() => '?').join(',');
-        const stmt = this.db.prepare(`
-            UPDATE deals 
-            SET archivedAt = NULL, updatedAt = ? 
-            WHERE id IN (${placeholders}) 
-            AND userId = ? 
-            AND deletedAt IS NULL
-        `);
-        const result = stmt.run(now, ...ids, userId);
-        return result.changes > 0;
-    }
-
-    getArchivedDeals(userId: number, filters: {
+    async getArchivedDeals(userId: number, options: {
         pipelineId?: number;
         stageId?: number;
         limit?: number;
         offset?: number;
-    } = {}): { deals: Deal[]; total: number } {
-        return this.findByUserId(userId, { ...filters, includeArchived: true, onlyArchived: true });
-    }
+    } = {}): Promise<{ deals: Deal[]; total: number }> {
+        const where: any = {
+            archivedAt: { not: null },
+            deletedAt: null,
+            userId
+        };
 
-    // Hard delete archived deals
-    hardDeleteArchived(ids: number[], userId: number): boolean {
-        if (ids.length === 0) return true;
-        const placeholders = ids.map(() => '?').join(',');
-        const stmt = this.db.prepare(`
-            DELETE FROM deals 
-            WHERE id IN (${placeholders}) 
-            AND userId = ? 
-            AND archivedAt IS NOT NULL
-        `);
-        const result = stmt.run(...ids, userId);
-        return result.changes > 0;
-    }
+        if (options.pipelineId) where.pipelineId = options.pipelineId;
+        if (options.stageId) where.stageId = options.stageId;
 
-    // Get all deleted deals
-    getDeletedDeals(userId: number, filters: {
-        limit?: number;
-        offset?: number;
-    } = {}): { deals: Deal[]; total: number } {
-        let query = `SELECT d.* FROM deals d
-            JOIN pipelines p ON d.pipelineId = p.id
-            WHERE d.deletedAt IS NOT NULL 
-            AND (d.userId = ? OR EXISTS (
-                SELECT 1 FROM json_each(COALESCE(d.ownerIds, '[]')) 
-                WHERE json_each.value = ?
-            ))
-            AND (p.userId = ? OR EXISTS (
-                SELECT 1 FROM json_each(COALESCE(p.ownerIds, '[]')) 
-                WHERE json_each.value = ?
-            ))`;
-
-        const params: any[] = [userId, userId, userId, userId];
-
-        query += ' ORDER BY deletedAt DESC';
-
-        // Get total count
-        const countQuery = query.replace(/SELECT\s+d\.\*/i, 'SELECT COUNT(*) as count');
-        const countResult = this.db.prepare(countQuery).get(...params) as { count: number } | undefined;
-        const total = countResult ? countResult.count : 0;
-
-        // Add pagination
-        if (filters.limit) {
-            query += ' LIMIT ? OFFSET ?';
-            params.push(filters.limit, filters.offset || 0);
-        }
-
-        const stmt = this.db.prepare(query);
-        const results = stmt.all(...params) as any[];
+        const [deals, total] = await Promise.all([
+            prisma.deal.findMany({
+                where,
+                orderBy: { archivedAt: 'desc' },
+                take: options.limit,
+                skip: options.offset || 0
+            }),
+            prisma.deal.count({ where })
+        ]);
 
         return {
-            deals: results.map(r => ({
-                ...r,
-                isRotten: Boolean(r.isRotten),
-                status: (r.status || 'OPEN').toUpperCase(),
-                email: r.email ? JSON.parse(r.email) : null,
-                phone: r.phone ? JSON.parse(r.phone) : null,
-                labelIds: r.labelIds ? JSON.parse(r.labelIds) : null,
-                ownerIds: r.ownerIds ? JSON.parse(r.ownerIds) : []
-            })),
-            total: total
+            deals: deals.map((d: any) => this.mapPrismaDealToDeal(d)),
+            total
         };
     }
 
-    updateRottenStatus(dealId: number, isRotten: boolean): void {
-        this.db.prepare('UPDATE deals SET isRotten = ? WHERE id = ? AND deletedAt IS NULL AND archivedAt IS NULL').run(isRotten ? 1 : 0, dealId);
-    }
-
-    getRottenDeals(userId: number, pipelineId?: number): Deal[] {
-        let query = `
-            SELECT d.*, p.rottenDays, ps.rottenDays as stageRottenDays
-            FROM deals d
-            JOIN pipelines p ON d.pipelineId = p.id
-            JOIN pipeline_stages ps ON d.stageId = ps.id
-            WHERE d.deletedAt IS NULL AND d.archivedAt IS NULL
-            AND (d.userId = ? OR EXISTS (
-                SELECT 1 FROM json_each(COALESCE(d.ownerIds, '[]')) 
-                WHERE json_each.value = ?
-            ))
-            AND (p.userId = ? OR EXISTS (
-                SELECT 1 FROM json_each(COALESCE(p.ownerIds, '[]')) 
-                WHERE json_each.value = ?
-            ))
-            AND d.status = 'OPEN' 
-            AND p.dealRotting = 1
-        `;
-        const params: any[] = [userId, userId, userId, userId];
-
-        if (pipelineId) {
-            query += ' AND d.pipelineId = ?';
-            params.push(pipelineId);
+    async hardDeleteArchived(ids: number[], userId: number): Promise<boolean> {
+        try {
+            await prisma.deal.deleteMany({
+                where: { id: { in: ids }, archivedAt: { not: null }, userId }
+            });
+            return true;
+        } catch (error) {
+            return false;
         }
-
-        const results = this.db.prepare(query).all(...params) as any[];
-        const now = new Date();
-
-        return results
-            .filter(deal => {
-                if (!this.canUserAccessDeal(deal, userId)) return false;
-                if (!deal.lastActivityAt) return false;
-
-                const rottenDays = deal.stageRottenDays || deal.rottenDays;
-                const lastActivity = new Date(deal.lastActivityAt);
-                const daysSinceActivity = Math.floor((now.getTime() - lastActivity.getTime()) / (1000 * 60 * 60 * 24));
-
-                return daysSinceActivity >= rottenDays;
-            })
-            .map(r => ({
-                ...r,
-                isRotten: Boolean(r.isRotten),
-                ownerIds: r.ownerIds ? JSON.parse(r.ownerIds) : []
-            }));
     }
 
-    searchDeals(userId: number, search: string, includeDeleted: boolean = false, includeArchived: boolean = false): Deal[] {
-        let query = `
-            SELECT d.* FROM deals d
-            JOIN pipelines p ON d.pipelineId = p.id
-            WHERE (d.title LIKE ? OR d.description LIKE ? OR d.source LIKE ?)
-            AND (d.userId = ? OR EXISTS (
-                SELECT 1 FROM json_each(COALESCE(d.ownerIds, '[]')) 
-                WHERE json_each.value = ?
-            ))
-            AND (p.userId = ? OR EXISTS (
-                SELECT 1 FROM json_each(COALESCE(p.ownerIds, '[]')) 
-                WHERE json_each.value = ?
-            ))
-        `;
+    async getRottenDeals(userId: number, pipelineId?: number): Promise<Deal[]> {
+        const where: any = {
+            isRotten: true,
+            deletedAt: null,
+            userId
+        };
+        if (pipelineId) where.pipelineId = pipelineId;
 
-        if (!includeDeleted) {
-            query += ' AND d.deletedAt IS NULL';
-        }
-
-        if (!includeArchived) {
-            query += ' AND d.archivedAt IS NULL';
-        }
-
-        const params = [`%${search}%`, `%${search}%`, `%${search}%`, userId, userId, userId, userId];
-
-        const results = this.db.prepare(query).all(...params) as any[];
-
-        return results
-            .filter(deal => this.canUserAccessDeal(deal, userId))
-            .map(r => ({
-                ...r,
-                isRotten: Boolean(r.isRotten),
-                status: (r.status || 'OPEN').toUpperCase(),
-                email: r.email ? JSON.parse(r.email) : null,
-                phone: r.phone ? JSON.parse(r.phone) : null,
-                labelIds: r.labelIds ? JSON.parse(r.labelIds) : null,
-                ownerIds: r.ownerIds ? JSON.parse(r.ownerIds) : []
-            }));
+        const deals = await prisma.deal.findMany({ where });
+        return deals.map((d: any) => this.mapPrismaDealToDeal(d));
     }
 
-    makeDealAsWon(dealId: number): Deal | null {
-        this.db.prepare('UPDATE deals SET status = ? WHERE id = ? AND deletedAt IS NULL AND archivedAt IS NULL').run('WON', dealId);
-        return this.findById(dealId);
-    }
-
-    makeDealAsLost(
-        dealId: number,
-        info: { reason?: string; comment?: string }
-    ): Deal | null {
-        const customFields = JSON.stringify(info);
-
-        this.db.prepare(
-            `UPDATE deals 
-             SET status = ?, customFields = ?, updatedAt = ? 
-             WHERE id = ? AND deletedAt IS NULL AND archivedAt IS NULL`
-        ).run(
-            'LOST',
-            customFields,
-            new Date().toISOString(),
-            dealId
-        );
-
-        return this.findById(dealId);
-    }
-
-    resetDeal(dealId: number): Deal | null {
-        this.db.prepare(
-            'UPDATE deals SET status = ?, lostReason = ?, customFields = ? WHERE id = ? AND deletedAt IS NULL AND archivedAt IS NULL'
-        ).run('OPEN', null, null, dealId);
-
-        return this.findById(dealId);
-    }
-
-    removeLabelFromDeal(dealId: number, labelId: number): Deal | null {
-        const deal = this.findById(dealId);
+    async removeLabelFromDeal(dealId: number, labelId: number): Promise<Deal | null> {
+        const deal = await prisma.deal.findUnique({ where: { id: dealId } });
         if (!deal) return null;
 
-        const labelIds = deal.labelIds || [];
-        const updatedLabelIds = labelIds.filter(id => id !== labelId);
+        const labels = (deal.labelIds as number[]) || [];
+        const updatedLabels = labels.filter(id => id !== labelId);
 
-        this.db.prepare(
-            'UPDATE deals SET labelIds = ? WHERE id = ? AND deletedAt IS NULL AND archivedAt IS NULL'
-        ).run(JSON.stringify(updatedLabelIds), dealId);
+        const updated = await prisma.deal.update({
+            where: { id: dealId },
+            data: { labelIds: updatedLabels as any }
+        });
 
-        return this.findById(dealId);
+        return this.mapPrismaDealToDeal(updated);
+    }
+
+    async getStats(userId: number): Promise<any> {
+        const stats = await prisma.deal.groupBy({
+            by: ['status'],
+            where: {
+                deletedAt: null,
+                OR: [
+                    { userId },
+                    {
+                        ownerIds: {
+                            array_contains: userId
+                        }
+                    }
+                ]
+            },
+            _count: { _all: true },
+            _sum: { value: true }
+        });
+
+        const result = {
+            total: 0,
+            open: 0,
+            won: 0,
+            lost: 0,
+            totalValue: 0,
+            wonValue: 0
+        };
+
+        stats.forEach((s: any) => {
+            const count = s._count._all;
+            const sum = s._sum.value || 0;
+            result.total += count;
+            result.totalValue += sum;
+            if (s.status === 'OPEN') result.open = count;
+            else if (s.status === 'WON') {
+                result.won = count;
+                result.wonValue = sum;
+            } else if (s.status === 'LOST') result.lost = count;
+        });
+
+        return result;
+    }
+
+    private mapPrismaDealToDeal(d: any): Deal {
+        return {
+            id: d.id,
+            title: d.title,
+            value: d.value || 0,
+            currency: d.currency || 'USD',
+            pipelineId: d.pipelineId,
+            stageId: d.stageId,
+            personId: d.personId || undefined,
+            organizationId: d.organizationId || undefined,
+            email: (d.email as any) || undefined,
+            phone: (d.phone as any) || undefined,
+            description: d.description || undefined,
+            expectedCloseDate: d.expectedCloseDate?.toISOString() || undefined,
+            actualCloseDate: d.actualCloseDate?.toISOString() || undefined,
+            probability: d.probability || 0,
+            userId: d.userId,
+            assignedTo: d.assignedTo || undefined,
+            ownerIds: (d.ownerIds as number[]) || [],
+            isVisibleToAll: d.isVisibleToAll,
+            status: (d.status as any) || 'OPEN',
+            lostReason: d.lostReason || undefined,
+            lastActivityAt: d.lastActivityAt?.toISOString() || undefined,
+            isRotten: d.isRotten,
+            labelIds: (d.labelIds as number[]) || [],
+            source: d.source || undefined,
+            customFields: d.customFields || undefined,
+            createdAt: d.createdAt.toISOString(),
+            updatedAt: d.updatedAt.toISOString(),
+            deletedAt: d.deletedAt?.toISOString() || undefined,
+            archivedAt: d.archivedAt?.toISOString() || undefined
+        };
     }
 }

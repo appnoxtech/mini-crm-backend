@@ -1,851 +1,437 @@
-import Database from "better-sqlite3";
-import { Email, EmailAccount, EmailAttachment, EmailContent, Contact, Deal } from "./types";
+import { Email, EmailAccount, EmailContent, Contact, Deal } from "./types";
+import { prisma } from "../../../shared/prisma";
+import { Prisma } from "@prisma/client";
 
 export class EmailModel {
-  private db: Database.Database;
-
-  constructor(db: Database.Database) {
-    this.db = db;
-  }
+  constructor(_db?: any) { }
 
   initialize(): void {
-    // Create email_accounts table
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS email_accounts (
-        id TEXT PRIMARY KEY,
-        userId TEXT NOT NULL,
-        email TEXT NOT NULL,
-        provider TEXT NOT NULL,
-        accessToken TEXT,
-        refreshToken TEXT,
-        imapConfig TEXT,
-        smtpConfig TEXT,
-        isActive BOOLEAN DEFAULT 1,
-        lastSyncAt TEXT,
-        lastHistoryId TEXT,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL
-      )
-    `);
-
-    // Create emails table
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS emails (
-        id TEXT PRIMARY KEY,
-        messageId TEXT NOT NULL,
-        threadId TEXT,
-        accountId TEXT NOT NULL,
-        from_address TEXT NOT NULL,
-        to_addresses TEXT NOT NULL,
-        cc_addresses TEXT,
-        bcc_addresses TEXT,
-        subject TEXT NOT NULL,
-        body TEXT NOT NULL,
-        htmlBody TEXT,
-        isRead BOOLEAN DEFAULT 0,
-        isIncoming BOOLEAN DEFAULT 1,
-        sentAt TEXT NOT NULL,
-        receivedAt TEXT,
-        contactIds TEXT,
-        dealIds TEXT,
-        accountEntityIds TEXT,
-        trackingPixelId TEXT,
-        opens INTEGER DEFAULT 0,
-        clicks INTEGER DEFAULT 0,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL,
-        labelIds TEXT,
-        attachments TEXT,
-        uid INTEGER,
-        folder TEXT,
-        providerId TEXT,
-        snippet TEXT,
-        UNIQUE(messageId, accountId),
-        FOREIGN KEY (accountId) REFERENCES email_accounts(id)
-      )
-    `);
-
-    // Create email_contents table for global unique content
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS email_contents (
-        messageId TEXT PRIMARY KEY,
-        body TEXT NOT NULL,
-        htmlBody TEXT,
-        attachments TEXT,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL
-      )
-    `);
-    // Create thread_summaries table
-    this.db.exec(`
-        CREATE TABLE IF NOT EXISTS thread_summaries (
-        threadId TEXT PRIMARY KEY,
-        summary TEXT NOT NULL,
-        lastSummarizedAt TEXT NOT NULL
-        )
-      `);
-
-    // Create indexes
-    this.db.exec(
-      "CREATE INDEX IF NOT EXISTS idx_emails_accountId ON emails(accountId)"
-    );
-    this.db.exec(
-      "CREATE INDEX IF NOT EXISTS idx_emails_messageId ON emails(messageId)"
-    );
-    this.db.exec(
-      "CREATE INDEX IF NOT EXISTS idx_emails_sentAt ON emails(sentAt)"
-    );
-    this.db.exec(
-      "CREATE INDEX IF NOT EXISTS idx_email_accounts_userId ON email_accounts(userId)"
-    );
-
-    // Add labelIds column if it doesn't exist (for existing databases)
-    try {
-      this.db.exec("ALTER TABLE emails ADD COLUMN labelIds TEXT");
-
-    } catch (error) {
-      // Column already exists, ignore error
-    }
-
-    // Add lastHistoryId column if it doesn't exist (for existing databases)
-    try {
-      this.db.exec("ALTER TABLE email_accounts ADD COLUMN lastHistoryId TEXT");
-
-    } catch (error) {
-      // Column already exists, ignore error
-    }
-    // Add attachments column if it doesn't exist
-    try {
-      this.db.exec("ALTER TABLE emails ADD COLUMN attachments TEXT");
-    } catch (error) { }
-
-    // Add providerId column if it doesn't exist
-    try {
-      this.db.exec("ALTER TABLE emails ADD COLUMN providerId TEXT");
-    } catch (error) { }
-
-    // Add uid and folder columns if they don't exist
-    try {
-      this.db.exec("ALTER TABLE emails ADD COLUMN uid INTEGER");
-    } catch (error) { }
-    try {
-      this.db.exec("ALTER TABLE emails ADD COLUMN folder TEXT");
-    } catch (error) { }
-
-    // Migration for multi-user email support: remove global UNIQUE constraint on messageId
-    // and replace it with composite UNIQUE(messageId, accountId)
-    try {
-      const schema = this.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='emails'").get() as any;
-      if (schema && schema.sql && schema.sql.includes('messageId TEXT UNIQUE')) {
-
-        this.db.transaction(() => {
-          this.db.exec("DROP TABLE IF EXISTS emails_old");
-          this.db.exec("ALTER TABLE emails RENAME TO emails_old");
-          this.db.exec(`
-            CREATE TABLE emails (
-              id TEXT PRIMARY KEY,
-              messageId TEXT NOT NULL,
-              threadId TEXT,
-              accountId TEXT NOT NULL,
-              from_address TEXT NOT NULL,
-              to_addresses TEXT NOT NULL,
-              cc_addresses TEXT,
-              bcc_addresses TEXT,
-              subject TEXT NOT NULL,
-              body TEXT NOT NULL,
-              htmlBody TEXT,
-              isRead BOOLEAN DEFAULT 0,
-              isIncoming BOOLEAN DEFAULT 1,
-              sentAt TEXT NOT NULL,
-              receivedAt TEXT,
-              contactIds TEXT,
-              dealIds TEXT,
-              accountEntityIds TEXT,
-              trackingPixelId TEXT,
-              opens INTEGER DEFAULT 0,
-              clicks INTEGER DEFAULT 0,
-              createdAt TEXT NOT NULL,
-              updatedAt TEXT NOT NULL,
-              labelIds TEXT,
-              attachments TEXT,
-              uid INTEGER,
-              folder TEXT,
-              providerId TEXT,
-              UNIQUE(messageId, accountId),
-              FOREIGN KEY (accountId) REFERENCES email_accounts(id)
-            )
-          `);
-
-          // Add missing columns if they don't exist (for existing databases)
-          const columnsToAdd = [
-            { name: 'uid', definition: 'INTEGER' },
-            { name: 'folder', definition: 'TEXT' },
-            { name: 'providerId', definition: 'TEXT' },
-          ];
-
-          for (const column of columnsToAdd) {
-            try {
-              this.db.exec(`ALTER TABLE emails ADD COLUMN ${column.name} ${column.definition}`);
-
-            } catch (error) {
-              // Column already exists, ignore error
-            }
-          }
-
-
-
-          // Note: When migrating old data, attachments column will be null, which is fine
-          this.db.exec("INSERT INTO emails SELECT id, messageId, threadId, accountId, from_address, to_addresses, cc_addresses, bcc_addresses, subject, body, htmlBody, isRead, isIncoming, sentAt, receivedAt, contactIds, dealIds, accountEntityIds, trackingPixelId, opens, clicks, createdAt, updatedAt, labelIds, NULL FROM emails_old");
-          this.db.exec("DROP TABLE emails_old");
-
-          // Re-create indexes
-          this.db.exec("CREATE INDEX IF NOT EXISTS idx_emails_accountId ON emails(accountId)");
-          this.db.exec("CREATE INDEX IF NOT EXISTS idx_emails_messageId ON emails(messageId)");
-          this.db.exec("CREATE INDEX IF NOT EXISTS idx_emails_sentAt ON emails(sentAt)");
-        })();
-
-      }
-    } catch (error: any) {
-      console.error("Migration to multi-user emails failed:", error.message);
-    }
-
-    // Normalization Migration: Move existing data to email_contents and populate snippets
-    try {
-      const needsNormalization = this.db.prepare("SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='emails' AND sql LIKE '%body TEXT NOT NULL%'").get() as any;
-
-      if (needsNormalization && needsNormalization.count > 0) {
-        console.log("Starting email database normalization migration...");
-
-        this.db.transaction(() => {
-          // 1. Move unique content to email_contents
-          this.db.exec(`
-            INSERT OR IGNORE INTO email_contents (messageId, body, htmlBody, attachments, createdAt, updatedAt)
-            SELECT messageId, body, htmlBody, attachments, createdAt, updatedAt
-            FROM emails
-          `);
-
-          // 2. Add snippet column if not already there
-          try {
-            this.db.exec("ALTER TABLE emails ADD COLUMN snippet TEXT");
-          } catch (e) { }
-
-          // 3. Populate snippets and clear large content columns
-          // Simple snippet logic: first 200 chars
-          this.db.exec(`
-            UPDATE emails 
-            SET snippet = SUBSTR(REPLACE(REPLACE(body, CHAR(10), ' '), CHAR(13), ' '), 1, 200)
-          `);
-
-          // 4. Create the new schema emails table (no heavy bodies/attachments)
-          this.db.exec("ALTER TABLE emails RENAME TO emails_temp");
-          this.db.exec(`
-            CREATE TABLE emails (
-              id TEXT PRIMARY KEY,
-              messageId TEXT NOT NULL,
-              threadId TEXT,
-              accountId TEXT NOT NULL,
-              from_address TEXT NOT NULL,
-              to_addresses TEXT NOT NULL,
-              cc_addresses TEXT,
-              bcc_addresses TEXT,
-              subject TEXT NOT NULL,
-              snippet TEXT,
-              isRead BOOLEAN DEFAULT 0,
-              isIncoming BOOLEAN DEFAULT 1,
-              sentAt TEXT NOT NULL,
-              receivedAt TEXT,
-              contactIds TEXT,
-              dealIds TEXT,
-              accountEntityIds TEXT,
-              trackingPixelId TEXT,
-              opens INTEGER DEFAULT 0,
-              clicks INTEGER DEFAULT 0,
-              createdAt TEXT NOT NULL,
-              updatedAt TEXT NOT NULL,
-              labelIds TEXT,
-              uid INTEGER,
-              folder TEXT,
-              providerId TEXT,
-              UNIQUE(messageId, accountId),
-              FOREIGN KEY (accountId) REFERENCES email_accounts(id)
-            )
-          `);
-
-          // 5. Transfer data to the new thin table
-          this.db.exec(`
-            INSERT INTO emails (
-              id, messageId, threadId, accountId, from_address, to_addresses, cc_addresses, bcc_addresses,
-              subject, snippet, isRead, isIncoming, sentAt, receivedAt, contactIds, dealIds,
-              accountEntityIds, trackingPixelId, opens, clicks, createdAt, updatedAt, labelIds, uid, folder, providerId
-            )
-            SELECT 
-              id, messageId, threadId, accountId, from_address, to_addresses, cc_addresses, bcc_addresses,
-              subject, snippet, isRead, isIncoming, sentAt, receivedAt, contactIds, dealIds,
-              accountEntityIds, trackingPixelId, opens, clicks, createdAt, updatedAt, labelIds, uid, folder, providerId
-            FROM emails_temp
-          `);
-
-          // 6. Cleanup
-          this.db.exec("DROP TABLE emails_temp");
-
-          // 7. Re-create indexes
-          this.db.exec("CREATE INDEX IF NOT EXISTS idx_emails_accountId ON emails(accountId)");
-          this.db.exec("CREATE INDEX IF NOT EXISTS idx_emails_messageId ON emails(messageId)");
-          this.db.exec("CREATE INDEX IF NOT EXISTS idx_emails_sentAt ON emails(sentAt)");
-        })();
-        console.log("Email database normalization migration completed.");
-      }
-    } catch (error: any) {
-      console.error("Database normalization migration failed:", error.message);
-    }
+    // No-op with Prisma
   }
 
-  createEmail(email: Email): Email {
+  async createEmail(email: Email): Promise<Email> {
     // 1. Save or update unique content
-    const contentStmt = this.db.prepare(`
-      INSERT OR IGNORE INTO email_contents (
-        messageId, body, htmlBody, attachments, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?)
-    `);
+    await prisma.emailContent.upsert({
+      where: { messageId: email.messageId },
+      create: {
+        messageId: email.messageId,
+        body: email.body,
+        htmlBody: email.htmlBody || null,
+        attachments: (email.attachments as any) || [],
+        createdAt: email.createdAt,
+        updatedAt: email.updatedAt
+      },
+      update: {}
+    });
 
-    contentStmt.run(
-      email.messageId,
-      email.body,
-      email.htmlBody || null,
-      email.attachments ? JSON.stringify(email.attachments) : null,
-      email.createdAt.toISOString(),
-      email.updatedAt.toISOString()
-    );
-
-    // 2. Save account-specific metadata (UPSERT to handle folder moves)
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO emails (
-        id, messageId, threadId, accountId, from_address, to_addresses, cc_addresses, bcc_addresses,
-        subject, snippet, isRead, isIncoming, sentAt, receivedAt, contactIds, dealIds,
-        accountEntityIds, trackingPixelId, opens, clicks, createdAt, updatedAt, labelIds, uid, folder, providerId
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    // Calculate snippet if not provided
+    // 2. Save account-specific metadata
     const snippet = email.snippet || email.body.substring(0, 200).replace(/(\r\n|\n|\r)/gm, " ");
 
-    stmt.run(
-      email.id,
-      email.messageId,
-      email.threadId || null,
-      email.accountId,
-      email.from,
-      JSON.stringify(email.to),
-      email.cc ? JSON.stringify(email.cc) : null,
-      email.bcc ? JSON.stringify(email.bcc) : null,
-      email.subject,
-      snippet,
-      email.isRead ? 1 : 0,
-      email.isIncoming ? 1 : 0,
-      email.sentAt.toISOString(),
-      email.receivedAt?.toISOString() || null,
-      JSON.stringify(email.contactIds),
-      JSON.stringify(email.dealIds),
-      JSON.stringify(email.accountEntityIds),
-      email.trackingPixelId || null,
-      email.opens,
-      email.clicks,
-      email.createdAt.toISOString(),
-      email.updatedAt.toISOString(),
-      email.labelIds ? JSON.stringify(email.labelIds) : null,
-      email.uid || null,
-      email.folder || null,
-      email.providerId || null
-    );
+    const data: any = {
+      id: email.id,
+      messageId: email.messageId,
+      threadId: email.threadId || null,
+      accountId: email.accountId,
+      from: email.from,
+      to: (email.to as any) || [],
+      cc: (email.cc as any) || [],
+      bcc: (email.bcc as any) || [],
+      subject: email.subject,
+      body: email.body,
+      snippet: snippet,
+      isRead: email.isRead,
+      isIncoming: email.isIncoming,
+      sentAt: email.sentAt,
+      receivedAt: email.receivedAt || null,
+      contactIds: (email.contactIds as any) || [],
+      dealIds: (email.dealIds as any) || [],
+      accountEntityIds: (email.accountEntityIds as any) || [],
+      trackingPixelId: email.trackingPixelId || null,
+      opens: email.opens,
+      clicks: email.clicks,
+      createdAt: email.createdAt,
+      updatedAt: email.updatedAt,
+      labelIds: (email.labelIds as any) || [],
+      uid: email.uid || null,
+      folder: email.folder || null,
+      providerId: email.providerId || null,
+      attachments: (email.attachments as any) || []
+    };
+
+    await prisma.email.upsert({
+      where: {
+        messageId_accountId: {
+          messageId: email.messageId,
+          accountId: email.accountId
+        }
+      },
+      create: data,
+      update: data
+    });
 
     return email;
   }
 
-  /**
-   * Find unique content by messageId
-   */
-  findContentByMessageId(messageId: string): EmailContent | null {
-    const stmt = this.db.prepare("SELECT * FROM email_contents WHERE messageId = ?");
-    const row = stmt.get(messageId) as any;
+  async bulkCreateEmails(emails: Email[]): Promise<{ inserted: number; skipped: number }> {
+    let inserted = 0;
+    let skipped = 0;
+
+    for (const email of emails) {
+      try {
+        await this.createEmail(email);
+        inserted++;
+      } catch (err) {
+        skipped++;
+      }
+    }
+    return { inserted, skipped };
+  }
+
+  async findContentByMessageId(messageId: string): Promise<EmailContent | null> {
+    const row = await prisma.emailContent.findUnique({
+      where: { messageId }
+    });
     if (!row) return null;
     return {
       messageId: row.messageId,
       body: row.body,
       htmlBody: row.htmlBody || undefined,
-      attachments: row.attachments ? JSON.parse(row.attachments) : undefined,
-      createdAt: new Date(row.createdAt),
-      updatedAt: new Date(row.updatedAt)
+      attachments: (row.attachments as any) || undefined,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt
     };
   }
 
-  /**
-   * Find an email by IMAP account, folder and UID
-   */
-  findEmailByImapUid(accountId: string, folder: string, uid: number): Email | null {
-    const stmt = this.db.prepare(`
-      SELECT e.*, ec.body, ec.htmlBody, ec.attachments 
-      FROM emails e 
-      LEFT JOIN email_contents ec ON e.messageId = ec.messageId
-      WHERE e.accountId = ? AND e.folder = ? AND e.uid = ?
-    `);
-    const row = stmt.get(accountId, folder, uid) as any;
+  async findEmailByImapUid(accountId: string, folder: string, uid: number): Promise<Email | null> {
+    const row = await prisma.email.findFirst({
+      where: {
+        accountId,
+        folder,
+        uid
+      },
+      include: {
+        content: true
+      }
+    });
     if (!row) return null;
     return this.mapRowToEmail(row);
   }
 
-  /**
-   * Find an email by internal provider ID (e.g. Gmail hex ID or Outlook message ID)
-   */
-  findEmailByProviderId(accountId: string, providerId: string): Email | null {
-    const stmt = this.db.prepare(`
-      SELECT e.*, ec.body, ec.htmlBody, ec.attachments 
-      FROM emails e 
-      JOIN email_contents ec ON e.messageId = ec.messageId
-      WHERE e.accountId = ? AND e.providerId = ?
-    `);
-    const row = stmt.get(accountId, providerId) as any;
+  async findEmailByProviderId(accountId: string, providerId: string): Promise<Email | null> {
+    const row = await prisma.email.findFirst({
+      where: {
+        accountId,
+        providerId
+      },
+      include: {
+        content: true
+      }
+    });
     if (!row) return null;
     return this.mapRowToEmail(row);
   }
 
-  findEmailByMessageId(messageId: string, accountId?: string): Email | null {
-    const query = accountId
-      ? `SELECT e.*, ec.body, ec.htmlBody, ec.attachments 
-         FROM emails e 
-         JOIN email_contents ec ON e.messageId = ec.messageId 
-         WHERE e.messageId = ? AND e.accountId = ?`
-      : `SELECT e.*, ec.body, ec.htmlBody, ec.attachments 
-         FROM emails e 
-         JOIN email_contents ec ON e.messageId = ec.messageId 
-         WHERE e.messageId = ?`
-    const stmt = this.db.prepare(query);
-    const row = accountId ? stmt.get(messageId, accountId) : stmt.get(messageId) as any;
+  async findEmailByMessageId(messageId: string, accountId?: string): Promise<Email | null> {
+    const row = await prisma.email.findFirst({
+      where: {
+        messageId,
+        ...(accountId ? { accountId } : {})
+      },
+      include: {
+        content: true
+      }
+    });
 
     if (!row) return null;
-
-    const email: Email = {
-      id: row.id,
-      messageId: row.messageId,
-      threadId: row.threadId,
-      accountId: row.accountId,
-      from: row.from_address,
-      to: JSON.parse(row.to_addresses),
-      cc: row.cc_addresses ? JSON.parse(row.cc_addresses) : undefined,
-      bcc: row.bcc_addresses ? JSON.parse(row.bcc_addresses) : undefined,
-      subject: row.subject,
-      body: row.body,
-      htmlBody: row.htmlBody || undefined,
-      isRead: Boolean(row.isRead),
-      isIncoming: Boolean(row.isIncoming),
-      sentAt: new Date(row.sentAt),
-      contactIds: JSON.parse(row.contactIds),
-      dealIds: JSON.parse(row.dealIds),
-      accountEntityIds: JSON.parse(row.accountEntityIds),
-      trackingPixelId: row.trackingPixelId || undefined,
-      opens: Number(row.opens) || 0,
-      clicks: Number(row.clicks) || 0,
-      createdAt: new Date(row.createdAt),
-      updatedAt: new Date(row.updatedAt),
-      attachments: row.attachments ? JSON.parse(row.attachments) : [],
-      labelIds: row.labelIds ? JSON.parse(row.labelIds) : [],
-      uid: row.uid || undefined,
-      folder: row.folder || undefined,
-      providerId: row.providerId || undefined,
-      snippet: row.snippet || undefined,
-    };
-
-    if (row.receivedAt) {
-      email.receivedAt = new Date(row.receivedAt);
-    }
-
-    return email;
+    return this.mapRowToEmail(row);
   }
 
-  getEmailAccountById(accountId: string): EmailAccount | null {
-    const stmt = this.db.prepare(
-      "SELECT * FROM email_accounts WHERE id = ?"
-    );
-    const row = stmt.get(accountId) as any;
+  async getEmailAccountById(id: string): Promise<EmailAccount | null> {
+    const row = await prisma.emailAccount.findUnique({
+      where: { id }
+    });
 
     if (!row) return null;
 
-    const account: EmailAccount = {
+    return {
       id: row.id,
-      userId: row.userId,
+      userId: row.userId.toString(),
       email: row.email,
-      provider: row.provider,
-      isActive: Boolean(row.isActive),
-      createdAt: new Date(row.createdAt),
-      updatedAt: new Date(row.updatedAt),
+      provider: row.provider as any,
+      accessToken: row.accessToken || undefined,
+      refreshToken: row.refreshToken || undefined,
+      imapConfig: row.imapConfig ? JSON.parse(row.imapConfig as string) : undefined,
+      smtpConfig: row.smtpConfig ? JSON.parse(row.smtpConfig as string) : undefined,
+      isActive: row.isActive,
+      lastSyncAt: row.lastSyncAt || undefined,
+      lastHistoryId: row.lastHistoryId || undefined,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
     };
-
-    if (row.accessToken) account.accessToken = row.accessToken;
-    if (row.refreshToken) account.refreshToken = row.refreshToken;
-    if (row.imapConfig) account.imapConfig = JSON.parse(row.imapConfig);
-    if (row.smtpConfig) account.smtpConfig = JSON.parse(row.smtpConfig);
-    if (row.lastSyncAt) account.lastSyncAt = new Date(row.lastSyncAt);
-    if (row.lastHistoryId) account.lastHistoryId = row.lastHistoryId;
-
-    return account;
   }
 
-  getEmailAccountByUserId(userId: string): EmailAccount | null {
-    const stmt = this.db.prepare(
-      "SELECT * FROM email_accounts WHERE userId = ? AND isActive = 1 LIMIT 1"
-    );
-    const row = stmt.get(userId) as any;
+  async getEmailAccountByUserId(userId: string): Promise<EmailAccount | null> {
+    const row = await prisma.emailAccount.findFirst({
+      where: {
+        userId: parseInt(userId),
+        isActive: true
+      }
+    });
 
     if (!row) return null;
 
-    const account: EmailAccount = {
+    return {
       id: row.id,
-      userId: row.userId,
+      userId: row.userId.toString(),
       email: row.email,
-      provider: row.provider,
-      isActive: Boolean(row.isActive),
-      createdAt: new Date(row.createdAt),
-      updatedAt: new Date(row.updatedAt),
+      provider: row.provider as any,
+      accessToken: row.accessToken || undefined,
+      refreshToken: row.refreshToken || undefined,
+      imapConfig: row.imapConfig ? JSON.parse(row.imapConfig as string) : undefined,
+      smtpConfig: row.smtpConfig ? JSON.parse(row.smtpConfig as string) : undefined,
+      isActive: row.isActive,
+      lastSyncAt: row.lastSyncAt || undefined,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
     };
-
-    if (row.accessToken) account.accessToken = row.accessToken;
-    if (row.refreshToken) account.refreshToken = row.refreshToken;
-    if (row.imapConfig) account.imapConfig = JSON.parse(row.imapConfig);
-    if (row.smtpConfig) account.smtpConfig = JSON.parse(row.smtpConfig);
-    if (row.lastSyncAt) account.lastSyncAt = new Date(row.lastSyncAt);
-
-    return account;
   }
 
-  getEmailAccountByEmail(email: string): EmailAccount | null {
-    const stmt = this.db.prepare(
-      "SELECT * FROM email_accounts WHERE email = ? AND isActive = 1 LIMIT 1"
-    );
-    const row = stmt.get(email) as any;
+  async getEmailAccountByEmail(email: string): Promise<EmailAccount | null> {
+    const row = await prisma.emailAccount.findFirst({
+      where: {
+        email,
+        isActive: true
+      }
+    });
 
     if (!row) return null;
 
-    const account: EmailAccount = {
+    return {
       id: row.id,
-      userId: row.userId,
+      userId: row.userId.toString(),
       email: row.email,
-      provider: row.provider,
-      isActive: Boolean(row.isActive),
-      createdAt: new Date(row.createdAt),
-      updatedAt: new Date(row.updatedAt),
+      provider: row.provider as any,
+      accessToken: row.accessToken || undefined,
+      refreshToken: row.refreshToken || undefined,
+      imapConfig: row.imapConfig ? JSON.parse(row.imapConfig as string) : undefined,
+      smtpConfig: row.smtpConfig ? JSON.parse(row.smtpConfig as string) : undefined,
+      isActive: row.isActive,
+      lastSyncAt: row.lastSyncAt || undefined,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
     };
+  }
 
-    if (row.accessToken) account.accessToken = row.accessToken;
-    if (row.refreshToken) account.refreshToken = row.refreshToken;
-    if (row.imapConfig) account.imapConfig = JSON.parse(row.imapConfig);
-    if (row.smtpConfig) account.smtpConfig = JSON.parse(row.smtpConfig);
-    if (row.lastSyncAt) account.lastSyncAt = new Date(row.lastSyncAt);
+  async createEmailAccount(account: EmailAccount): Promise<EmailAccount> {
+    await prisma.emailAccount.create({
+      data: {
+        id: account.id,
+        userId: parseInt(account.userId),
+        email: account.email,
+        provider: account.provider,
+        accessToken: account.accessToken || null,
+        refreshToken: account.refreshToken || null,
+        imapConfig: account.imapConfig ? JSON.stringify(account.imapConfig) : null,
+        smtpConfig: account.smtpConfig ? JSON.stringify(account.smtpConfig) : null,
+        isActive: account.isActive,
+        lastSyncAt: account.lastSyncAt || null,
+        lastHistoryId: account.lastHistoryId || null,
+        createdAt: account.createdAt,
+        updatedAt: account.updatedAt
+      }
+    });
 
     return account;
   }
 
-  createEmailAccount(account: EmailAccount): EmailAccount {
-    const stmt = this.db.prepare(`
-      INSERT INTO email_accounts (
-        id, userId, email, provider, accessToken, refreshToken, imapConfig, smtpConfig, 
-        isActive, lastSyncAt, lastHistoryId, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
-      account.id,
-      account.userId,
-      account.email,
-      account.provider,
-      account.accessToken || null,
-      account.refreshToken || null,
-      account.imapConfig ? JSON.stringify(account.imapConfig) : null,
-      account.smtpConfig ? JSON.stringify(account.smtpConfig) : null,
-      account.isActive ? 1 : 0,
-      account.lastSyncAt?.toISOString() || null,
-      account.lastHistoryId || null,
-      account.createdAt.toISOString(),
-      account.updatedAt.toISOString()
-    );
-
-    return account;
-  }
-
-  updateEmailAccount(
+  async updateEmailAccount(
     accountId: string,
     updates: Partial<EmailAccount>
-  ): void {
-    const fields: string[] = [];
-    const values: any[] = [];
+  ): Promise<void> {
+    const data: any = {};
 
-    if (updates.accessToken !== undefined) {
-      fields.push("accessToken = ?");
-      values.push(updates.accessToken);
-    }
+    if (updates.accessToken !== undefined) data.accessToken = updates.accessToken;
+    if (updates.refreshToken !== undefined) data.refreshToken = updates.refreshToken;
+    if (updates.imapConfig !== undefined) data.imapConfig = JSON.stringify(updates.imapConfig);
+    if (updates.smtpConfig !== undefined) data.smtpConfig = JSON.stringify(updates.smtpConfig);
+    if (updates.isActive !== undefined) data.isActive = updates.isActive;
+    if (updates.lastSyncAt !== undefined) data.lastSyncAt = updates.lastSyncAt;
+    if (updates.lastHistoryId !== undefined) data.lastHistoryId = updates.lastHistoryId;
 
-    if (updates.refreshToken !== undefined) {
-      fields.push("refreshToken = ?");
-      values.push(updates.refreshToken);
-    }
+    if (Object.keys(data).length === 0) return;
 
-    if (updates.imapConfig !== undefined) {
-      fields.push("imapConfig = ?");
-      values.push(JSON.stringify(updates.imapConfig));
-    }
-
-    if (updates.smtpConfig !== undefined) {
-      fields.push("smtpConfig = ?");
-      values.push(JSON.stringify(updates.smtpConfig));
-    }
-
-    if (updates.isActive !== undefined) {
-      fields.push("isActive = ?");
-      values.push(updates.isActive ? 1 : 0);
-    }
-
-    if (updates.lastSyncAt !== undefined) {
-      fields.push("lastSyncAt = ?");
-      values.push(updates.lastSyncAt.toISOString());
-    }
-
-    if (updates.lastHistoryId !== undefined) {
-      fields.push("lastHistoryId = ?");
-      values.push(updates.lastHistoryId);
-    }
-
-    if (fields.length === 0) return;
-
-    fields.push("updatedAt = ?");
-    values.push(new Date().toISOString());
-    values.push(accountId);
-
-    const stmt = this.db.prepare(
-      `UPDATE email_accounts SET ${fields.join(", ")} WHERE id = ?`
-    );
-    stmt.run(...values);
-  }
-
-  getAllActiveAccounts(): EmailAccount[] {
-    const stmt = this.db.prepare(
-      "SELECT * FROM email_accounts WHERE isActive = 1"
-    );
-    const rows = stmt.all() as any[];
-
-    return rows.map((row) => {
-      const account: EmailAccount = {
-        id: row.id,
-        userId: row.userId,
-        email: row.email,
-        provider: row.provider,
-        isActive: Boolean(row.isActive),
-        createdAt: new Date(row.createdAt),
-        updatedAt: new Date(row.updatedAt),
-      };
-
-      if (row.accessToken) account.accessToken = row.accessToken;
-      if (row.refreshToken) account.refreshToken = row.refreshToken;
-      if (row.imapConfig) account.imapConfig = JSON.parse(row.imapConfig);
-      if (row.smtpConfig) account.smtpConfig = JSON.parse(row.smtpConfig);
-      if (row.lastSyncAt) account.lastSyncAt = new Date(row.lastSyncAt);
-
-      return account;
+    await prisma.emailAccount.update({
+      where: { id: accountId },
+      data
     });
   }
 
-  getEmailAccounts(userId: string): EmailAccount[] {
-
-    const stmt = this.db.prepare(
-      "SELECT * FROM email_accounts WHERE userId = ? AND isActive = 1 ORDER BY createdAt DESC"
-    );
-    const rows = stmt.all(userId) as any[];
-
-
-    return rows.map((row) => {
-      const account: EmailAccount = {
-        id: row.id,
-        userId: row.userId,
-        email: row.email,
-        provider: row.provider,
-        isActive: Boolean(row.isActive),
-        createdAt: new Date(row.createdAt),
-        updatedAt: new Date(row.updatedAt),
-      };
-
-      if (row.accessToken) account.accessToken = row.accessToken;
-      if (row.refreshToken) account.refreshToken = row.refreshToken;
-      if (row.imapConfig) account.imapConfig = JSON.parse(row.imapConfig);
-      if (row.smtpConfig) account.smtpConfig = JSON.parse(row.smtpConfig);
-      if (row.lastSyncAt) account.lastSyncAt = new Date(row.lastSyncAt);
-
-      return account;
+  async getAllActiveAccounts(): Promise<EmailAccount[]> {
+    const rows = await prisma.emailAccount.findMany({
+      where: { isActive: true }
     });
+
+    return rows.map((row: any) => ({
+      id: row.id,
+      userId: row.userId.toString(),
+      email: row.email,
+      provider: row.provider as any,
+      accessToken: row.accessToken || undefined,
+      refreshToken: row.refreshToken || undefined,
+      imapConfig: row.imapConfig ? JSON.parse(row.imapConfig as string) : undefined,
+      smtpConfig: row.smtpConfig ? JSON.parse(row.smtpConfig as string) : undefined,
+      isActive: row.isActive,
+      lastSyncAt: row.lastSyncAt || undefined,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    }));
   }
 
-  findContactsByEmails(emails: string[]): Contact[] {
+  async getEmailAccounts(userId: string): Promise<EmailAccount[]> {
+    const rows = await prisma.emailAccount.findMany({
+      where: {
+        userId: parseInt(userId),
+        isActive: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    return rows.map((row: any) => ({
+      id: row.id,
+      userId: row.userId.toString(),
+      email: row.email,
+      provider: row.provider as any,
+      accessToken: row.accessToken || undefined,
+      refreshToken: row.refreshToken || undefined,
+      imapConfig: row.imapConfig ? JSON.parse(row.imapConfig as string) : undefined,
+      smtpConfig: row.smtpConfig ? JSON.parse(row.smtpConfig as string) : undefined,
+      isActive: row.isActive,
+      lastSyncAt: row.lastSyncAt || undefined,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    }));
+  }
+
+  async findContactsByEmails(emails: string[]): Promise<Contact[]> {
     // Mock implementation
     return [];
   }
 
-  saveThreadSummary(threadId: string, summary: string): void {
-    const stmt = this.db.prepare(`
-    INSERT INTO thread_summaries (threadId, summary, lastSummarizedAt)
-    VALUES (?, ?, ?)
-    ON CONFLICT(threadId) DO UPDATE SET
-      summary = excluded.summary,
-      lastSummarizedAt = excluded.lastSummarizedAt
-  `);
-    stmt.run(threadId, summary, new Date().toISOString());
+  async saveThreadSummary(threadId: string, summary: string): Promise<void> {
+    await prisma.threadSummary.upsert({
+      where: { threadId },
+      create: {
+        threadId,
+        summary,
+        lastSummarizedAt: new Date()
+      },
+      update: {
+        summary,
+        lastSummarizedAt: new Date()
+      }
+    });
   }
 
-  getThreadSummary(
-    threadId: string
-  ): { summary: string; lastSummarizedAt: Date } | null {
-    const stmt = this.db.prepare(
-      "SELECT * FROM thread_summaries WHERE threadId = ?"
-    );
-    const row = stmt.get(threadId) as any;
+  async getThreadSummary(threadId: string): Promise<{ summary: string; lastSummarizedAt: Date } | null> {
+    const row = await prisma.threadSummary.findUnique({
+      where: { threadId }
+    });
     if (!row) return null;
     return {
       summary: row.summary,
-      lastSummarizedAt: new Date(row.lastSummarizedAt),
+      lastSummarizedAt: row.lastSummarizedAt,
     };
   }
-  getThreadsNeedingSummary(): string[] {
-    const stmt = this.db.prepare(`
-    SELECT DISTINCT threadId 
-    FROM emails 
-    WHERE threadId IS NOT NULL 
-      AND threadId NOT IN (SELECT threadId FROM thread_summaries)
-  `);
-    const rows = stmt.all() as any[];
-    return rows.map((r) => r.threadId);
+
+  async getThreadsNeedingSummary(): Promise<string[]> {
+    const results = (await prisma.$queryRaw`
+      SELECT DISTINCT "threadId" 
+      FROM emails 
+      WHERE "threadId" IS NOT NULL 
+        AND "threadId" NOT IN (SELECT "threadId" FROM thread_summaries)
+    `) as { threadId: string }[];
+    return results.map((r: any) => r.threadId);
   }
 
-  findDealsByContactIds(contactIds: string[]): Deal[] {
+  async findDealsByContactIds(contactIds: string[]): Promise<Deal[]> {
     // Mock implementation
     return [];
   }
 
-  // private mapRowToEmail(row: any): Email {
-  //   return {
-  //     id: row.id,
-  //     messageId: row.messageId,
-  //     threadId: row.threadId,
-  //     accountId: row.accountId,
-  //     from: row.from_address,
-  //     to: row.to_addresses ? JSON.parse(row.to_addresses) : [],
-  //     cc: row.cc_addresses ? JSON.parse(row.cc_addresses) : undefined,
-  //     bcc: row.bcc_addresses ? JSON.parse(row.bcc_addresses) : undefined,
-  //     subject: row.subject,
-  //     body: row.body,
-  //     htmlBody: row.htmlBody,
-  //     attachments: row.attachments ? JSON.parse(row.attachments) : [],
-  //     isRead: Boolean(row.isRead),
-  //     isIncoming: Boolean(row.isIncoming),
-  //     sentAt: new Date(row.sentAt),
-  //     receivedAt: row.receivedAt ? new Date(row.receivedAt) : undefined,
-  //     contactIds: row.contactIds ? JSON.parse(row.contactIds) : [],
-  //     dealIds: row.dealIds ? JSON.parse(row.dealIds) : [],
-  //     accountEntityIds: row.accountEntityIds ? JSON.parse(row.accountEntityIds) : [],
-  //     trackingPixelId: row.trackingPixelId,
-  //     opens: row.opens || 0,
-  //     clicks: row.clicks || 0,
-  //     createdAt: new Date(row.createdAt),
-  //     updatedAt: new Date(row.updatedAt),
-  //     labelIds: row.labelIds ? JSON.parse(row.labelIds) : [],
-  //   };
-  // }
-
-  getEmailsForContact(contactId: string): Email[] {
-    const stmt = this.db.prepare(`
-      SELECT e.*, ec.body, ec.htmlBody, ec.attachments 
-      FROM emails e 
-      JOIN email_contents ec ON e.messageId = ec.messageId
-      WHERE e.contactIds LIKE ? 
-      ORDER BY e.sentAt DESC
-    `);
-    const rows = stmt.all(`%"${contactId}"%`) as any[];
-    return rows.map(row => this.mapRowToEmail(row));
+  async getEmailsForContact(contactId: string): Promise<Email[]> {
+    const rows = await prisma.email.findMany({
+      where: {
+        contactIds: {
+          array_contains: contactId
+        }
+      },
+      include: {
+        content: true
+      },
+      orderBy: { sentAt: 'desc' }
+    });
+    return rows.map((row: any) => this.mapRowToEmail(row));
   }
 
-  getEmailsForDeal(dealId: string): Email[] {
-    const stmt = this.db.prepare(`
-      SELECT e.*, ec.body, ec.htmlBody, ec.attachments 
-      FROM emails e 
-      JOIN email_contents ec ON e.messageId = ec.messageId
-      WHERE e.dealIds LIKE ? 
-      ORDER BY e.sentAt DESC
-    `);
-    const rows = stmt.all(`%"${dealId}"%`) as any[];
-    return rows.map(row => this.mapRowToEmail(row));
+  async getEmailsForDeal(dealId: string): Promise<Email[]> {
+    const rows = await prisma.email.findMany({
+      where: {
+        dealIds: {
+          array_contains: dealId
+        }
+      },
+      include: {
+        content: true
+      },
+      orderBy: { sentAt: 'desc' }
+    });
+    return rows.map((row: any) => this.mapRowToEmail(row));
   }
 
-  getEmailsByAddress(address: string): Email[] {
-    const stmt = this.db.prepare(`
-      SELECT e.*, ec.body, ec.htmlBody, ec.attachments 
-      FROM emails e 
-      JOIN email_contents ec ON e.messageId = ec.messageId
-      WHERE e.from_address = ? OR e.to_addresses LIKE ? 
-      ORDER BY e.sentAt DESC
-    `);
-    const rows = stmt.all(address, `%${address}%`) as any[];
-    return rows.map(row => this.mapRowToEmail(row));
+  async getEmailsByAddress(address: string): Promise<Email[]> {
+    const rows = await prisma.email.findMany({
+      where: {
+        OR: [
+          { from: address },
+          {
+            to: {
+              array_contains: address
+            }
+          }
+        ]
+      },
+      include: {
+        content: true
+      },
+      orderBy: { sentAt: 'desc' }
+    });
+    return rows.map((row: any) => this.mapRowToEmail(row));
   }
 
-  getEmailsForThread(threadId: string): Email[] {
-    const stmt = this.db.prepare(`
-      SELECT e.*, ec.body, ec.htmlBody, ec.attachments 
-      FROM emails e 
-      JOIN email_contents ec ON e.messageId = ec.messageId
-      WHERE e.threadId = ? 
-      ORDER BY e.sentAt ASC
-    `);
-    const rows = stmt.all(threadId) as any[];
-    return rows.map(row => this.mapRowToEmail(row));
+  async getEmailsForThread(threadId: string): Promise<Email[]> {
+    const rows = await prisma.email.findMany({
+      where: { threadId },
+      include: {
+        content: true
+      },
+      orderBy: { sentAt: 'asc' }
+    });
+    return rows.map((row: any) => this.mapRowToEmail(row));
   }
 
-  getAllEmails(
-    options: { limit?: number } = {}
-  ): { emails: Email[]; total: number } {
+  async getAllEmails(options: { limit?: number } = {}): Promise<{ emails: Email[]; total: number }> {
     const { limit = 1000 } = options;
-    const stmt = this.db.prepare(`SELECT * FROM emails LIMIT ?`);
-    const rows = stmt.all(limit) as any[];
+    const rows = await prisma.email.findMany({
+      take: limit,
+      include: {
+        content: true
+      }
+    });
 
-    const emails: Email[] = rows.map((row) => ({
-      id: row.id,
-      messageId: row.messageId,
-      threadId: row.threadId,
-      accountId: row.accountId,
-      from: row.from_address,
-      to: row.to_addresses ? JSON.parse(row.to_addresses) : [],
-      cc: row.cc_addresses ? JSON.parse(row.cc_addresses) : undefined,
-      bcc: row.bcc_addresses ? JSON.parse(row.bcc_addresses) : undefined,
-      subject: row.subject,
-      snippet: row.snippet,
-      body: "", // No body in bulk list
-      isRead: Boolean(row.isRead),
-      isIncoming: Boolean(row.isIncoming),
-      sentAt: new Date(row.sentAt),
-      receivedAt: row.receivedAt ? new Date(row.receivedAt) : undefined,
-      contactIds: row.contactIds ? JSON.parse(row.contactIds) : [],
-      dealIds: row.dealIds ? JSON.parse(row.dealIds) : [],
-      accountEntityIds: row.accountEntityIds
-        ? JSON.parse(row.accountEntityIds)
-        : [],
-      trackingPixelId: row.trackingPixelId,
-      opens: row.opens || 0,
-      clicks: row.clicks || 0,
-      createdAt: new Date(row.createdAt),
-      updatedAt: new Date(row.updatedAt),
-      labelIds: row.labelIds ? JSON.parse(row.labelIds) : [],
-      uid: row.uid,
-      folder: row.folder
-    }));
-
-    return { emails, total: emails.length };
+    return { emails: rows.map((r: any) => this.mapRowToEmail(r)), total: rows.length };
   }
 
-  // Get emails for a user with filtering options
-  getEmailsForUser(
+  async getEmailsForUser(
     userId: string,
     options: {
       limit?: number;
@@ -855,7 +441,7 @@ export class EmailModel {
       unreadOnly?: boolean;
       accountId?: string;
     } = {}
-  ): { emails: Email[]; total: number } {
+  ): Promise<{ emails: Email[]; total: number }> {
     const {
       limit = 50,
       offset = 0,
@@ -865,666 +451,466 @@ export class EmailModel {
       accountId,
     } = options;
 
-    // Build the WHERE clause
-    let whereClause =
-      "WHERE e.accountId IN (SELECT id FROM email_accounts WHERE userId = ?)";
-    const params: any[] = [userId];
+    let rawWhere = `ea."userId" = ${parseInt(userId)}`;
+    if (accountId) rawWhere += ` AND e."accountId" = '${accountId}'`;
 
-    if (accountId) {
-      whereClause += " AND e.accountId = ?";
-      params.push(accountId);
-    }
-
-    // Add folder filter
     if (folder === "inbox") {
-      whereClause += ` AND e.isIncoming = 1 AND (e.labelIds IS NULL OR (e.labelIds NOT LIKE '%SPAM%' AND e.labelIds NOT LIKE '%JUNK%' AND e.labelIds NOT LIKE '%TRASH%' AND e.labelIds NOT LIKE '%ARCHIVE%'))`;
-
+      rawWhere += ` AND e."isIncoming" = true AND (e."labelIds" IS NULL OR (NOT (e."labelIds"::text LIKE '%SPAM%') AND NOT (e."labelIds"::text LIKE '%JUNK%') AND NOT (e."labelIds"::text LIKE '%TRASH%') AND NOT (e."labelIds"::text LIKE '%ARCHIVE%')))`;
     } else if (folder === "sent") {
-      whereClause += ` AND e.isIncoming = 0 AND (e.labelIds IS NULL OR (e.labelIds NOT LIKE '%DRAFT%' AND e.labelIds NOT LIKE '%TRASH%'))`;
-
+      rawWhere += ` AND e."isIncoming" = false AND (e."labelIds" IS NULL OR (NOT (e."labelIds"::text LIKE '%DRAFT%') AND NOT (e."labelIds"::text LIKE '%TRASH%')))`;
     } else if (folder === "spam") {
-      whereClause += ` AND (e.labelIds LIKE '%SPAM%' OR e.labelIds LIKE '%JUNK%')`;
-
+      rawWhere += ` AND (e."labelIds"::text LIKE '%SPAM%' OR e."labelIds"::text LIKE '%JUNK%')`;
     } else if (folder === "drafts" || folder === "drfts") {
-      whereClause += ` AND e.labelIds LIKE '%DRAFT%'`;
-
+      rawWhere += ` AND e."labelIds"::text LIKE '%DRAFT%'`;
     } else if (folder === "trash") {
-      whereClause += ` AND e.labelIds LIKE '%TRASH%'`;
-
+      rawWhere += ` AND e."labelIds"::text LIKE '%TRASH%'`;
     } else if (folder === "archive") {
-      whereClause += ` AND (e.labelIds LIKE '%ARCHIVE%' OR e.labelIds LIKE '%ALL_MAIL%')`;
-
-    } else {
-
+      rawWhere += ` AND (e."labelIds"::text LIKE '%ARCHIVE%' OR e."labelIds"::text LIKE '%ALL_MAIL%')`;
     }
 
-    // Add unread filter
-    if (unreadOnly) {
-      whereClause += " AND e.isRead = 0";
-    }
-
-    // Add search filter
+    if (unreadOnly) rawWhere += ` AND e."isRead" = false`;
     if (search) {
-      whereClause +=
-        " AND (e.subject LIKE ? OR e.from_address LIKE ? OR ec.body LIKE ?)";
-      const searchTerm = `%${search}%`;
-      params.push(searchTerm, searchTerm, searchTerm);
+      rawWhere += ` AND (e."subject" ILIKE '%${search}%' OR e."from_address" ILIKE '%${search}%' OR ec."body" ILIKE '%${search}%')`;
     }
 
-    // Get total count
-    const countStmt = this.db.prepare(
-      `SELECT COUNT(*) as total FROM emails e ${search ? 'JOIN email_contents ec ON e.messageId = ec.messageId' : ''} ${whereClause}`
-    );
-    const countResult = countStmt.get(...params) as { total: number };
-    const total = countResult.total;
-
-    // Get emails with pagination
-    const query = `
-      SELECT e.*, ea.email as accountEmail 
+    const totalResults = (await prisma.$queryRawUnsafe(`
+      SELECT COUNT(*) as total 
       FROM emails e 
-      LEFT JOIN email_accounts ea ON e.accountId = ea.id 
-      ${search ? 'JOIN email_contents ec ON e.messageId = ec.messageId' : ''}
-      ${whereClause} 
-      ORDER BY e.sentAt DESC 
-      LIMIT ? OFFSET ?
-    `;
+      JOIN email_accounts ea ON e."accountId" = ea."id"
+      ${search ? 'JOIN email_contents ec ON e."messageId" = ec."messageId"' : ''}
+      WHERE ${rawWhere}
+    `)) as { total: bigint }[];
+    const total = (totalResults && totalResults.length > 0 && totalResults[0]) ? Number(totalResults[0].total) : 0;
 
-
-
-    const emailsStmt = this.db.prepare(query);
-    const emailRows = emailsStmt.all(...params, limit, offset) as any[];
-
-
-
-    const emails: Email[] = emailRows.map((row) => ({
-      id: row.id,
-      messageId: row.messageId,
-      threadId: row.threadId,
-      accountId: row.accountId,
-      from: row.from_address,
-      to: row.to_addresses ? JSON.parse(row.to_addresses) : [],
-      cc: row.cc_addresses ? JSON.parse(row.cc_addresses) : undefined,
-      bcc: row.bcc_addresses ? JSON.parse(row.bcc_addresses) : undefined,
-      subject: row.subject,
-      body: row.body,
-      htmlBody: row.htmlBody,
-      attachments: row.attachments ? JSON.parse(row.attachments) : [],
-      isRead: Boolean(row.isRead),
-      isIncoming: Boolean(row.isIncoming),
-      sentAt: new Date(row.sentAt),
-      receivedAt: row.receivedAt ? new Date(row.receivedAt) : undefined,
-      contactIds: row.contactIds ? JSON.parse(row.contactIds) : [],
-      dealIds: row.dealIds ? JSON.parse(row.dealIds) : [],
-      accountEntityIds: row.accountEntityIds
-        ? JSON.parse(row.accountEntityIds)
-        : [],
-      trackingPixelId: row.trackingPixelId,
-      opens: row.opens || 0,
-      clicks: row.clicks || 0,
-      createdAt: new Date(row.createdAt),
-      updatedAt: new Date(row.updatedAt),
-      labelIds: row.labelIds ? JSON.parse(row.labelIds) : [],
-    }));
-
-    return { emails, total };
-  }
-
-  // Get a specific email by ID
-  getEmailById(emailId: string, userId: string): Email | null {
-    const stmt = this.db.prepare(`
-      SELECT e.*, ec.body, ec.htmlBody, ec.attachments, ea.email as accountEmail 
+    const rows = (await prisma.$queryRawUnsafe(`
+      SELECT e.*, ec."body", ec."htmlBody", ec."attachments"
       FROM emails e 
-      JOIN email_contents ec ON e.messageId = ec.messageId
-      LEFT JOIN email_accounts ea ON e.accountId = ea.id 
-      WHERE e.id = ? AND e.accountId IN (SELECT id FROM email_accounts WHERE userId = ?)
-    `);
+      JOIN email_accounts ea ON e."accountId" = ea."id"
+      JOIN email_contents ec ON e."messageId" = ec."messageId"
+      WHERE ${rawWhere}
+      ORDER BY e."sentAt" DESC 
+      LIMIT ${limit} OFFSET ${offset}
+    `)) as any[];
 
-    const row = stmt.get(emailId, userId) as any;
-    if (!row) return null;
-
-    return this.mapRowToEmail(row);
+    return { emails: rows.map(r => this.mapRowToEmail(r)), total };
   }
 
-  archiveEmail(emailId: string, userId: string): boolean {
-    const email = this.getEmailById(emailId, userId);
-    if (!email) return false;
-
-    let labels = email.labelIds || [];
-    if (!labels.includes('ARCHIVE')) {
-      labels.push('ARCHIVE');
-    }
-    // Remove INBOX if present to reflect "Moved out of Inbox" state
-    labels = labels.filter((l) => l !== 'INBOX');
-
-    const stmt = this.db.prepare(
-      `UPDATE emails SET labelIds = ?, updatedAt = ? WHERE id = ?`
-    );
-    const result = stmt.run(
-      JSON.stringify(labels),
-      new Date().toISOString(),
-      emailId
-    );
-    return result.changes > 0;
-  }
-
-  unarchiveEmail(emailId: string, userId: string): boolean {
-    const email = this.getEmailById(emailId, userId);
-    if (!email) return false;
-
-    let labels = email.labelIds || [];
-    labels = labels.filter((l) => l !== 'ARCHIVE');
-    // We can optionally add INBOX back, or just rely on absence of ARCHIVE
-    // For clarity, let's treat it as returning to Inbox mostly often implies adding INBOX label if your system relies on it.
-    // But since our INBOX query is "NOT ARCHIVE", it works without explicit INBOX label. 
-    // However, if we removed INBOX during archive, adding it back is symmetric.
-    if (!labels.includes('INBOX')) {
-      labels.push('INBOX');
-    }
-
-    const stmt = this.db.prepare(
-      `UPDATE emails SET labelIds = ?, updatedAt = ? WHERE id = ?`
-    );
-    const result = stmt.run(
-      JSON.stringify(labels),
-      new Date().toISOString(),
-      emailId
-    );
-    return result.changes > 0;
-  }
-
-  /**
-   * Move email to trash by adding TRASH label and removing from INBOX
-   */
-  trashEmail(emailId: string, userId: string): boolean {
-    const email = this.getEmailById(emailId, userId);
-    if (!email) return false;
-
-    let labels = email.labelIds || [];
-    // Remove from INBOX and ARCHIVE
-    labels = labels.filter((l) => l !== 'INBOX' && l !== 'ARCHIVE');
-    // Add TRASH label if not present
-    if (!labels.includes('TRASH')) {
-      labels.push('TRASH');
-    }
-
-    const stmt = this.db.prepare(
-      `UPDATE emails SET labelIds = ?, updatedAt = ? WHERE id = ?`
-    );
-    const result = stmt.run(
-      JSON.stringify(labels),
-      new Date().toISOString(),
-      emailId
-    );
-    return result.changes > 0;
-  }
-
-  /**
-   * Restore email from trash back to inbox
-   */
-  restoreFromTrash(emailId: string, userId: string): boolean {
-    const email = this.getEmailById(emailId, userId);
-    if (!email) return false;
-
-    let labels = email.labelIds || [];
-    // Remove TRASH label
-    labels = labels.filter((l) => l !== 'TRASH');
-    // Add INBOX back
-    if (!labels.includes('INBOX')) {
-      labels.push('INBOX');
-    }
-
-    const stmt = this.db.prepare(
-      `UPDATE emails SET labelIds = ?, updatedAt = ? WHERE id = ?`
-    );
-    const result = stmt.run(
-      JSON.stringify(labels),
-      new Date().toISOString(),
-      emailId
-    );
-    return result.changes > 0;
-  }
-
-  /**
-   * Permanently delete an email from the database
-   */
-  deleteEmailPermanently(emailId: string, userId: string): boolean {
-    const email = this.getEmailById(emailId, userId);
-    if (!email) return false;
-
-    // Delete from email_contents first (using messageId)
-    const deleteContentStmt = this.db.prepare(
-      `DELETE FROM email_contents WHERE messageId = ?`
-    );
-    deleteContentStmt.run(email.messageId);
-
-    // Delete from emails table
-    const deleteEmailStmt = this.db.prepare(
-      `DELETE FROM emails WHERE id = ? AND accountId IN (SELECT id FROM email_accounts WHERE userId = ?)`
-    );
-    const result = deleteEmailStmt.run(emailId, userId);
-
-    return result.changes > 0;
-  }
-
-  /**
-   * Get all emails in trash for a user
-   */
-  getTrashEmails(userId: string): Email[] {
-    const stmt = this.db.prepare(`
-      SELECT e.* 
-      FROM emails e
-      JOIN email_accounts ea ON e.accountId = ea.id
-      WHERE ea.userId = ? 
-      AND e.labelIds LIKE '%TRASH%'
-      ORDER BY e.receivedAt DESC
-    `);
-
-    const rows = stmt.all(userId) as any[];
-    return rows.map((row: any) => this.mapRowToEmail(row));
-  }
-
-  /**
-   * Get emails in trash that are older than the specified date
-   * Used for auto-cleanup of old trash emails
-   */
-  getTrashEmailsOlderThan(daysOld: number = 30): { emailId: string; userId: string; accountId: string }[] {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - daysOld);
-
-    const stmt = this.db.prepare(`
-      SELECT e.id as emailId, e.accountId, ea.userId 
-      FROM emails e
-      JOIN email_accounts ea ON e.accountId = ea.id
-      WHERE e.labelIds LIKE '%TRASH%' 
-      AND e.updatedAt < ?
-    `);
-
-    const rows = stmt.all(cutoffDate.toISOString()) as any[];
-    return rows.map(row => ({
-      emailId: row.emailId,
-      userId: row.userId,
-      accountId: row.accountId
-    }));
-  }
-
-  /**
-   * Permanently delete old trash emails (batch operation)
-   * Returns the count of deleted emails
-   */
-  purgeOldTrashEmails(daysOld: number = 30): number {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - daysOld);
-
-    // First, delete contents for these emails
-    const deleteContentStmt = this.db.prepare(`
-      DELETE FROM email_contents 
-      WHERE messageId IN (
-        SELECT messageId FROM emails 
-        WHERE labelIds LIKE '%TRASH%' 
-        AND updatedAt < ?
-      )
-    `);
-    deleteContentStmt.run(cutoffDate.toISOString());
-
-    // Then delete the emails themselves
-    const deleteEmailsStmt = this.db.prepare(`
-      DELETE FROM emails 
-      WHERE labelIds LIKE '%TRASH%' 
-      AND updatedAt < ?
-    `);
-    const result = deleteEmailsStmt.run(cutoffDate.toISOString());
-
-    return result.changes;
-  }
-
-  // Mark email as read/unread
-  markEmailAsRead(
-    emailId: string,
-    userId: string,
-    isRead: boolean
-  ): boolean {
-    const stmt = this.db.prepare(`
-      UPDATE emails 
-      SET isRead = ?, updatedAt = ? 
-      WHERE id = ? AND accountId IN (SELECT id FROM email_accounts WHERE userId = ?)
-    `);
-
-    const result = stmt.run(
-      isRead ? 1 : 0,
-      new Date().toISOString(),
-      emailId,
-      userId
-    );
-    return result.changes > 0;
-  }
-
-  // ========== NEW METHODS FOR HISTORICAL SYNC ==========
-
-  /**
-   * Initialize UID tracking table and add new columns
-   */
-  initializeHistoricalSyncSchema(): void {
-    // Add uid column to emails table
-    try {
-      this.db.exec("ALTER TABLE emails ADD COLUMN uid INTEGER");
-    } catch (error) {
-      // Column already exists
-    }
-
-    // Add folder column to emails table
-    try {
-      this.db.exec("ALTER TABLE emails ADD COLUMN folder TEXT");
-    } catch (error) {
-      // Column already exists
-    }
-
-    // Create UID tracking table
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS email_sync_state (
-        id TEXT PRIMARY KEY,
-        accountId TEXT NOT NULL,
-        folder TEXT NOT NULL,
-        lastSyncedUid INTEGER DEFAULT 0,
-        updatedAt TEXT NOT NULL,
-        UNIQUE(accountId, folder)
-      )
-    `);
-
-    // Create indexes for efficient querying
-    try {
-      this.db.exec("CREATE INDEX IF NOT EXISTS idx_emails_uid ON emails(uid)");
-      this.db.exec("CREATE INDEX IF NOT EXISTS idx_emails_folder ON emails(folder)");
-      this.db.exec("CREATE INDEX IF NOT EXISTS idx_emails_accountId_folder ON emails(accountId, folder)");
-    } catch (error) {
-      // Indexes may already exist
-    }
-  }
-
-  /**
-   * Bulk insert emails with duplicate prevention
-   */
-  bulkCreateEmails(emails: Email[]): { inserted: number; skipped: number } {
-    let inserted = 0;
-    let skipped = 0;
-
-    const contentStmt = this.db.prepare(`
-      INSERT OR IGNORE INTO email_contents (
-        messageId, body, htmlBody, attachments, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?)
-    `);
-
-    const insertStmt = this.db.prepare(`
-      INSERT OR IGNORE INTO emails (
-        id, messageId, threadId, accountId, from_address, to_addresses, cc_addresses, bcc_addresses,
-        subject, snippet, isRead, isIncoming, sentAt, receivedAt, contactIds, dealIds,
-        accountEntityIds, trackingPixelId, opens, clicks, createdAt, updatedAt, labelIds, uid, folder, providerId
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const transaction = this.db.transaction((emails: Email[]) => {
-      for (const email of emails) {
-        // 1. Content
-        contentStmt.run(
-          email.messageId,
-          email.body,
-          email.htmlBody || null,
-          email.attachments ? JSON.stringify(email.attachments) : null,
-          email.createdAt instanceof Date ? email.createdAt.toISOString() : email.createdAt,
-          email.updatedAt instanceof Date ? email.updatedAt.toISOString() : email.updatedAt
-        );
-
-        // 2. Metadata (snippet calculate)
-        const snippet = email.snippet || email.body.substring(0, 200).replace(/(\r\n|\n|\r)/gm, " ");
-
-        const result = insertStmt.run(
-          email.id,
-          email.messageId,
-          email.threadId || null,
-          email.accountId,
-          email.from,
-          JSON.stringify(email.to),
-          email.cc ? JSON.stringify(email.cc) : null,
-          email.bcc ? JSON.stringify(email.bcc) : null,
-          email.subject,
-          snippet,
-          email.isRead ? 1 : 0,
-          email.isIncoming ? 1 : 0,
-          email.sentAt instanceof Date ? email.sentAt.toISOString() : email.sentAt,
-          email.receivedAt instanceof Date ? email.receivedAt.toISOString() : email.receivedAt,
-          JSON.stringify(email.contactIds || []),
-          JSON.stringify(email.dealIds || []),
-          JSON.stringify(email.accountEntityIds || []),
-          email.trackingPixelId || null,
-          email.opens || 0,
-          email.clicks || 0,
-          email.createdAt instanceof Date ? email.createdAt.toISOString() : email.createdAt,
-          email.updatedAt instanceof Date ? email.updatedAt.toISOString() : email.updatedAt,
-          email.labelIds ? JSON.stringify(email.labelIds) : null,
-          email.uid || null,
-          email.folder || null,
-          email.providerId || null
-        );
-
-        if (result.changes > 0) {
-          inserted++;
-        } else {
-          skipped++;
-        }
-      }
-    });
-
-    transaction(emails);
-    return { inserted, skipped };
-  }
-
-  /**
-   * Get last synced UID for an account/folder combination
-   */
-  getLastSyncedUid(accountId: string, folder: string): number | null {
-    const stmt = this.db.prepare(`
-      SELECT lastSyncedUid FROM email_sync_state 
-      WHERE accountId = ? AND folder = ?
-    `);
-    const result = stmt.get(accountId, folder) as any;
-    return result?.lastSyncedUid || null;
-  }
-
-  /**
-   * Get UIDs of unread emails for an account and folder
-   */
-  getUnreadUids(accountId: string, folder: string): number[] {
-    const stmt = this.db.prepare(`
-      SELECT uid FROM emails 
-      WHERE accountId = ? AND folder = ? AND isRead = 0 AND uid IS NOT NULL
-    `);
-    const rows = stmt.all(accountId, folder) as any[];
-    return rows.map(r => r.uid);
-  }
-
-  /**
-   * Get UIDs of the most recent emails for an account and folder
-   */
-  getRecentUids(accountId: string, folder: string, limit: number = 50): number[] {
-    const stmt = this.db.prepare(`
-      SELECT uid FROM emails 
-      WHERE accountId = ? AND folder = ? AND uid IS NOT NULL
-      ORDER BY sentAt DESC
-      LIMIT ?
-    `);
-    const rows = stmt.all(accountId, folder, limit) as any[];
-    return rows.map(r => r.uid);
-  }
-
-  /**
-   * Update last synced UID for an account/folder combination
-   */
-  updateLastSyncedUid(accountId: string, folder: string, uid: number): void {
-    const stmt = this.db.prepare(`
-      INSERT INTO email_sync_state (id, accountId, folder, lastSyncedUid, updatedAt)
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(accountId, folder) DO UPDATE SET 
-        lastSyncedUid = excluded.lastSyncedUid,
-        updatedAt = excluded.updatedAt
-    `);
-    stmt.run(`${accountId}-${folder}`, accountId, folder, uid, new Date().toISOString());
-  }
-
-  /**
-   * Get paginated emails for a user with filtering options
-   */
-  getEmailsPaginated(userId: string, options: {
+  async getEmailsPaginated(userId: string, options: {
     page?: number;
     limit?: number;
     folder?: string;
     accountId?: string;
     search?: string;
     unreadOnly?: boolean;
-  }): { emails: Email[]; total: number; page: number; limit: number; totalPages: number } {
+  }): Promise<{ emails: Email[]; total: number; page: number; limit: number; totalPages: number }> {
     const page = options.page || 1;
     const limit = options.limit || 50;
     const offset = (page - 1) * limit;
 
-    let whereClause = "WHERE ea.userId = ?";
-    const params: any[] = [userId];
-
-    if (options.accountId) {
-      whereClause += " AND e.accountId = ?";
-      params.push(options.accountId);
-    }
-
-    if (options.folder) {
-      const folderUpper = options.folder.toUpperCase();
-      if (folderUpper === 'INBOX') {
-        whereClause += " AND (e.folder = 'INBOX' OR e.labelIds LIKE '%INBOX%') AND (e.labelIds NOT LIKE '%ARCHIVE%' OR e.labelIds IS NULL)";
-      } else if (folderUpper === 'SENT') {
-        whereClause += " AND (e.folder = 'SENT' OR e.isIncoming = 0)";
-      } else if (folderUpper === 'ARCHIVE') {
-        whereClause += " AND e.labelIds LIKE '%ARCHIVE%'";
-      } else {
-        whereClause += " AND (e.folder = ? OR e.labelIds LIKE ?)";
-        params.push(folderUpper, `%${folderUpper}%`);
-      }
-    }
-
-    if (options.search) {
-      whereClause += " AND (e.subject LIKE ? OR e.from_address LIKE ? OR e.body LIKE ?)";
-      const searchTerm = `%${options.search}%`;
-      params.push(searchTerm, searchTerm, searchTerm);
-    }
-
-    if (options.unreadOnly) {
-      whereClause += " AND e.isRead = 0";
-    }
-
-    // Get total count
-    const countStmt = this.db.prepare(`
-      SELECT COUNT(*) as total FROM emails e
-      JOIN email_accounts ea ON e.accountId = ea.id
-      ${whereClause}
-    `);
-    const countResult = countStmt.get(...params) as any;
-    const total = countResult?.total || 0;
-
-    // Get paginated emails
-    const selectStmt = this.db.prepare(`
-      SELECT e.* FROM emails e
-      JOIN email_accounts ea ON e.accountId = ea.id
-      ${whereClause}
-      ORDER BY e.sentAt DESC
-      LIMIT ? OFFSET ?
-    `);
-    const rows = selectStmt.all(...params, limit, offset) as any[];
-
-    const emails = rows.map((row) => this.mapRowToEmail(row));
+    const result = await this.getEmailsForUser(userId, {
+      ...options,
+      limit,
+      offset
+    });
 
     return {
-      emails,
-      total,
+      emails: result.emails,
+      total: result.total,
       page,
       limit,
-      totalPages: Math.ceil(total / limit)
+      totalPages: Math.ceil(result.total / limit)
     };
   }
 
-  updateEmail(
-    emailId: string,
-    updates: Partial<Email>
-  ): boolean {
-    const fields: string[] = [];
-    const values: any[] = [];
+  async getEmailById(emailId: string, userId: string): Promise<Email | null> {
+    const row = await prisma.email.findFirst({
+      where: {
+        id: emailId,
+        account: {
+          userId: parseInt(userId)
+        }
+      },
+      include: {
+        content: true
+      }
+    });
 
-    if (updates.isRead !== undefined) {
-      fields.push("isRead = ?");
-      values.push(updates.isRead ? 1 : 0);
-    }
-
-    if (updates.providerId !== undefined) {
-      fields.push("providerId = ?");
-      values.push(updates.providerId);
-    }
-
-    if (updates.uid !== undefined) {
-      fields.push("uid = ?");
-      values.push(updates.uid);
-    }
-
-    if (updates.folder !== undefined) {
-      fields.push("folder = ?");
-      values.push(updates.folder);
-    }
-
-    if (updates.labelIds !== undefined) {
-      fields.push("labelIds = ?");
-      values.push(JSON.stringify(updates.labelIds));
-    }
-
-    if (fields.length === 0) return false;
-
-    fields.push("updatedAt = ?");
-    values.push(new Date().toISOString());
-
-    values.push(emailId);
-
-    const stmt = this.db.prepare(`
-      UPDATE emails
-      SET ${fields.join(", ")}
-      WHERE id = ?
-    `);
-
-    const result = stmt.run(...values);
-    return result.changes > 0;
+    if (!row) return null;
+    return this.mapRowToEmail(row);
   }
 
-  // Helper method to map DB row to Email object
+  async markEmailAsRead(emailId: string, userId: string, isRead: boolean): Promise<boolean> {
+    try {
+      await prisma.email.update({
+        where: {
+          id: emailId,
+          account: {
+            userId: parseInt(userId)
+          }
+        },
+        data: {
+          isRead,
+          updatedAt: new Date()
+        }
+      });
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  async archiveEmail(emailId: string, userId: string): Promise<boolean> {
+    const email = await this.getEmailById(emailId, userId);
+    if (!email) return false;
+
+    let labels = (email.labelIds as string[]) || [];
+    if (!labels.includes('ARCHIVE')) {
+      labels.push('ARCHIVE');
+    }
+    labels = labels.filter((l) => l !== 'INBOX');
+
+    await prisma.email.update({
+      where: { id: emailId },
+      data: {
+        labelIds: labels as any,
+        updatedAt: new Date()
+      }
+    });
+    return true;
+  }
+
+  async unarchiveEmail(emailId: string, userId: string): Promise<boolean> {
+    const email = await this.getEmailById(emailId, userId);
+    if (!email) return false;
+
+    let labels = (email.labelIds as string[]) || [];
+    labels = labels.filter((l) => l !== 'ARCHIVE');
+    if (!labels.includes('INBOX')) {
+      labels.push('INBOX');
+    }
+
+    await prisma.email.update({
+      where: { id: emailId },
+      data: {
+        labelIds: labels as any,
+        updatedAt: new Date()
+      }
+    });
+    return true;
+  }
+
+  async trashEmail(emailId: string, userId: string): Promise<boolean> {
+    const email = await this.getEmailById(emailId, userId);
+    if (!email) return false;
+
+    let labels = (email.labelIds as string[]) || [];
+    labels = labels.filter((l) => l !== 'INBOX' && l !== 'ARCHIVE');
+    if (!labels.includes('TRASH')) {
+      labels.push('TRASH');
+    }
+
+    await prisma.email.update({
+      where: { id: emailId },
+      data: {
+        labelIds: labels as any,
+        updatedAt: new Date()
+      }
+    });
+    return true;
+  }
+
+  async restoreFromTrash(emailId: string, userId: string): Promise<boolean> {
+    const email = await this.getEmailById(emailId, userId);
+    if (!email) return false;
+
+    let labels = (email.labelIds as string[]) || [];
+    labels = labels.filter((l) => l !== 'TRASH');
+    if (!labels.includes('INBOX')) {
+      labels.push('INBOX');
+    }
+
+    await prisma.email.update({
+      where: { id: emailId },
+      data: {
+        labelIds: labels as any,
+        updatedAt: new Date()
+      }
+    });
+    return true;
+  }
+
+  async deleteEmailPermanently(emailId: string, userId: string): Promise<boolean> {
+    const email = await this.getEmailById(emailId, userId);
+    if (!email) return false;
+
+    await prisma.email.delete({
+      where: { id: emailId }
+    });
+
+    const otherUsage = await prisma.email.count({
+      where: { messageId: email.messageId }
+    });
+
+    if (otherUsage === 0) {
+      await prisma.emailContent.delete({
+        where: { messageId: email.messageId }
+      });
+    }
+
+    return true;
+  }
+
+  async getTrashEmails(userId: string): Promise<Email[]> {
+    const rows = await prisma.email.findMany({
+      where: {
+        account: {
+          userId: parseInt(userId)
+        },
+        labelIds: {
+          array_contains: 'TRASH'
+        }
+      },
+      include: {
+        content: true
+      },
+      orderBy: { receivedAt: 'desc' }
+    });
+    return rows.map((row: any) => this.mapRowToEmail(row));
+  }
+
+  async getTrashEmailsOlderThan(daysOld: number = 30): Promise<{ emailId: string; userId: string; accountId: string }[]> {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+
+    const rows = await prisma.email.findMany({
+      where: {
+        labelIds: {
+          array_contains: 'TRASH'
+        },
+        updatedAt: {
+          lt: cutoffDate
+        }
+      },
+      select: {
+        id: true,
+        accountId: true,
+        account: {
+          select: {
+            userId: true
+          }
+        }
+      }
+    });
+
+    return rows.map((row: any) => ({
+      emailId: row.id,
+      userId: row.account.userId.toString(),
+      accountId: row.accountId
+    }));
+  }
+
+  async purgeOldTrashEmails(daysOld: number = 30): Promise<number> {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+
+    const emailsToPurge = await prisma.email.findMany({
+      where: {
+        labelIds: {
+          array_contains: 'TRASH'
+        },
+        updatedAt: {
+          lt: cutoffDate
+        }
+      },
+      select: {
+        id: true,
+        messageId: true
+      }
+    });
+
+    if (emailsToPurge.length === 0) return 0;
+
+    const emailIds = emailsToPurge.map((e: any) => e.id);
+    const messageIds = Array.from(new Set(emailsToPurge.map((e: any) => e.messageId)));
+
+    await prisma.email.deleteMany({
+      where: {
+        id: { in: emailIds }
+      }
+    });
+
+    // Only delete content if no other emails use it
+    for (const msgId of messageIds) {
+      const usage = await prisma.email.count({ where: { messageId: msgId } });
+      if (usage === 0) {
+        await prisma.emailContent.delete({ where: { messageId: msgId } });
+      }
+    }
+
+    return emailIds.length;
+  }
+
+  async updateEmail(emailId: string, updates: Partial<Email>): Promise<boolean> {
+    const data: any = {};
+    if (updates.isRead !== undefined) data.isRead = updates.isRead;
+    if (updates.contactIds !== undefined) data.contactIds = updates.contactIds as any;
+    if (updates.dealIds !== undefined) data.dealIds = updates.dealIds as any;
+    if (updates.accountEntityIds !== undefined) data.accountEntityIds = updates.accountEntityIds as any;
+    if (updates.opens !== undefined) data.opens = updates.opens;
+    if (updates.clicks !== undefined) data.clicks = updates.clicks;
+    if (updates.labelIds !== undefined) data.labelIds = updates.labelIds as any;
+    if (updates.folder !== undefined) data.folder = updates.folder;
+    if (updates.uid !== undefined) data.uid = updates.uid;
+    if (updates.providerId !== undefined) data.providerId = updates.providerId;
+    if (updates.updatedAt !== undefined) data.updatedAt = updates.updatedAt;
+
+    if (Object.keys(data).length === 0) return false;
+
+    try {
+      await prisma.email.update({
+        where: { id: emailId },
+        data
+      });
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  async getLastSyncedUid(accountId: string, folder: string): Promise<number | null> {
+    const row = await prisma.emailSyncState.findUnique({
+      where: {
+        accountId_folder: {
+          accountId,
+          folder
+        }
+      }
+    });
+    return row?.lastSyncedUid || null;
+  }
+
+  async updateLastSyncedUid(accountId: string, folder: string, uid: number): Promise<void> {
+    await prisma.emailSyncState.upsert({
+      where: {
+        accountId_folder: {
+          accountId,
+          folder
+        }
+      },
+      create: {
+        accountId,
+        folder,
+        lastSyncedUid: uid,
+        updatedAt: new Date()
+      },
+      update: {
+        lastSyncedUid: uid,
+        updatedAt: new Date()
+      }
+    });
+  }
+
+  async getUnreadUids(accountId: string, folder: string): Promise<number[]> {
+    const rows = await prisma.email.findMany({
+      where: {
+        accountId,
+        folder,
+        isRead: false,
+        uid: { not: null }
+      },
+      select: { uid: true }
+    });
+    return rows.map((r: any) => r.uid as number);
+  }
+
+  async getRecentUids(accountId: string, folder: string, limit: number = 50): Promise<number[]> {
+    const rows = await prisma.email.findMany({
+      where: {
+        accountId,
+        folder,
+        uid: { not: null }
+      },
+      orderBy: { sentAt: 'desc' },
+      take: limit,
+      select: { uid: true }
+    });
+    return rows.map((r: any) => r.uid as number);
+  }
+
+  async incrementOpens(trackingPixelId: string): Promise<void> {
+    await prisma.email.updateMany({
+      where: { trackingPixelId },
+      data: {
+        opens: { increment: 1 },
+        updatedAt: new Date()
+      }
+    });
+  }
+
+  async incrementClicks(trackingPixelId: string): Promise<void> {
+    await prisma.email.updateMany({
+      where: { trackingPixelId },
+      data: {
+        clicks: { increment: 1 },
+        updatedAt: new Date()
+      }
+    });
+  }
+
+  async getRecentIncomingEmails(userId: string, limit: number = 5): Promise<Email[]> {
+    const rows = await prisma.email.findMany({
+      where: {
+        account: { userId: parseInt(userId) },
+        isIncoming: true,
+        isRead: false
+      },
+      include: { content: true },
+      orderBy: { sentAt: 'desc' },
+      take: limit
+    });
+    return rows.map((row: any) => this.mapRowToEmail(row));
+  }
+
+  async getAllFolderEmails(accountId: string, folder: string): Promise<{ uid: number }[]> {
+    const rows = await prisma.email.findMany({
+      where: { accountId, folder },
+      select: { uid: true }
+    });
+    return rows.map((r: any) => ({ uid: r.uid || 0 }));
+  }
+
   private mapRowToEmail(row: any): Email {
+    const content = row.content || {};
     return {
       id: row.id,
       messageId: row.messageId,
-      threadId: row.threadId,
+      threadId: row.threadId || undefined,
       accountId: row.accountId,
-      from: row.from_address,
-      to: JSON.parse(row.to_addresses || '[]'),
-      cc: row.cc_addresses ? JSON.parse(row.cc_addresses) : undefined,
-      bcc: row.bcc_addresses ? JSON.parse(row.bcc_addresses) : undefined,
+      from: row.from || row.from_address || "",
+      to: (row.to as any) || (row.to_addresses as any) || [],
+      cc: (row.cc as any) || (row.cc_addresses as any) || undefined,
+      bcc: (row.bcc as any) || (row.bcc_addresses as any) || undefined,
       subject: row.subject,
-      body: row.body || "",
-      htmlBody: row.htmlBody || undefined,
-      isRead: !!row.isRead,
-      isIncoming: !!row.isIncoming,
-      sentAt: new Date(row.sentAt),
-      receivedAt: row.receivedAt ? new Date(row.receivedAt) : undefined,
-      contactIds: JSON.parse(row.contactIds || '[]'),
-      dealIds: JSON.parse(row.dealIds || '[]'),
-      accountEntityIds: JSON.parse(row.accountEntityIds || '[]'),
-      trackingPixelId: row.trackingPixelId,
+      snippet: row.snippet || undefined,
+      body: content.body || row.body || "",
+      htmlBody: content.htmlBody || row.htmlBody || undefined,
+      attachments: (content.attachments as any) || (row.attachments as any) || [],
+      isRead: row.isRead,
+      isIncoming: row.isIncoming,
+      sentAt: row.sentAt,
+      receivedAt: row.receivedAt || undefined,
+      contactIds: (row.contactIds as any) || [],
+      dealIds: (row.dealIds as any) || [],
+      accountEntityIds: (row.accountEntityIds as any) || [],
+      trackingPixelId: row.trackingPixelId || undefined,
       opens: row.opens || 0,
       clicks: row.clicks || 0,
-      createdAt: new Date(row.createdAt),
-      updatedAt: new Date(row.updatedAt),
-      labelIds: row.labelIds ? JSON.parse(row.labelIds) : undefined,
-      attachments: row.attachments ? JSON.parse(row.attachments) : undefined,
-      uid: row.uid,
-      folder: row.folder
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      labelIds: (row.labelIds as any) || [],
+      uid: row.uid || undefined,
+      folder: row.folder || undefined,
+      providerId: row.providerId || undefined,
     };
   }
 }

@@ -38,7 +38,7 @@ export class CalendarService {
         shares: EventShare[];
     }> {
         // Create the event
-        const event = this.eventModel.create({
+        const event = await this.eventModel.create({
             userId,
             title: data.title,
             description: data.description,
@@ -52,7 +52,7 @@ export class CalendarService {
         const reminders: EventReminder[] = [];
         if (data.reminders && data.reminders.length > 0) {
             for (const r of data.reminders) {
-                const reminder = this.reminderModel.create({
+                const reminder = await this.reminderModel.create({
                     eventId: event.id,
                     reminderMinutesBefore: r.minutesBefore,
                     isDefault: false
@@ -61,7 +61,7 @@ export class CalendarService {
             }
         } else {
             // Add default 30-minute reminder if no custom reminders
-            const defaultReminder = this.reminderModel.ensureDefaultReminder(event.id, 30);
+            const defaultReminder = await this.reminderModel.ensureDefaultReminder(event.id, 30);
             if (defaultReminder) {
                 reminders.push(defaultReminder);
             }
@@ -71,7 +71,7 @@ export class CalendarService {
         const shares: EventShare[] = [];
         if (data.sharedWith && data.sharedWith.length > 0) {
             for (const sharedUserId of data.sharedWith) {
-                const share = this.shareModel.share(event.id, sharedUserId);
+                const share = await this.shareModel.share(event.id, sharedUserId);
                 if (share) {
                     shares.push(share);
                 }
@@ -94,7 +94,7 @@ export class CalendarService {
         const limit = filters.limit || 20;
         const offset = (page - 1) * limit;
 
-        const result = this.eventModel.findAccessible(userId, {
+        const result = await this.eventModel.findAccessible(userId, {
             startDate: filters.startDate,
             endDate: filters.endDate,
             limit,
@@ -116,21 +116,21 @@ export class CalendarService {
         isOwner: boolean;
     } | null> {
         // Try to find as owner first
-        let event = this.eventModel.findById(eventId, userId);
+        let event = await this.eventModel.findById(eventId, userId);
         let isOwner = true;
 
         if (!event) {
             // Check if shared with user
-            if (this.shareModel.isSharedWith(eventId, userId)) {
-                event = this.eventModel.findById(eventId);
+            if (await this.shareModel.isSharedWith(eventId, userId)) {
+                event = await this.eventModel.findById(eventId);
                 isOwner = false;
             }
         }
 
         if (!event) return null;
 
-        const reminders = this.reminderModel.findByEventId(eventId);
-        const sharedWith = this.shareModel.getSharedUsersDetails(eventId);
+        const reminders = await this.reminderModel.findByEventId(eventId);
+        const sharedWith = await this.shareModel.getSharedUsersDetails(eventId);
 
         return { event, reminders, sharedWith, isOwner };
     }
@@ -141,69 +141,69 @@ export class CalendarService {
         sharedWith: { id: number; name: string; email: string; type: string }[];
         timesChanged: boolean;
     } | null> {
-        const existing = this.eventModel.findById(eventId, userId);
+        const existing = await this.eventModel.findById(eventId, userId);
         if (!existing) return null;
 
         const timesChanged = Boolean((data.startTime && data.startTime !== existing.startTime) ||
             (data.endTime && data.endTime !== existing.endTime));
 
-        const updatedEvent = this.eventModel.update(eventId, userId, data);
+        const updatedEvent = await this.eventModel.update(eventId, userId, data);
         if (!updatedEvent) return null;
 
         // Handle Sharing Updates
         if (data.sharedWith) {
-            const currentSharedIds = this.shareModel.getSharedUserIds(eventId);
+            const currentSharedIds = await this.shareModel.getSharedUserIds(eventId);
             const newSharedIds = data.sharedWith;
 
             // Find users to add
             const toAdd = newSharedIds.filter(id => !currentSharedIds.includes(id));
             for (const id of toAdd) {
-                this.shareModel.share(eventId, id);
+                await this.shareModel.share(eventId, id);
             }
 
             // Find users to remove
             const toRemove = currentSharedIds.filter(id => !newSharedIds.includes(id));
             for (const id of toRemove) {
-                this.shareModel.unshare(eventId, id);
-                this.notificationScheduler.removeForUser(eventId, id);
+                await this.shareModel.unshare(eventId, id);
+                await this.notificationScheduler.removeForUser(eventId, id);
             }
 
             // If shares changed, we might need to schedule new notifications for added users
             if (toAdd.length > 0 && !timesChanged) {
-                const reminders = this.reminderModel.findByEventId(eventId);
+                const reminders = await this.reminderModel.findByEventId(eventId);
                 for (const id of toAdd) {
                     await this.notificationScheduler.scheduleForUser(updatedEvent, reminders, id);
                 }
             }
         }
 
-        const reminders = this.reminderModel.findByEventId(eventId);
+        const reminders = await this.reminderModel.findByEventId(eventId);
 
         // If times changed, reschedule all notifications (for owner + all currently shared)
         if (timesChanged) {
             await this.notificationScheduler.rescheduleForEvent(updatedEvent, reminders);
         }
 
-        const sharedWith = this.shareModel.getSharedUsersDetails(eventId);
+        const sharedWith = await this.shareModel.getSharedUsersDetails(eventId);
 
         return { event: updatedEvent, reminders, sharedWith, timesChanged };
     }
 
     async deleteEvent(eventId: number, userId: number): Promise<boolean> {
         // Cascade delete will handle reminders, shares, and notifications
-        return this.eventModel.delete(eventId, userId);
+        return await this.eventModel.delete(eventId, userId);
     }
 
     async shareEvent(eventId: number, ownerId: number, shareWithUserId: number): Promise<EventShare | null> {
         // Verify ownership
-        const event = this.eventModel.findById(eventId, ownerId);
+        const event = await this.eventModel.findById(eventId, ownerId);
         if (!event) return null;
 
-        const share = this.shareModel.share(eventId, shareWithUserId);
+        const share = await this.shareModel.share(eventId, shareWithUserId);
         if (!share) return null;
 
         // Schedule notifications for the new shared user
-        const reminders = this.reminderModel.findByEventId(eventId);
+        const reminders = await this.reminderModel.findByEventId(eventId);
         await this.notificationScheduler.scheduleForUser(event, reminders, shareWithUserId);
 
         return share;
@@ -211,13 +211,13 @@ export class CalendarService {
 
     async unshareEvent(eventId: number, ownerId: number, unshareUserId: number): Promise<boolean> {
         // Verify ownership
-        const event = this.eventModel.findById(eventId, ownerId);
+        const event = await this.eventModel.findById(eventId, ownerId);
         if (!event) return false;
 
         // Remove notifications for this user
-        this.notificationScheduler.removeForUser(eventId, unshareUserId);
+        await this.notificationScheduler.removeForUser(eventId, unshareUserId);
 
-        return this.shareModel.unshare(eventId, unshareUserId);
+        return await this.shareModel.unshare(eventId, unshareUserId);
     }
 
     async getSharedUsers(eventId: number, userId: number): Promise<{ id: number; name: string; email: string; type: string }[] | null> {
@@ -225,6 +225,6 @@ export class CalendarService {
         const access = await this.getEventById(eventId, userId);
         if (!access) return null;
 
-        return this.shareModel.getSharedUsersDetails(eventId);
+        return await this.shareModel.getSharedUsersDetails(eventId);
     }
 }

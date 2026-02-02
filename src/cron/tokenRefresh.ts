@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import Database from 'better-sqlite3';
+import { prisma } from '../shared/prisma';
 import { OAuthService } from '../modules/email/services/oauthService';
 import { EmailModel } from '../modules/email/models/emailModel';
 
@@ -7,18 +7,9 @@ import { EmailModel } from '../modules/email/models/emailModel';
  * Token Refresh Job
  * 
  * This cron job proactively refreshes OAuth tokens to prevent them from expiring.
- * Google OAuth refresh tokens can expire if:
- * 1. Not used for 6 months
- * 2. The app is in "testing" mode and hasn't been used for 7 days
- * 3. The user revokes access
- * 
- * By refreshing tokens regularly, we keep them active and prevent expiration.
  */
-export function startTokenRefreshJob(dbPath: string) {
-    const db = new Database(dbPath, { timeout: 10000 });
-    db.pragma('journal_mode = WAL');
-    db.pragma('synchronous = NORMAL');
-    const emailModel = new EmailModel(db);
+export function startTokenRefreshJob() {
+    const emailModel = new EmailModel();
     const oauthService = new OAuthService();
 
     const refreshAllTokens = async () => {
@@ -26,12 +17,13 @@ export function startTokenRefreshJob(dbPath: string) {
 
         try {
             // Get all active OAuth email accounts
-            const accounts = db.prepare(`
-        SELECT * FROM email_accounts 
-        WHERE isActive = 1 
-        AND (provider = 'gmail' OR provider = 'outlook')
-        AND refreshToken IS NOT NULL
-      `).all() as any[];
+            const accounts = await prisma.emailAccount.findMany({
+                where: {
+                    isActive: true,
+                    provider: { in: ['gmail', 'outlook'] },
+                    refreshToken: { not: null }
+                }
+            });
 
             console.log(`Found ${accounts.length} OAuth accounts to refresh`);
 
@@ -61,7 +53,7 @@ export function startTokenRefreshJob(dbPath: string) {
                             accessToken: oauthService.encryptToken(refreshResult.accessToken),
                             refreshToken: refreshResult.refreshToken
                                 ? oauthService.encryptToken(refreshResult.refreshToken)
-                                : accountRow.refreshToken,
+                                : accountRow.refreshToken || undefined,
                             updatedAt: new Date(),
                         });
 
@@ -80,11 +72,13 @@ export function startTokenRefreshJob(dbPath: string) {
                         console.log(`⚠️ Account ${accountRow.email} needs re-authentication`);
 
                         // Update the account to indicate it needs re-auth
-                        db.prepare(`
-              UPDATE email_accounts 
-              SET updatedAt = ?, isActive = 0 
-              WHERE id = ?
-            `).run(new Date().toISOString(), accountRow.id);
+                        await prisma.emailAccount.update({
+                            where: { id: accountRow.id },
+                            data: {
+                                isActive: false,
+                                updatedAt: new Date()
+                            }
+                        });
                     }
                 }
             }
@@ -95,14 +89,13 @@ export function startTokenRefreshJob(dbPath: string) {
         }
     };
 
-    // Schedule token refresh every 6 hours to keep tokens active
-    // This is more frequent than the 7-day expiry, ensuring tokens stay fresh
+    // Schedule token refresh every 6 hours
     cron.schedule('0 */6 * * *', refreshAllTokens);
 
-    // Also run immediately on startup to refresh any stale tokens
-    setTimeout(refreshAllTokens, 5000); // Run 5 seconds after startup
+    // Also run immediately on startup
+    setTimeout(refreshAllTokens, 5000);
 
     console.log('🔑 Token refresh cron job scheduled (every 6 hours)');
 
-    return refreshAllTokens; // Allow manual invocation
+    return refreshAllTokens;
 }

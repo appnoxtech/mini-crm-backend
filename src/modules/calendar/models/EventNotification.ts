@@ -1,15 +1,17 @@
-import Database from 'better-sqlite3';
+import { prisma } from '../../../shared/prisma';
 
-export type NotificationStatus = 'pending' | 'sent' | 'failed';
+export type NotificationType = 'in-app' | 'email' | 'push';
+export type NotificationStatus = 'pending' | 'sent' | 'failed' | 'cancelled';
 
 export interface EventNotification {
     id: number;
     eventId: number;
-    reminderId: number;
     userId: number;
-    userType: 'user' | 'person';
+    reminderId: number;
+    userType: string;
+    type?: NotificationType; // Kept for compatibility if needed, though schema doesn't have it
+    status: string;
     scheduledAt: string;
-    status: NotificationStatus;
     inAppSentAt?: string;
     emailSentAt?: string;
     failureReason?: string;
@@ -18,280 +20,256 @@ export interface EventNotification {
 }
 
 export class EventNotificationModel {
-    private db: Database.Database;
-
-    constructor(db: Database.Database) {
-        this.db = db;
-    }
+    constructor(_db?: any) { }
 
     initialize(): void {
-        // Check if table exists first
-        const tableExists = this.db.prepare(`
-            SELECT name FROM sqlite_master WHERE type='table' AND name='event_notifications'
-        `).get();
-
-        if (!tableExists) {
-            // Table doesn't exist - create it fresh
-            console.log('Creating event_notifications table...');
-            this.db.exec(`
-                CREATE TABLE event_notifications (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    eventId INTEGER NOT NULL,
-                    reminderId INTEGER NOT NULL,
-                    userId INTEGER NOT NULL,
-                    userType TEXT NOT NULL DEFAULT 'user',
-                    scheduledAt TEXT NOT NULL,
-                    status TEXT DEFAULT 'pending',
-                    inAppSentAt TEXT,
-                    emailSentAt TEXT,
-                    failureReason TEXT,
-                    createdAt TEXT NOT NULL,
-                    updatedAt TEXT NOT NULL,
-                    FOREIGN KEY (eventId) REFERENCES calendar_events(id) ON DELETE CASCADE,
-                    FOREIGN KEY (reminderId) REFERENCES event_reminders(id) ON DELETE CASCADE,
-                    UNIQUE(eventId, reminderId, userId, userType)
-                )
-            `);
-        } else {
-            // Table exists - check if we need to migrate to add userType
-            const tableInfo = this.db.prepare("PRAGMA table_info(event_notifications)").all() as any[];
-            const hasUserType = tableInfo.some(col => col.name === 'userType');
-
-            if (!hasUserType) {
-                console.log('Migrating event_notifications to add userType and remove strict FK...');
-                this.db.transaction(() => {
-                    this.db.exec(`
-                        CREATE TABLE event_notifications_new (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            eventId INTEGER NOT NULL,
-                            reminderId INTEGER NOT NULL,
-                            userId INTEGER NOT NULL,
-                            userType TEXT NOT NULL DEFAULT 'user',
-                            scheduledAt TEXT NOT NULL,
-                            status TEXT DEFAULT 'pending',
-                            inAppSentAt TEXT,
-                            emailSentAt TEXT,
-                            failureReason TEXT,
-                            createdAt TEXT NOT NULL,
-                            updatedAt TEXT NOT NULL,
-                            FOREIGN KEY (eventId) REFERENCES calendar_events(id) ON DELETE CASCADE,
-                            FOREIGN KEY (reminderId) REFERENCES event_reminders(id) ON DELETE CASCADE,
-                            UNIQUE(eventId, reminderId, userId, userType)
-                        )
-                    `);
-
-                    this.db.exec(`
-                        INSERT INTO event_notifications_new (id, eventId, reminderId, userId, scheduledAt, status, inAppSentAt, emailSentAt, failureReason, createdAt, updatedAt)
-                        SELECT id, eventId, reminderId, userId, scheduledAt, status, inAppSentAt, emailSentAt, failureReason, createdAt, updatedAt FROM event_notifications
-                    `);
-
-                    this.db.exec(`DROP TABLE event_notifications`);
-                    this.db.exec(`ALTER TABLE event_notifications_new RENAME TO event_notifications`);
-                })();
-            }
-        }
-
-        this.db.exec(`
-            CREATE INDEX IF NOT EXISTS idx_event_notifications_scheduledAt ON event_notifications(scheduledAt);
-            CREATE INDEX IF NOT EXISTS idx_event_notifications_status ON event_notifications(status);
-            CREATE INDEX IF NOT EXISTS idx_event_notifications_userId ON event_notifications(userId, userType);
-        `);
+        // No-op with Prisma
     }
 
-    create(data: {
+    private mapPrismaToNotification(n: any): EventNotification {
+        return {
+            id: n.id,
+            eventId: n.eventId,
+            userId: n.userId,
+            reminderId: n.reminderId,
+            userType: n.userType,
+            status: n.status,
+            scheduledAt: n.scheduledAt.toISOString(),
+            inAppSentAt: n.inAppSentAt?.toISOString() || undefined,
+            emailSentAt: n.emailSentAt?.toISOString() || undefined,
+            failureReason: n.failureReason || undefined,
+            createdAt: n.createdAt.toISOString(),
+            updatedAt: n.updatedAt.toISOString()
+        };
+    }
+
+    async create(data: {
         eventId: number;
-        reminderId: number;
         userId: number;
-        userType?: 'user' | 'person';
+        reminderId: number;
         scheduledAt: string;
-    }): EventNotification | null {
-        try {
-            const now = new Date().toISOString();
-            const userType = data.userType || 'user';
-            const stmt = this.db.prepare(`
-                INSERT INTO event_notifications (eventId, reminderId, userId, userType, scheduledAt, status, createdAt, updatedAt)
-                VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
-            `);
-
-            const result = stmt.run(
-                data.eventId,
-                data.reminderId,
-                data.userId,
-                userType,
-                data.scheduledAt,
-                now,
-                now
-            );
-
-            return this.findById(result.lastInsertRowid as number);
-        } catch (error: any) {
-            // UNIQUE constraint violation - notification already exists
-            if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-                return null;
+        userType?: string;
+    }): Promise<EventNotification> {
+        const n = await prisma.eventNotification.create({
+            data: {
+                eventId: data.eventId,
+                userId: data.userId,
+                reminderId: data.reminderId,
+                scheduledAt: new Date(data.scheduledAt),
+                userType: data.userType || 'user',
+                status: 'pending'
             }
-            throw error;
-        }
+        });
+
+        return this.mapPrismaToNotification(n);
     }
 
-    findById(id: number): EventNotification | null {
-        const row = this.db.prepare(`SELECT * FROM event_notifications WHERE id = ?`).get(id) as any;
-        return row ? this.mapRow(row) : null;
+    async findById(id: number): Promise<EventNotification | null> {
+        const n = await prisma.eventNotification.findUnique({
+            where: { id }
+        });
+        return n ? this.mapPrismaToNotification(n) : null;
     }
 
-    findPending(beforeTime?: string): EventNotification[] {
-        const cutoffTime = beforeTime || new Date().toISOString();
-        const rows = this.db.prepare(`
-            SELECT * FROM event_notifications
-            WHERE status = 'pending'
-            AND scheduledAt <= ?
-            ORDER BY scheduledAt ASC
-        `).all(cutoffTime) as any[];
+    async findByEventId(eventId: number): Promise<EventNotification[]> {
+        const notifications = await prisma.eventNotification.findMany({
+            where: { eventId },
+            orderBy: { scheduledAt: 'asc' }
+        });
 
-        return rows.map(row => this.mapRow(row));
+        return notifications.map((n: any) => this.mapPrismaToNotification(n));
     }
 
-    findByUserId(userId: number, filters: {
-        status?: NotificationStatus;
-        userType?: 'user' | 'person';
+    async findByUserId(userId: number, filters: {
+        status?: string;
         limit?: number;
         offset?: number;
-    } = {}): { notifications: EventNotification[]; total: number } {
-        let query = `SELECT * FROM event_notifications WHERE userId = ?`;
-        const params: any[] = [userId];
-
-        if (filters.userType) {
-            query += ` AND userType = ?`;
-            params.push(filters.userType);
-        }
-
+    } = {}): Promise<{ notifications: EventNotification[]; total: number }> {
+        const where: any = { userId };
         if (filters.status) {
-            query += ` AND status = ?`;
-            params.push(filters.status);
+            where.status = filters.status;
         }
 
-        query += ` ORDER BY scheduledAt DESC`;
+        const [notifications, total] = await Promise.all([
+            prisma.eventNotification.findMany({
+                where,
+                orderBy: { scheduledAt: 'desc' },
+                take: filters.limit,
+                skip: filters.offset
+            }),
+            prisma.eventNotification.count({ where })
+        ]);
 
-        // Get total count
-        const countQuery = query.replace('SELECT *', 'SELECT COUNT(*) as count');
-        const countResult = this.db.prepare(countQuery).get(...params) as { count: number } | undefined;
-        const total = countResult ? countResult.count : 0;
-
-        // Add pagination
-        if (filters.limit) {
-            query += ` LIMIT ? OFFSET ?`;
-            params.push(filters.limit, filters.offset || 0);
-        }
-
-        const rows = this.db.prepare(query).all(...params) as any[];
         return {
-            notifications: rows.map(row => this.mapRow(row)),
+            notifications: notifications.map((n: any) => this.mapPrismaToNotification(n)),
             total
         };
     }
 
-    findAll(filters: {
-        status?: NotificationStatus;
+    async findAll(filters: {
+        status?: string;
         userId?: number;
-        userType?: 'user' | 'person';
         limit?: number;
         offset?: number;
-    } = {}): { notifications: EventNotification[]; total: number } {
-        let query = `SELECT * FROM event_notifications WHERE 1=1`;
-        const params: any[] = [];
-
+    } = {}): Promise<{ notifications: EventNotification[]; total: number }> {
+        const where: any = {};
         if (filters.status) {
-            query += ` AND status = ?`;
-            params.push(filters.status);
+            where.status = filters.status;
         }
-
         if (filters.userId) {
-            query += ` AND userId = ?`;
-            params.push(filters.userId);
+            where.userId = filters.userId;
         }
 
-        if (filters.userType) {
-            query += ` AND userType = ?`;
-            params.push(filters.userType);
-        }
+        const [notifications, total] = await Promise.all([
+            prisma.eventNotification.findMany({
+                where,
+                orderBy: { scheduledAt: 'desc' },
+                take: filters.limit,
+                skip: filters.offset
+            }),
+            prisma.eventNotification.count({ where })
+        ]);
 
-        query += ` ORDER BY scheduledAt DESC`;
-
-        // Get total count
-        const countQuery = query.replace('SELECT *', 'SELECT COUNT(*) as count');
-        const countResult = this.db.prepare(countQuery).get(...params) as { count: number } | undefined;
-        const total = countResult ? countResult.count : 0;
-
-        // Add pagination
-        if (filters.limit) {
-            query += ` LIMIT ? OFFSET ?`;
-            params.push(filters.limit, filters.offset || 0);
-        }
-
-        const rows = this.db.prepare(query).all(...params) as any[];
         return {
-            notifications: rows.map(row => this.mapRow(row)),
+            notifications: notifications.map((n: any) => this.mapPrismaToNotification(n)),
             total
         };
     }
 
-    markSent(id: number, channel: 'inApp' | 'email'): boolean {
-        const now = new Date().toISOString();
-        const column = channel === 'inApp' ? 'inAppSentAt' : 'emailSentAt';
+    async findPending(limit: number = 100): Promise<EventNotification[]> {
+        const now = new Date();
+        const notifications = await prisma.eventNotification.findMany({
+            where: {
+                status: 'pending',
+                scheduledAt: { lte: now }
+            },
+            take: limit,
+            orderBy: { scheduledAt: 'asc' }
+        });
 
-        this.db.prepare(`
-            UPDATE event_notifications
-            SET ${column} = ?, updatedAt = ?
-            WHERE id = ?
-        `).run(now, now, id);
+        return notifications.map((n: any) => this.mapPrismaToNotification(n));
+    }
 
-        // Check if both channels are sent, then mark as sent
-        const notification = this.findById(id);
-        if (notification && notification.inAppSentAt && notification.emailSentAt) {
-            this.db.prepare(`
-                UPDATE event_notifications
-                SET status = 'sent', updatedAt = ?
-                WHERE id = ?
-            `).run(now, id);
+    async updateStatus(id: number, status: string, failureReason?: string): Promise<boolean> {
+        const updateData: any = { status };
+        if (failureReason) {
+            updateData.failureReason = failureReason;
         }
 
-        return true;
+        try {
+            await prisma.eventNotification.update({
+                where: { id },
+                data: updateData
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 
-    markFailed(id: number, reason: string): boolean {
-        const now = new Date().toISOString();
-        const result = this.db.prepare(`
-            UPDATE event_notifications
-            SET status = 'failed', failureReason = ?, updatedAt = ?
-            WHERE id = ?
-        `).run(reason, now, id);
+    async markSent(id: number, channel: 'inApp' | 'email'): Promise<boolean> {
+        const updateData: any = {};
+        if (channel === 'inApp') {
+            updateData.inAppSentAt = new Date();
+        } else {
+            updateData.emailSentAt = new Date();
+        }
 
-        return result.changes > 0;
+        // If both are sent, or if it's just the one we care about, we might mark as completed
+        // For now, let's just update the timestamp. If all requested channels are sent, we can mark as 'sent'
+        // Actually, let's check if it's fully sent
+        try {
+            const current = await prisma.eventNotification.findUnique({ where: { id } });
+            if (current) {
+                const isEmailSent = channel === 'email' || !!current.emailSentAt;
+                const isInAppSent = channel === 'inApp' || !!current.inAppSentAt;
+                if (isEmailSent && isInAppSent) {
+                    updateData.status = 'sent';
+                }
+            }
+
+            await prisma.eventNotification.update({
+                where: { id },
+                data: updateData
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 
-    deleteByEventId(eventId: number): boolean {
-        const result = this.db.prepare(`DELETE FROM event_notifications WHERE eventId = ?`).run(eventId);
-        return result.changes > 0;
+    async markFailed(id: number, reason: string): Promise<boolean> {
+        try {
+            await prisma.eventNotification.update({
+                where: { id },
+                data: {
+                    status: 'failed',
+                    failureReason: reason
+                }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 
-    deleteByReminderId(reminderId: number): boolean {
-        const result = this.db.prepare(`DELETE FROM event_notifications WHERE reminderId = ?`).run(reminderId);
-        return result.changes > 0;
+    async cancelByReminderId(reminderId: number): Promise<boolean> {
+        try {
+            await prisma.eventNotification.updateMany({
+                where: { reminderId, status: 'pending' },
+                data: { status: 'cancelled' }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 
-    private mapRow(row: any): EventNotification {
-        return {
-            id: row.id,
-            eventId: row.eventId,
-            reminderId: row.reminderId,
-            userId: row.userId,
-            userType: row.userType as 'user' | 'person',
-            scheduledAt: row.scheduledAt,
-            status: row.status as NotificationStatus,
-            inAppSentAt: row.inAppSentAt,
-            emailSentAt: row.emailSentAt,
-            failureReason: row.failureReason,
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt
-        };
+    async deleteByReminderId(reminderId: number): Promise<boolean> {
+        try {
+            await prisma.eventNotification.deleteMany({
+                where: { reminderId }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    async cancelByEventId(eventId: number): Promise<boolean> {
+        try {
+            await prisma.eventNotification.updateMany({
+                where: { eventId, status: 'pending' },
+                data: { status: 'cancelled' }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    async deleteByEventId(eventId: number): Promise<boolean> {
+        try {
+            await prisma.eventNotification.deleteMany({
+                where: { eventId }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    async deleteExpired(daysOld: number = 30): Promise<number> {
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - daysOld);
+
+        const result = await prisma.eventNotification.deleteMany({
+            where: {
+                status: { in: ['sent', 'cancelled', 'failed'] },
+                createdAt: { lte: cutoff }
+            }
+        });
+
+        return result.count;
     }
 }

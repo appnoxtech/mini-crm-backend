@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { ImportService } from '../services/importService';
 import { AuthenticatedRequest } from '../../../shared/types';
 import { ImportEntityType, DuplicateHandling } from '../types';
@@ -128,7 +128,7 @@ export class ImportController {
                 return res.status(400).json({ success: false, error: 'Invalid import ID' });
             }
 
-            const job = this.importService.getImportJob(userId, importId);
+            const job = await this.importService.getImportJob(userId, importId);
             if (!job) {
                 return res.status(404).json({ success: false, error: 'Import job not found' });
             }
@@ -157,7 +157,7 @@ export class ImportController {
             }
 
             const limit = parseInt(req.query.limit as string) || 100;
-            const errors = this.importService.getImportErrors(userId, importId, limit);
+            const errors = await this.importService.getImportErrors(userId, importId, limit);
 
             res.json({ success: true, data: errors });
         } catch (error: any) {
@@ -180,7 +180,7 @@ export class ImportController {
             const limit = parseInt(req.query.limit as string) || 20;
             const offset = parseInt(req.query.offset as string) || 0;
 
-            const history = this.importService.getImportHistory(userId, limit, offset);
+            const history = await this.importService.getImportHistory(userId, limit, offset);
 
             res.json({ success: true, data: history });
         } catch (error: any) {
@@ -205,7 +205,7 @@ export class ImportController {
                 return res.status(400).json({ success: false, error: 'Invalid import ID' });
             }
 
-            const deleted = this.importService.cancelImport(userId, importId);
+            const deleted = await this.importService.cancelImport(userId, importId);
 
             res.json({ success: true, data: { deleted } });
         } catch (error: any) {
@@ -230,7 +230,7 @@ export class ImportController {
                 return res.status(400).json({ success: false, error: 'Invalid import ID' });
             }
 
-            const result = this.importService.rollbackImport(userId, importId);
+            const result = await this.importService.rollbackImport(userId, importId);
 
             res.json({ success: true, data: result });
         } catch (error: any) {
@@ -332,7 +332,7 @@ export class ImportController {
                 return res.status(400).json({ success: false, error: 'Name, entityType, and mapping are required' });
             }
 
-            const templateId = this.importService.saveTemplate(userId, name, entityType, mapping);
+            const templateId = await this.importService.saveTemplate(userId, name, entityType, mapping);
 
             res.json({ success: true, data: { id: templateId } });
         } catch (error: any) {
@@ -353,7 +353,7 @@ export class ImportController {
             }
 
             const entityType = req.query.entityType as ImportEntityType | undefined;
-            const templates = this.importService.getTemplates(userId, entityType);
+            const templates = await this.importService.getTemplates(userId, entityType);
 
             res.json({ success: true, data: templates });
         } catch (error: any) {
@@ -378,7 +378,7 @@ export class ImportController {
                 return res.status(400).json({ success: false, error: 'Invalid template ID' });
             }
 
-            const deleted = this.importService.deleteTemplate(userId, templateId);
+            const deleted = await this.importService.deleteTemplate(userId, templateId);
 
             res.json({ success: true, data: { deleted } });
         } catch (error: any) {

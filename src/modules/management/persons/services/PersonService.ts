@@ -18,8 +18,8 @@ export class PersonService {
 
         if (organizationIds.length === 0) return persons;
 
-        const organizations = this.organizationModel.findByIds(organizationIds);
-        const orgMap = new Map(organizations.map(org => [org.id, org]));
+        const organizations = await this.organizationModel.findByIds(organizationIds);
+        const orgMap = new Map(organizations.map((org: any) => [org.id, org]));
 
         return persons.map(person => ({
             ...person,
@@ -30,7 +30,7 @@ export class PersonService {
     async createPerson(data: CreatePersonData): Promise<Person> {
         // Validate organization exists if provided
         if (data.organizationId && this.organizationModel) {
-            const org = this.organizationModel.findById(data.organizationId);
+            const org = await this.organizationModel.findById(data.organizationId);
             if (!org) {
                 throw new Error('Organization not found');
             }
@@ -54,7 +54,7 @@ export class PersonService {
 
         if (data.organizationId !== undefined && this.organizationModel) {
             const organizationId = Number(data.organizationId);
-            const org = this.organizationModel.findById(organizationId, false);
+            const org = await this.organizationModel.findById(organizationId, false);
             if (!org) {
                 throw new Error('Organization not found');
             }
@@ -77,7 +77,7 @@ export class PersonService {
 
 
     async getPersonById(id: number, includeDeleted = false): Promise<Person | null> {
-        const person = this.personModel.findById(id, includeDeleted);
+        const person = await this.personModel.findById(id, includeDeleted);
 
         if (!person) {
             return null;

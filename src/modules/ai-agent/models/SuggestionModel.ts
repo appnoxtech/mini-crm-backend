@@ -1,131 +1,82 @@
-import Database from "better-sqlite3";
-import { EmailSuggestion, SuggestionIssue } from "../types";
-import { v4 as uuidv4 } from "uuid";
+import { prisma } from '../../../shared/prisma';
+
+import { EmailSuggestion } from '../types';
 
 export class SuggestionModel {
-    private db: Database.Database;
+    constructor(_db?: any) { }
 
-    constructor(db: Database.Database) {
-        this.db = db;
-    }
-
-    initialize(): void {
-        this.db.exec(`
-      CREATE TABLE IF NOT EXISTS email_suggestions (
-        id TEXT PRIMARY KEY,
-        deal_id INTEGER,
-        person_id INTEGER,
-        subject_line TEXT NOT NULL,
-        body TEXT NOT NULL,
-        html_body TEXT,
-        email_type TEXT NOT NULL,
-        confidence_score REAL,
-        reasoning TEXT,
-        quality_score REAL,
-        issues TEXT, -- JSON array
-        status TEXT DEFAULT 'generated',
-        user_edits TEXT, -- JSON object
-        sent_at TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-        // Create indexes
-        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_suggestions_deal ON email_suggestions(deal_id)`);
-        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_suggestions_person ON email_suggestions(person_id)`);
-        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_suggestions_status ON email_suggestions(status)`);
-    }
-
-    create(data: Omit<EmailSuggestion, 'id' | 'createdAt'>): EmailSuggestion {
-        const id = uuidv4();
-        const createdAt = new Date();
-
-        const stmt = this.db.prepare(`
-      INSERT INTO email_suggestions (
-        id, deal_id, person_id, subject_line, body, html_body, 
-        email_type, confidence_score, reasoning, quality_score, 
-        issues, status, user_edits, sent_at, created_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-        stmt.run(
-            id,
-            data.dealId || null,
-            data.personId || null,
-            data.subjectLine,
-            data.body,
-            data.htmlBody || null,
-            data.emailType,
-            data.confidenceScore,
-            data.reasoning,
-            data.qualityScore,
-            JSON.stringify(data.issues),
-            data.status,
-            data.userEdits || null,
-            data.sentAt ? data.sentAt.toISOString() : null,
-            createdAt.toISOString()
-        );
-
-        return { ...data, id, createdAt };
-    }
-
-    findById(id: string): EmailSuggestion | null {
-        const stmt = this.db.prepare('SELECT * FROM email_suggestions WHERE id = ?');
-        const row = stmt.get(id) as any;
-        if (!row) return null;
-        return this.mapRowToSuggestion(row);
-    }
-
-    findByDealId(dealId: number): EmailSuggestion[] {
-        const stmt = this.db.prepare('SELECT * FROM email_suggestions WHERE deal_id = ? ORDER BY created_at DESC');
-        const rows = stmt.all(dealId) as any[];
-        return rows.map(row => this.mapRowToSuggestion(row));
-    }
-
-    findByPersonId(personId: number): EmailSuggestion[] {
-        const stmt = this.db.prepare('SELECT * FROM email_suggestions WHERE person_id = ? ORDER BY created_at DESC');
-        const rows = stmt.all(personId) as any[];
-        return rows.map(row => this.mapRowToSuggestion(row));
-    }
-
-    update(id: string, updates: Partial<EmailSuggestion>): boolean {
-        const fields: string[] = [];
-        const values: any[] = [];
-
-        if (updates.subjectLine !== undefined) { fields.push("subject_line = ?"); values.push(updates.subjectLine); }
-        if (updates.body !== undefined) { fields.push("body = ?"); values.push(updates.body); }
-        if (updates.htmlBody !== undefined) { fields.push("html_body = ?"); values.push(updates.htmlBody); }
-        if (updates.status !== undefined) { fields.push("status = ?"); values.push(updates.status); }
-        if (updates.userEdits !== undefined) { fields.push("user_edits = ?"); values.push(updates.userEdits); }
-        if (updates.sentAt !== undefined) { fields.push("sent_at = ?"); values.push(updates.sentAt ? updates.sentAt.toISOString() : null); }
-        if (updates.qualityScore !== undefined) { fields.push("quality_score = ?"); values.push(updates.qualityScore); }
-        if (updates.issues !== undefined) { fields.push("issues = ?"); values.push(JSON.stringify(updates.issues)); }
-
-        if (fields.length === 0) return false;
-
-        const stmt = this.db.prepare(`UPDATE email_suggestions SET ${fields.join(", ")} WHERE id = ?`);
-        const result = stmt.run(...values, id);
-        return result.changes > 0;
-    }
-
-    private mapRowToSuggestion(row: any): EmailSuggestion {
+    private mapPrismaToSuggestion(s: any): EmailSuggestion {
         return {
-            id: row.id,
-            dealId: row.deal_id,
-            personId: row.person_id,
-            subjectLine: row.subject_line,
-            body: row.body,
-            htmlBody: row.html_body,
-            emailType: row.email_type,
-            confidenceScore: row.confidence_score,
-            reasoning: row.reasoning,
-            qualityScore: row.quality_score,
-            issues: row.issues ? JSON.parse(row.issues) : [],
-            status: row.status,
-            userEdits: row.user_edits,
-            sentAt: row.sent_at ? new Date(row.sent_at) : undefined,
-            createdAt: new Date(row.created_at)
+            id: s.id,
+            dealId: s.dealId || undefined,
+            personId: s.personId || undefined,
+            subjectLine: s.subjectLine,
+            body: s.body,
+            htmlBody: s.htmlBody || undefined,
+            emailType: s.emailType as EmailSuggestion['emailType'],
+            confidenceScore: s.confidenceScore || 0,
+            reasoning: s.reasoning || '',
+            qualityScore: s.qualityScore || 0,
+            issues: s.issues ? (typeof s.issues === 'string' ? JSON.parse(s.issues) : s.issues) : [],
+            status: s.status as EmailSuggestion['status'],
+            userEdits: s.userEdits ? (typeof s.userEdits === 'string' ? JSON.parse(s.userEdits) : s.userEdits) : undefined,
+            sentAt: s.sentAt ? new Date(s.sentAt) : undefined,
+            createdAt: new Date(s.createdAt)
         };
+    }
+
+    async createSuggestion(data: Omit<EmailSuggestion, 'id'>): Promise<string> {
+        const row = await prisma.emailSuggestion.create({
+            data: {
+                dealId: data.dealId || null,
+                personId: data.personId || null,
+                subjectLine: data.subjectLine,
+                body: data.body,
+                htmlBody: data.htmlBody || null,
+                emailType: data.emailType,
+                confidenceScore: data.confidenceScore || null,
+                reasoning: data.reasoning || null,
+                qualityScore: data.qualityScore || null,
+                issues: data.issues as any || [],
+                status: data.status || 'generated',
+                userEdits: data.userEdits ? (typeof data.userEdits === 'object' ? JSON.stringify(data.userEdits) : data.userEdits) : null
+            }
+        });
+        return row.id;
+    }
+
+    async findById(id: string): Promise<EmailSuggestion | null> {
+        const row = await prisma.emailSuggestion.findUnique({
+            where: { id }
+        });
+        return row ? this.mapPrismaToSuggestion(row) : null;
+    }
+
+    async findByDealId(dealId: number): Promise<EmailSuggestion[]> {
+        const rows = await prisma.emailSuggestion.findMany({
+            where: { dealId },
+            orderBy: { createdAt: 'desc' }
+        });
+        return rows.map((row: any) => this.mapPrismaToSuggestion(row));
+    }
+
+    async findByPersonId(personId: number): Promise<EmailSuggestion[]> {
+        const rows = await prisma.emailSuggestion.findMany({
+            where: { personId },
+            orderBy: { createdAt: 'desc' }
+        });
+        return rows.map((row: any) => this.mapPrismaToSuggestion(row));
+    }
+
+    async updateSuggestion(id: string, data: Partial<EmailSuggestion>): Promise<void> {
+        const updateData: any = {};
+        if (data.status) updateData.status = data.status;
+        if (data.userEdits) updateData.userEdits = typeof data.userEdits === 'object' ? JSON.stringify(data.userEdits) : data.userEdits;
+        if (data.sentAt) updateData.sentAt = new Date(data.sentAt);
+
+        await prisma.emailSuggestion.update({
+            where: { id },
+            data: updateData
+        });
     }
 }

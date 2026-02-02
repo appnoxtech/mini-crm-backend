@@ -1,8 +1,8 @@
 import cron from 'node-cron';
-import Database from 'better-sqlite3';
 import { EmailModel } from '../modules/email/models/emailModel';
 import { EmailService } from '../modules/email/services/emailService';
 import { EmailConnectorService } from '../modules/email/services/emailConnectorService';
+import { OAuthService } from '../modules/email/services/oauthService';
 
 const TRASH_RETENTION_DAYS = 30;
 
@@ -10,12 +10,11 @@ const TRASH_RETENTION_DAYS = 30;
  * Trash Cleanup Job
  * 
  * Runs daily to permanently delete emails that have been in trash for more than 30 days.
- * This ensures compliance with retention policies and keeps the database/storage clean.
  */
-export function startTrashCleanupJob(dbPath: string) {
-    const db = new Database(dbPath, { timeout: 10000 });
-    const emailModel = new EmailModel(db);
-    const connectorService = new EmailConnectorService();
+export function startTrashCleanupJob() {
+    const emailModel = new EmailModel();
+    const oauthService = new OAuthService();
+    const connectorService = new EmailConnectorService(oauthService);
     const emailService = new EmailService(emailModel, connectorService);
 
     const cleanupOldTrashEmails = async () => {
@@ -23,7 +22,7 @@ export function startTrashCleanupJob(dbPath: string) {
 
         try {
             // Get old trash emails for logging and potential provider sync
-            const oldTrashEmails = emailModel.getTrashEmailsOlderThan(TRASH_RETENTION_DAYS);
+            const oldTrashEmails = await emailModel.getTrashEmailsOlderThan(TRASH_RETENTION_DAYS);
 
             if (oldTrashEmails.length === 0) {
                 console.log('[TrashCleanup] No old trash emails to clean up.');
@@ -36,7 +35,6 @@ export function startTrashCleanupJob(dbPath: string) {
             let failCount = 0;
 
             // For each email, try to sync the permanent deletion to the provider
-            // This is done before bulk deletion to ensure we have access to email details
             for (const emailInfo of oldTrashEmails) {
                 try {
                     // Use the service method which handles provider sync
@@ -45,7 +43,6 @@ export function startTrashCleanupJob(dbPath: string) {
                 } catch (error) {
                     console.error(`[TrashCleanup] Failed to delete email ${emailInfo.emailId}:`, error);
                     failCount++;
-                    // Continue with next email even if one fails
                 }
             }
 
@@ -59,7 +56,7 @@ export function startTrashCleanupJob(dbPath: string) {
     // Schedule to run every day at 2:00 AM
     cron.schedule('0 2 * * *', cleanupOldTrashEmails);
 
-    // Run shortly after startup (1 minute) to clean up anything missed while down
+    // Run shortly after startup (1 minute)
     setTimeout(cleanupOldTrashEmails, 60000);
 
     console.log('[TrashCleanup] Trash cleanup cron job scheduled (Daily at 2:00 AM)');

@@ -1,17 +1,15 @@
-import Database from 'better-sqlite3';
 import { ImportError, PersonImportData, ProcessResult, DuplicateHandling } from '../../types';
-import { PersonModel, PersonEmail, PersonPhone } from '../../../management/persons/models/Person';
+import { PersonModel } from '../../../management/persons/models/Person';
 import { OrganizationModel } from '../../../management/organisations/models/Organization';
+import { EmailLabel, PhoneType } from '../../../management/persons/models/Person';
 
 export class PersonProcessor {
-    private db: Database.Database;
     private personModel: PersonModel;
     private orgModel: OrganizationModel;
 
-    constructor(db: Database.Database) {
-        this.db = db;
-        this.personModel = new PersonModel(db);
-        this.orgModel = new OrganizationModel(db);
+    constructor(_db?: any) {
+        this.personModel = new PersonModel();
+        this.orgModel = new OrganizationModel();
     }
 
     /**
@@ -109,12 +107,12 @@ export class PersonProcessor {
     /**
      * Check for duplicates
      */
-    checkDuplicate(data: PersonImportData): { isDuplicate: boolean; existingId?: number; field?: string; value?: string } {
+    async checkDuplicate(data: PersonImportData): Promise<{ isDuplicate: boolean; existingId?: number; field?: string; value?: string }> {
         const emails = this.parseEmails(data);
         const emailStrings = emails.map(e => e.email);
 
         // Check email duplicates
-        const existingEmail = this.personModel.findExistingEmail(emailStrings);
+        const existingEmail = await this.personModel.findExistingEmail(emailStrings);
         if (existingEmail) {
             return {
                 isDuplicate: true,
@@ -128,7 +126,7 @@ export class PersonProcessor {
         const phones = this.parsePhones(data);
         const phoneStrings = phones.map(p => p.number);
         if (phoneStrings.length > 0) {
-            const existingPhone = this.personModel.findExistingPhone(phoneStrings);
+            const existingPhone = await this.personModel.findExistingPhone(phoneStrings);
             if (existingPhone) {
                 return {
                     isDuplicate: true,
@@ -145,16 +143,16 @@ export class PersonProcessor {
     /**
      * Process a single person record
      */
-    process(
+    async process(
         data: PersonImportData,
         userId: number,
         duplicateHandling: DuplicateHandling
-    ): ProcessResult {
+    ): Promise<ProcessResult> {
         const emails = this.parseEmails(data);
         const phones = this.parsePhones(data);
 
         // Check for duplicates
-        const duplicateCheck = this.checkDuplicate(data);
+        const duplicateCheck = await this.checkDuplicate(data);
 
         if (duplicateCheck.isDuplicate) {
             switch (duplicateHandling) {
@@ -173,15 +171,15 @@ export class PersonProcessor {
         // Resolve organization if provided
         let organizationId: number | undefined;
         if (data.organizationName?.trim()) {
-            organizationId = this.resolveOrganization(data.organizationName.trim());
+            organizationId = await this.resolveOrganization(data.organizationName.trim());
         }
 
         // Create new person
-        const person = this.personModel.create({
+        const person = await this.personModel.create({
             firstName: data.firstName.trim(),
             lastName: data.lastName.trim(),
-            emails,
-            phones,
+            emails: emails as any,
+            phones: phones as any,
             organizationId,
             country: data.country?.trim(),
         });
@@ -192,18 +190,18 @@ export class PersonProcessor {
     /**
      * Parse emails from import data
      */
-    private parseEmails(data: PersonImportData): PersonEmail[] {
-        const emails: PersonEmail[] = [];
+    private parseEmails(data: PersonImportData): { email: string; label: string }[] {
+        const emails: { email: string; label: string }[] = [];
 
         if (data.email?.trim()) {
-            emails.push({ email: data.email.trim().toLowerCase(), label: 'work' });
+            emails.push({ email: data.email.trim().toLowerCase(), label: 'work' as EmailLabel });
         }
 
         if (data.emails?.trim()) {
             const emailList = data.emails.split(/[,;]/).map(e => e.trim().toLowerCase()).filter(Boolean);
             emailList.forEach(email => {
                 if (!emails.some(e => e.email === email)) {
-                    emails.push({ email, label: 'work' });
+                    emails.push({ email, label: 'work' as EmailLabel });
                 }
             });
         }
@@ -214,11 +212,11 @@ export class PersonProcessor {
     /**
      * Parse phones from import data
      */
-    private parsePhones(data: PersonImportData): PersonPhone[] {
-        const phones: PersonPhone[] = [];
+    private parsePhones(data: PersonImportData): { number: string; type: string }[] {
+        const phones: { number: string; type: string }[] = [];
 
         if (data.phone?.trim()) {
-            phones.push({ number: this.normalizePhone(data.phone), type: 'work' });
+            phones.push({ number: this.normalizePhone(data.phone), type: 'work' as PhoneType });
         }
 
         if (data.phones?.trim()) {
@@ -226,7 +224,7 @@ export class PersonProcessor {
             phoneList.forEach(phone => {
                 const normalized = this.normalizePhone(phone);
                 if (!phones.some(p => p.number === normalized)) {
-                    phones.push({ number: normalized, type: 'work' });
+                    phones.push({ number: normalized, type: 'work' as PhoneType });
                 }
             });
         }
@@ -245,8 +243,8 @@ export class PersonProcessor {
     /**
      * Resolve organization by name (create if doesn't exist)
      */
-    private resolveOrganization(name: string): number {
-        const existing = this.orgModel.searchByOrgName(name);
+    private async resolveOrganization(name: string): Promise<number> {
+        const existing = await this.orgModel.searchByOrgName(name);
 
         // Find exact match (case-insensitive)
         const exactMatch = existing.find(org => org.name.toLowerCase() === name.toLowerCase());
@@ -255,29 +253,29 @@ export class PersonProcessor {
         }
 
         // Create new organization
-        const org = this.orgModel.create({ name });
+        const org = await this.orgModel.create({ name });
         return org.id;
     }
 
     /**
      * Update existing person
      */
-    private updateExistingPerson(
+    private async updateExistingPerson(
         personId: number,
         data: PersonImportData,
-        emails: PersonEmail[],
-        phones: PersonPhone[]
-    ): ProcessResult {
+        emails: { email: string; label: string }[],
+        phones: { number: string; type: string }[]
+    ): Promise<ProcessResult> {
         let organizationId: number | undefined;
         if (data.organizationName?.trim()) {
-            organizationId = this.resolveOrganization(data.organizationName.trim());
+            organizationId = await this.resolveOrganization(data.organizationName.trim());
         }
 
-        this.personModel.update(personId, {
+        await this.personModel.update(personId, {
             firstName: data.firstName.trim(),
             lastName: data.lastName.trim(),
-            emails,
-            phones,
+            emails: emails as any,
+            phones: phones as any,
             organizationId,
             country: data.country?.trim(),
         });
@@ -322,7 +320,7 @@ export class PersonProcessor {
     /**
      * Delete person
      */
-    delete(id: number): boolean {
+    async delete(id: number): Promise<boolean> {
         return this.personModel.hardDelete(id);
     }
 }

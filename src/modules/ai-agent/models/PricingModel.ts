@@ -1,168 +1,99 @@
-import Database from "better-sqlite3";
-import { PricingTier, DiscountRule } from "../types";
-import { v4 as uuidv4 } from "uuid";
+import { prisma } from '../../../shared/prisma';
+import { Prisma } from '@prisma/client';
+
+export interface PricingTier {
+    id: string;
+    name: string;
+    basePrice: number;
+    currency: string;
+    contractTerms: string;
+    features: string[];
+    isActive: boolean;
+}
+
+export interface DiscountRule {
+    target_type: string;
+    target_id: string;
+    discount_percent: number;
+    valid_until: string | null;
+}
 
 export class PricingModel {
-    private db: Database.Database;
-
-    constructor(db: Database.Database) {
-        this.db = db;
-    }
+    constructor(_db?: any) { }
 
     initialize(): void {
-        this.db.exec(`
-      CREATE TABLE IF NOT EXISTS pricing_tiers (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        base_price REAL NOT NULL,
-        currency TEXT DEFAULT 'EUR',
-        features TEXT, -- JSON array
-        contract_terms TEXT,
-        is_active INTEGER DEFAULT 1,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-        this.db.exec(`
-      CREATE TABLE IF NOT EXISTS discount_rules (
-        id TEXT PRIMARY KEY,
-        tier_id TEXT REFERENCES pricing_tiers(id),
-        type TEXT NOT NULL, -- volume, duration, seasonal, loyalty
-        percentage REAL NOT NULL,
-        conditions TEXT, -- JSON object
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
+        // No-op with Prisma
     }
 
-    // Tiers
-    getAllTiers(): PricingTier[] {
-        const tiersStmt = this.db.prepare('SELECT * FROM pricing_tiers WHERE is_active = 1');
-        const tiers = tiersStmt.all() as any[];
-
-        return tiers.map(tier => {
-            const rulesStmt = this.db.prepare('SELECT * FROM discount_rules WHERE tier_id = ?');
-            const rules = rulesStmt.all(tier.id) as any[];
-
-            return {
-                id: tier.id,
-                name: tier.name,
-                basePrice: tier.base_price,
-                currency: tier.currency,
-                features: JSON.parse(tier.features || '[]'),
-                contractTerms: tier.contract_terms,
-                isActive: !!tier.is_active,
-                createdAt: new Date(tier.created_at),
-                updatedAt: new Date(tier.updated_at),
-                discountRules: rules.map(rule => ({
-                    id: rule.id,
-                    tierId: rule.tier_id,
-                    type: rule.type,
-                    percentage: rule.percentage,
-                    conditions: JSON.parse(rule.conditions || '{}')
-                }))
-            };
-        });
-    }
-
-    getTierById(id: string): PricingTier | null {
-        const tierStmt = this.db.prepare('SELECT * FROM pricing_tiers WHERE id = ?');
-        const tier = tierStmt.get(id) as any;
-        if (!tier) return null;
-
-        const rulesStmt = this.db.prepare('SELECT * FROM discount_rules WHERE tier_id = ?');
-        const rules = rulesStmt.all(tier.id) as any[];
-
+    private mapPrismaToTier(row: any): PricingTier {
         return {
-            id: tier.id,
-            name: tier.name,
-            basePrice: tier.base_price,
-            currency: tier.currency,
-            features: JSON.parse(tier.features || '[]'),
-            contractTerms: tier.contract_terms,
-            isActive: !!tier.is_active,
-            createdAt: new Date(tier.created_at),
-            updatedAt: new Date(tier.updated_at),
-            discountRules: rules.map(rule => ({
-                id: rule.id,
-                tierId: rule.tier_id,
-                type: rule.type,
-                percentage: rule.percentage,
-                conditions: JSON.parse(rule.conditions || '{}')
-            }))
+            id: row.id,
+            name: row.name,
+            basePrice: row.basePrice,
+            currency: row.currency,
+            contractTerms: row.contractTerms || '',
+            features: row.features ? (typeof row.features === 'string' ? JSON.parse(row.features) : row.features) : [],
+            isActive: row.isActive
         };
     }
 
-    createTier(data: Omit<PricingTier, 'id' | 'createdAt' | 'updatedAt' | 'discountRules'>): PricingTier {
-        const id = uuidv4();
-        const stmt = this.db.prepare(`
-      INSERT INTO pricing_tiers (id, name, base_price, currency, features, contract_terms, is_active)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-
-        stmt.run(
-            id,
-            data.name,
-            data.basePrice,
-            data.currency,
-            JSON.stringify(data.features),
-            data.contractTerms,
-            data.isActive ? 1 : 0
-        );
-
-        return this.getTierById(id)!;
+    async getAllTiers(): Promise<PricingTier[]> {
+        const rows = await prisma.pricingTier.findMany({
+            orderBy: { basePrice: 'asc' }
+        });
+        return rows.map((row: any) => this.mapPrismaToTier(row));
     }
 
-    deleteTier(id: string): boolean {
-        const deleteRules = this.db.prepare('DELETE FROM discount_rules WHERE tier_id = ?');
-        deleteRules.run(id);
-
-        const deleteTier = this.db.prepare('DELETE FROM pricing_tiers WHERE id = ?');
-        const result = deleteTier.run(id);
-
-        return result.changes > 0;
+    async getTierById(id: string): Promise<PricingTier | null> {
+        const row = await prisma.pricingTier.findUnique({
+            where: { id }
+        });
+        return row ? this.mapPrismaToTier(row) : null;
     }
 
-    updateTier(id: string, data: Partial<Omit<PricingTier, 'id' | 'createdAt' | 'updatedAt' | 'discountRules'>>): PricingTier | null {
-        const existing = this.getTierById(id);
-        if (!existing) return null;
-
-        const stmt = this.db.prepare(`
-            UPDATE pricing_tiers 
-            SET name = ?, base_price = ?, currency = ?, features = ?, contract_terms = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        `);
-
-        stmt.run(
-            data.name ?? existing.name,
-            data.basePrice ?? existing.basePrice,
-            data.currency ?? existing.currency,
-            JSON.stringify(data.features ?? existing.features),
-            data.contractTerms ?? existing.contractTerms,
-            (data.isActive ?? existing.isActive) ? 1 : 0,
-            id
-        );
-
-        return this.getTierById(id);
+    async createTier(data: Omit<PricingTier, 'id'>): Promise<string> {
+        const row = await prisma.pricingTier.create({
+            data: {
+                name: data.name,
+                basePrice: data.basePrice,
+                currency: data.currency || 'EUR',
+                contractTerms: data.contractTerms,
+                features: data.features,
+                isActive: data.isActive
+            }
+        });
+        return row.id;
     }
 
-    // Rules
-    createDiscountRule(data: Omit<DiscountRule, 'id'>): DiscountRule {
-        const id = uuidv4();
-        const stmt = this.db.prepare(`
-      INSERT INTO discount_rules (id, tier_id, type, percentage, conditions)
-      VALUES (?, ?, ?, ?, ?)
-    `);
+    async deleteTier(id: string): Promise<void> {
+        await prisma.pricingTier.delete({
+            where: { id }
+        });
+    }
 
-        stmt.run(
-            id,
-            data.tierId,
-            data.type,
-            data.percentage,
-            JSON.stringify(data.conditions)
-        );
+    async updateTier(id: string, data: Partial<PricingTier>): Promise<void> {
+        const updateData: any = {};
+        if (data.name) updateData.name = data.name;
+        if (data.basePrice !== undefined) updateData.basePrice = data.basePrice;
+        if (data.currency) updateData.currency = data.currency;
+        if (data.contractTerms) updateData.contractTerms = data.contractTerms;
+        if (data.features) updateData.features = data.features;
+        if (data.isActive !== undefined) updateData.isActive = data.isActive;
 
-        return { ...data, id };
+        await prisma.pricingTier.update({
+            where: { id },
+            data: updateData
+        });
+    }
+
+    async createDiscountRule(rule: DiscountRule): Promise<void> {
+        await prisma.discountRule.create({
+            data: {
+                type: rule.target_type,
+                tierId: rule.target_id,
+                percentage: rule.discount_percent,
+                conditions: rule.valid_until ? { validUntil: rule.valid_until } : (Prisma as any).JsonNull
+            }
+        });
     }
 }

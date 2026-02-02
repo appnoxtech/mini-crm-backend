@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { prisma } from '../../../shared/prisma';
 import { BaseEntity } from '../../../shared/types';
 
 export interface CalendarEvent extends BaseEntity {
@@ -13,250 +13,191 @@ export interface CalendarEvent extends BaseEntity {
 }
 
 export class CalendarEventModel {
-    private db: Database.Database;
-
-    constructor(db: Database.Database) {
-        this.db = db;
-    }
+    constructor(_db?: any) { }
 
     initialize(): void {
-        this.db.exec(`
-            CREATE TABLE IF NOT EXISTS calendar_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                userId INTEGER NOT NULL,
-                title TEXT NOT NULL,
-                description TEXT,
-                startTime TEXT NOT NULL,
-                endTime TEXT NOT NULL,
-                location TEXT,
-                isAllDay INTEGER DEFAULT 0,
-                createdAt TEXT NOT NULL,
-                updatedAt TEXT NOT NULL,
-                deletedAt TEXT,
-                FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
-            )
-        `);
-
-        // Create indexes for efficient queries
-        this.db.exec(`
-            CREATE INDEX IF NOT EXISTS idx_calendar_events_userId ON calendar_events(userId);
-            CREATE INDEX IF NOT EXISTS idx_calendar_events_startTime ON calendar_events(startTime);
-        `);
+        // No-op with Prisma
     }
 
-    create(data: Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt'>): CalendarEvent {
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare(`
-            INSERT INTO calendar_events (userId, title, description, startTime, endTime, location, isAllDay, createdAt, updatedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-
-        const result = stmt.run(
-            data.userId,
-            data.title,
-            data.description || null,
-            data.startTime,
-            data.endTime,
-            data.location || null,
-            data.isAllDay ? 1 : 0,
-            now,
-            now
-        );
-
-        return this.findById(result.lastInsertRowid as number)!;
+    private mapPrismaToCalendarEvent(event: any): CalendarEvent {
+        return {
+            id: event.id,
+            userId: event.userId,
+            title: event.title,
+            description: event.description || undefined,
+            startTime: event.startTime.toISOString(),
+            endTime: event.endTime.toISOString(),
+            location: event.location || undefined,
+            isAllDay: event.isAllDay,
+            createdAt: event.createdAt.toISOString(),
+            updatedAt: event.updatedAt.toISOString(),
+            deletedAt: event.deletedAt?.toISOString() || undefined
+        };
     }
 
-    findById(id: number, userId?: number): CalendarEvent | null {
-        let query = `SELECT * FROM calendar_events WHERE id = ? AND deletedAt IS NULL`;
-        const params: any[] = [id];
+    async create(data: Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt'>): Promise<CalendarEvent> {
+        const event = await prisma.calendarEvent.create({
+            data: {
+                userId: data.userId,
+                title: data.title,
+                description: data.description || null,
+                startTime: new Date(data.startTime),
+                endTime: new Date(data.endTime),
+                location: data.location || null,
+                isAllDay: data.isAllDay
+            }
+        });
 
+        return this.mapPrismaToCalendarEvent(event);
+    }
+
+    async findById(id: number, userId?: number): Promise<CalendarEvent | null> {
+        const where: any = { id, deletedAt: null };
         if (userId !== undefined) {
-            query += ` AND userId = ?`;
-            params.push(userId);
+            where.userId = userId;
         }
 
-        const row = this.db.prepare(query).get(...params) as any;
-        return row ? this.mapRow(row) : null;
+        const event = await prisma.calendarEvent.findFirst({
+            where
+        });
+
+        return event ? this.mapPrismaToCalendarEvent(event) : null;
     }
 
-    findByUserId(userId: number, filters: {
+    async findByUserId(userId: number, filters: {
         startDate?: string;
         endDate?: string;
         limit?: number;
         offset?: number;
-    } = {}): { events: CalendarEvent[]; total: number } {
-        let query = `SELECT * FROM calendar_events WHERE userId = ? AND deletedAt IS NULL`;
-        const params: any[] = [userId];
+    } = {}): Promise<{ events: CalendarEvent[]; total: number }> {
+        const where: any = {
+            userId,
+            deletedAt: null
+        };
 
         if (filters.startDate) {
-            query += ` AND startTime >= ?`;
-            params.push(filters.startDate);
+            where.startTime = { gte: new Date(filters.startDate) };
         }
 
         if (filters.endDate) {
-            query += ` AND startTime <= ?`;
-            params.push(filters.endDate);
+            where.startTime = { ...where.startTime, lte: new Date(filters.endDate) };
         }
 
-        query += ` ORDER BY startTime ASC`;
+        const [events, total] = await Promise.all([
+            prisma.calendarEvent.findMany({
+                where,
+                orderBy: { startTime: 'asc' },
+                take: filters.limit,
+                skip: filters.offset
+            }),
+            prisma.calendarEvent.count({ where })
+        ]);
 
-        // Get total count
-        const countQuery = query.replace('SELECT *', 'SELECT COUNT(*) as count');
-        const countResult = this.db.prepare(countQuery).get(...params) as { count: number } | undefined;
-        const total = countResult ? countResult.count : 0;
-
-        // Add pagination
-        if (filters.limit) {
-            query += ` LIMIT ? OFFSET ?`;
-            params.push(filters.limit, filters.offset || 0);
-        }
-
-        const rows = this.db.prepare(query).all(...params) as any[];
         return {
-            events: rows.map(row => this.mapRow(row)),
+            events: events.map((e: any) => this.mapPrismaToCalendarEvent(e)),
             total
         };
     }
 
-    findAccessible(userId: number, filters: {
+    async findAccessible(userId: number, filters: {
         startDate?: string;
         endDate?: string;
         limit?: number;
         offset?: number;
-    } = {}): { events: CalendarEvent[]; total: number } {
-        // Find events owned by user OR shared with user
-        let query = `
-            SELECT DISTINCT e.* FROM calendar_events e
-            LEFT JOIN event_shares es ON e.id = es.eventId
-            WHERE e.deletedAt IS NULL
-            AND (e.userId = ? OR es.sharedWithUserId = ?)
-        `;
-        const params: any[] = [userId, userId];
+    } = {}): Promise<{ events: CalendarEvent[]; total: number }> {
+        const where: any = {
+            deletedAt: null,
+            OR: [
+                { userId },
+                { shares: { some: { sharedWithUserId: userId, participantType: 'user' } } }
+            ]
+        };
 
         if (filters.startDate) {
-            query += ` AND e.startTime >= ?`;
-            params.push(filters.startDate);
+            where.startTime = { gte: new Date(filters.startDate) };
         }
 
         if (filters.endDate) {
-            query += ` AND e.startTime <= ?`;
-            params.push(filters.endDate);
+            where.startTime = { ...where.startTime, lte: new Date(filters.endDate) };
         }
 
-        query += ` ORDER BY e.startTime ASC`;
+        const [events, total] = await Promise.all([
+            prisma.calendarEvent.findMany({
+                where,
+                orderBy: { startTime: 'asc' },
+                take: filters.limit,
+                skip: filters.offset,
+                distinct: ['id']
+            }),
+            prisma.calendarEvent.count({ where })
+        ]);
 
-        // Get total count
-        const countQuery = query.replace('SELECT DISTINCT e.*', 'SELECT COUNT(DISTINCT e.id) as count');
-        const countResult = this.db.prepare(countQuery).get(...params) as { count: number } | undefined;
-        const total = countResult ? countResult.count : 0;
-
-        // Add pagination
-        if (filters.limit) {
-            query += ` LIMIT ? OFFSET ?`;
-            params.push(filters.limit, filters.offset || 0);
-        }
-
-        const rows = this.db.prepare(query).all(...params) as any[];
         return {
-            events: rows.map(row => this.mapRow(row)),
+            events: events.map((e: any) => this.mapPrismaToCalendarEvent(e)),
             total
         };
     }
 
-    findUpcoming(withinMinutes: number): CalendarEvent[] {
+    async findUpcoming(withinMinutes: number): Promise<CalendarEvent[]> {
         const now = new Date();
         const future = new Date(now.getTime() + withinMinutes * 60 * 1000);
 
-        const rows = this.db.prepare(`
-            SELECT * FROM calendar_events
-            WHERE deletedAt IS NULL
-            AND startTime >= ?
-            AND startTime <= ?
-            ORDER BY startTime ASC
-        `).all(now.toISOString(), future.toISOString()) as any[];
+        const events = await prisma.calendarEvent.findMany({
+            where: {
+                deletedAt: null,
+                startTime: {
+                    gte: now,
+                    lte: future
+                }
+            },
+            orderBy: { startTime: 'asc' }
+        });
 
-        return rows.map(row => this.mapRow(row));
+        return events.map((e: any) => this.mapPrismaToCalendarEvent(e));
     }
 
-    update(id: number, userId: number, data: Partial<Omit<CalendarEvent, 'id' | 'userId' | 'createdAt' | 'updatedAt'>>): CalendarEvent | null {
-        const existing = this.findById(id, userId);
+    async update(id: number, userId: number, data: Partial<Omit<CalendarEvent, 'id' | 'userId' | 'createdAt' | 'updatedAt'>>): Promise<CalendarEvent | null> {
+        const existing = await this.findById(id, userId);
         if (!existing) return null;
 
-        const updates: string[] = [];
-        const params: any[] = [];
+        const updateData: any = {};
+        if (data.title !== undefined) updateData.title = data.title;
+        if (data.description !== undefined) updateData.description = data.description;
+        if (data.startTime !== undefined) updateData.startTime = new Date(data.startTime);
+        if (data.endTime !== undefined) updateData.endTime = new Date(data.endTime);
+        if (data.location !== undefined) updateData.location = data.location;
+        if (data.isAllDay !== undefined) updateData.isAllDay = data.isAllDay;
 
-        if (data.title !== undefined) {
-            updates.push('title = ?');
-            params.push(data.title);
-        }
-        if (data.description !== undefined) {
-            updates.push('description = ?');
-            params.push(data.description);
-        }
-        if (data.startTime !== undefined) {
-            updates.push('startTime = ?');
-            params.push(data.startTime);
-        }
-        if (data.endTime !== undefined) {
-            updates.push('endTime = ?');
-            params.push(data.endTime);
-        }
-        if (data.location !== undefined) {
-            updates.push('location = ?');
-            params.push(data.location);
-        }
-        if (data.isAllDay !== undefined) {
-            updates.push('isAllDay = ?');
-            params.push(data.isAllDay ? 1 : 0);
-        }
+        if (Object.keys(updateData).length === 0) return existing;
 
-        if (updates.length === 0) return existing;
+        const updated = await prisma.calendarEvent.update({
+            where: { id },
+            data: updateData
+        });
 
-        updates.push('updatedAt = ?');
-        params.push(new Date().toISOString());
-        params.push(id, userId);
-
-        this.db.prepare(`
-            UPDATE calendar_events
-            SET ${updates.join(', ')}
-            WHERE id = ? AND userId = ? AND deletedAt IS NULL
-        `).run(...params);
-
-        return this.findById(id, userId);
+        return this.mapPrismaToCalendarEvent(updated);
     }
 
-    delete(id: number, userId: number): boolean {
-        const result = this.db.prepare(`
-            UPDATE calendar_events
-            SET deletedAt = ?, updatedAt = ?
-            WHERE id = ? AND userId = ? AND deletedAt IS NULL
-        `).run(new Date().toISOString(), new Date().toISOString(), id, userId);
-
-        return result.changes > 0;
+    async delete(id: number, userId: number): Promise<boolean> {
+        try {
+            await prisma.calendarEvent.update({
+                where: { id, userId },
+                data: { deletedAt: new Date() }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 
-    hardDelete(id: number, userId: number): boolean {
-        const result = this.db.prepare(`
-            DELETE FROM calendar_events
-            WHERE id = ? AND userId = ?
-        `).run(id, userId);
-
-        return result.changes > 0;
-    }
-
-    private mapRow(row: any): CalendarEvent {
-        return {
-            id: row.id,
-            userId: row.userId,
-            title: row.title,
-            description: row.description,
-            startTime: row.startTime,
-            endTime: row.endTime,
-            location: row.location,
-            isAllDay: Boolean(row.isAllDay),
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt,
-            deletedAt: row.deletedAt
-        };
+    async hardDelete(id: number, userId: number): Promise<boolean> {
+        try {
+            await prisma.calendarEvent.delete({
+                where: { id, userId }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 }

@@ -1,27 +1,8 @@
-import Database from 'better-sqlite3';
+import { prisma } from '../../../shared/prisma';
 import { BaseEntity } from '../../../shared/types';
+import { Prisma } from '@prisma/client';
 
-// ============================================
-// Call-related Interfaces
-// ============================================
-
-/**
- * Call direction - whether the call is outgoing (from CRM to contact) or incoming
- */
 export type CallDirection = 'inbound' | 'outbound';
-
-/**
- * Call status lifecycle
- * - initiated: Call has been requested but not yet connected
- * - ringing: Call is ringing on the recipient's end
- * - in-progress: Call is currently active
- * - completed: Call ended normally
- * - busy: Recipient's line was busy
- * - no-answer: Call was not answered
- * - failed: Call failed due to technical issues
- * - canceled: Call was canceled before being answered
- * - voicemail: Call went to voicemail
- */
 export type CallStatus =
     | 'initiated'
     | 'ringing'
@@ -33,9 +14,6 @@ export type CallStatus =
     | 'canceled'
     | 'voicemail';
 
-/**
- * Call disposition - outcome/result of the call for CRM tracking
- */
 export type CallDisposition =
     | 'connected'
     | 'left-voicemail'
@@ -48,52 +26,33 @@ export type CallDisposition =
     | 'follow-up-scheduled'
     | 'other';
 
-/**
- * Main Call interface
- */
 export interface Call extends BaseEntity {
-    // Twilio identifiers
-    twilioCallSid: string;           // Unique Twilio Call SID
-    twilioAccountSid: string;        // Twilio Account SID
-
-    // Call metadata
+    twilioCallSid: string;
+    twilioAccountSid: string;
     direction: CallDirection;
     status: CallStatus;
-    fromNumber: string;              // Caller phone number
-    toNumber: string;                // Recipient phone number
-
-    // Timing
-    startTime?: string;              // When the call was initiated
-    answerTime?: string;             // When the call was answered
-    endTime?: string;                // When the call ended
-    duration: number;                // Call duration in seconds
-    ringDuration?: number;           // How long the phone rang before answer
-
-    // CRM relationships
-    userId: number;                  // User who made/received the call
-    contactId?: number;              // Associated contact (if exists)
-    dealId?: number;                 // Associated deal (if any)
-    leadId?: number;                 // Associated lead (if any)
-
-    // Call outcome/notes
+    fromNumber: string;
+    toNumber: string;
+    startTime?: string;
+    answerTime?: string;
+    endTime?: string;
+    duration: number;
+    ringDuration?: number;
+    userId: number;
+    contactId?: number;
+    dealId?: number;
+    leadId?: number;
     disposition?: CallDisposition;
     notes?: string;
-    summary?: string;                // AI-generated call summary
-
-    // Queue/routing info
-    queueName?: string;              // For incoming calls routed through queue
-    assignedAgentId?: number;        // For incoming call routing
-
-    // Soft delete
+    summary?: string;
+    queueName?: string;
+    assignedAgentId?: number;
     deletedAt?: string;
 }
 
-/**
- * Call participant for multi-party calls
- */
 export interface CallParticipant extends BaseEntity {
     callId: number;
-    participantSid?: string;         // Twilio participant SID
+    participantSid?: string;
     phoneNumber: string;
     name?: string;
     role: 'caller' | 'callee' | 'transfer' | 'conference';
@@ -103,248 +62,81 @@ export interface CallParticipant extends BaseEntity {
     hold: boolean;
 }
 
-/**
- * Call recording metadata
- */
 export interface CallRecording extends BaseEntity {
     callId: number;
-    recordingSid: string;            // Twilio Recording SID
-    recordingUrl?: string;           // URL to access the recording
-    localFilePath?: string;          // Local file path if downloaded
-    duration: number;                // Recording duration in seconds
-    fileSize?: number;               // File size in bytes
-    channels: number;                // 1 = mono, 2 = dual-channel
+    recordingSid: string;
+    recordingUrl?: string;
+    localFilePath?: string;
+    duration: number;
+    fileSize?: number;
+    channels: number;
     status: 'processing' | 'completed' | 'failed' | 'deleted';
-
-    // Transcription
     transcriptionSid?: string;
     transcriptionText?: string;
     transcriptionStatus?: 'pending' | 'processing' | 'completed' | 'failed';
     transcriptionUrl?: string;
 }
 
-/**
- * Call event/log for tracking call lifecycle
- */
 export interface CallEvent extends BaseEntity {
     callId: number;
-    eventType: string;               // e.g., 'status-change', 'note-added', 'transferred'
-    eventData?: string;              // JSON string with event details
-    triggeredBy?: number;            // User ID if triggered by a user action
+    eventType: string;
+    eventData?: string;
+    triggeredBy?: number;
 }
 
-// ============================================
-// Call Model Class
-// ============================================
-
 export class CallModel {
-    private db: Database.Database;
+    constructor(_db?: any) { }
 
-    constructor(db: Database.Database) {
-        this.db = db;
-    }
-
-    /**
-     * Initialize all call-related tables with proper indexes
-     */
     initialize(): void {
-        // Main calls table
-        this.db.exec(`
-      CREATE TABLE IF NOT EXISTS calls (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        twilioCallSid TEXT UNIQUE,
-        twilioAccountSid TEXT,
-        direction TEXT NOT NULL DEFAULT 'outbound',
-        status TEXT NOT NULL DEFAULT 'initiated',
-        fromNumber TEXT NOT NULL,
-        toNumber TEXT NOT NULL,
-        startTime TEXT,
-        answerTime TEXT,
-        endTime TEXT,
-        duration INTEGER DEFAULT 0,
-        ringDuration INTEGER,
-        userId INTEGER NOT NULL,
-        contactId INTEGER,
-        dealId INTEGER,
-        leadId INTEGER,
-        disposition TEXT,
-        notes TEXT,
-        summary TEXT,
-        queueName TEXT,
-        assignedAgentId INTEGER,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL,
-        deletedAt TEXT,
-        FOREIGN KEY (userId) REFERENCES users(id),
-        FOREIGN KEY (contactId) REFERENCES persons(id),
-        FOREIGN KEY (dealId) REFERENCES deals(id),
-        FOREIGN KEY (leadId) REFERENCES leads(id),
-        FOREIGN KEY (assignedAgentId) REFERENCES users(id)
-      )
-    `);
-
-        // Call participants table (for multi-party calls)
-        this.db.exec(`
-      CREATE TABLE IF NOT EXISTS call_participants (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        callId INTEGER NOT NULL,
-        participantSid TEXT,
-        phoneNumber TEXT NOT NULL,
-        name TEXT,
-        role TEXT NOT NULL DEFAULT 'callee',
-        joinTime TEXT,
-        leaveTime TEXT,
-        muted INTEGER DEFAULT 0,
-        hold INTEGER DEFAULT 0,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL,
-        FOREIGN KEY (callId) REFERENCES calls(id) ON DELETE CASCADE
-      )
-    `);
-
-        // Call recordings table
-        this.db.exec(`
-      CREATE TABLE IF NOT EXISTS call_recordings (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        callId INTEGER NOT NULL,
-        recordingSid TEXT UNIQUE,
-        recordingUrl TEXT,
-        localFilePath TEXT,
-        duration INTEGER DEFAULT 0,
-        fileSize INTEGER,
-        channels INTEGER DEFAULT 1,
-        status TEXT NOT NULL DEFAULT 'processing',
-        transcriptionSid TEXT,
-        transcriptionText TEXT,
-        transcriptionStatus TEXT,
-        transcriptionUrl TEXT,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL,
-        FOREIGN KEY (callId) REFERENCES calls(id) ON DELETE CASCADE
-      )
-    `);
-
-        // Call events/log table
-        this.db.exec(`
-      CREATE TABLE IF NOT EXISTS call_events (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        callId INTEGER NOT NULL,
-        eventType TEXT NOT NULL,
-        eventData TEXT,
-        triggeredBy INTEGER,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL,
-        FOREIGN KEY (callId) REFERENCES calls(id) ON DELETE CASCADE,
-        FOREIGN KEY (triggeredBy) REFERENCES users(id)
-      )
-    `);
-
-        // Create indexes for performance
-        this.createIndexes();
+        // No-op with Prisma
     }
 
-    /**
-     * Create indexes for optimal query performance
-     */
-    private createIndexes(): void {
-        // Calls table indexes
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_calls_userId ON calls(userId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_calls_contactId ON calls(contactId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_calls_dealId ON calls(dealId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_calls_leadId ON calls(leadId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_calls_status ON calls(status)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_calls_direction ON calls(direction)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_calls_twilioCallSid ON calls(twilioCallSid)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_calls_createdAt ON calls(createdAt)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_calls_startTime ON calls(startTime)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_calls_deletedAt ON calls(deletedAt)');
+    async createCall(callData: Omit<Call, 'id' | 'createdAt' | 'updatedAt' | 'duration'>): Promise<Call> {
+        const call = await prisma.call.create({
+            data: {
+                twilioCallSid: callData.twilioCallSid,
+                twilioAccountSid: callData.twilioAccountSid,
+                direction: callData.direction,
+                status: callData.status,
+                fromNumber: callData.fromNumber,
+                toNumber: callData.toNumber,
+                startTime: callData.startTime ? new Date(callData.startTime) : new Date(),
+                answerTime: callData.answerTime ? new Date(callData.answerTime) : null,
+                endTime: callData.endTime ? new Date(callData.endTime) : null,
+                duration: 0,
+                ringDuration: callData.ringDuration || null,
+                userId: callData.userId,
+                contactId: callData.contactId || null,
+                dealId: callData.dealId || null,
+                leadId: callData.leadId || null,
+                disposition: callData.disposition || null,
+                notes: callData.notes || null,
+                summary: callData.summary || null,
+                queueName: callData.queueName || null,
+                assignedAgentId: callData.assignedAgentId || null
+            }
+        });
 
-        // Participants indexes
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_call_participants_callId ON call_participants(callId)');
-
-        // Recordings indexes
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_call_recordings_callId ON call_recordings(callId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_call_recordings_recordingSid ON call_recordings(recordingSid)');
-
-        // Events indexes
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_call_events_callId ON call_events(callId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_call_events_eventType ON call_events(eventType)');
+        const formatted = this.mapPrismaCallToCall(call);
+        await this.addEvent(formatted.id, 'call-initiated', JSON.stringify({ status: 'initiated', direction: callData.direction }));
+        return formatted;
     }
 
-    // ============================================
-    // Call CRUD Operations
-    // ============================================
-
-    /**
-     * Create a new call record
-     */
-    createCall(callData: Omit<Call, 'id' | 'createdAt' | 'updatedAt'>): Call {
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare(`
-      INSERT INTO calls (
-        twilioCallSid, twilioAccountSid, direction, status,
-        fromNumber, toNumber, startTime, answerTime, endTime,
-        duration, ringDuration, userId, contactId, dealId, leadId,
-        disposition, notes, summary, queueName, assignedAgentId,
-        createdAt, updatedAt
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-        const result = stmt.run(
-            callData.twilioCallSid,
-            callData.twilioAccountSid,
-            callData.direction,
-            callData.status,
-            callData.fromNumber,
-            callData.toNumber,
-            callData.startTime || now,
-            callData.answerTime,
-            callData.endTime,
-            callData.duration || 0,
-            callData.ringDuration,
-            callData.userId,
-            callData.contactId || null,
-            callData.dealId || null,
-            callData.leadId || null,
-            callData.disposition || null,
-            callData.notes || null,
-            callData.summary || null,
-            callData.queueName || null,
-            callData.assignedAgentId || null,
-            now,
-            now
-        );
-
-        const call = this.findById(result.lastInsertRowid as number);
-        if (!call) throw new Error('Failed to create call');
-
-        // Add initial event
-        this.addEvent(call.id, 'call-initiated', JSON.stringify({ status: 'initiated', direction: callData.direction }));
-
-        return call;
+    async findById(id: number): Promise<Call | null> {
+        const call = await prisma.call.findUnique({
+            where: { id, deletedAt: null }
+        });
+        return call ? this.mapPrismaCallToCall(call) : null;
     }
 
-    /**
-     * Find call by ID
-     */
-    findById(id: number): Call | undefined {
-        const stmt = this.db.prepare('SELECT * FROM calls WHERE id = ? AND deletedAt IS NULL');
-        return stmt.get(id) as Call | undefined;
+    async findByTwilioSid(twilioCallSid: string): Promise<Call | null> {
+        const call = await prisma.call.findUnique({
+            where: { twilioCallSid, deletedAt: null }
+        });
+        return call ? this.mapPrismaCallToCall(call) : null;
     }
 
-    /**
-     * Find call by Twilio Call SID
-     */
-    findByTwilioSid(twilioCallSid: string): Call | undefined {
-        const stmt = this.db.prepare('SELECT * FROM calls WHERE twilioCallSid = ? AND deletedAt IS NULL');
-        return stmt.get(twilioCallSid) as Call | undefined;
-    }
-
-    /**
-     * Get calls for a user with pagination and filters
-     */
-    findByUserId(userId: number, options: {
+    async findByUserId(userId: number, options: {
         direction?: CallDirection;
         status?: CallStatus;
         contactId?: number;
@@ -355,415 +147,403 @@ export class CallModel {
         limit?: number;
         offset?: number;
         includeDeleted?: boolean;
-    } = {}): { calls: Call[]; count: number; total: number } {
-        let query = 'SELECT * FROM calls WHERE userId = ?';
-        const params: any[] = [userId];
+    } = {}): Promise<{ calls: Call[]; count: number; total: number }> {
+        const where: any = { userId };
 
         if (!options.includeDeleted) {
-            query += ' AND deletedAt IS NULL';
+            where.deletedAt = null;
         }
 
-        if (options.direction) {
-            query += ' AND direction = ?';
-            params.push(options.direction);
-        }
+        if (options.direction) where.direction = options.direction;
+        if (options.status) where.status = options.status;
+        if (options.contactId) where.contactId = options.contactId;
+        if (options.dealId) where.dealId = options.dealId;
 
-        if (options.status) {
-            query += ' AND status = ?';
-            params.push(options.status);
-        }
-
-        if (options.contactId) {
-            query += ' AND contactId = ?';
-            params.push(options.contactId);
-        }
-
-        if (options.dealId) {
-            query += ' AND dealId = ?';
-            params.push(options.dealId);
-        }
-
-        if (options.startDate) {
-            query += ' AND createdAt >= ?';
-            params.push(options.startDate);
-        }
-
-        if (options.endDate) {
-            query += ' AND createdAt <= ?';
-            params.push(options.endDate);
+        if (options.startDate || options.endDate) {
+            where.createdAt = {};
+            if (options.startDate) where.createdAt.gte = new Date(options.startDate);
+            if (options.endDate) where.createdAt.lte = new Date(options.endDate);
         }
 
         if (options.search) {
-            query += ' AND (fromNumber LIKE ? OR toNumber LIKE ? OR notes LIKE ?)';
-            const searchTerm = `%${options.search}%`;
-            params.push(searchTerm, searchTerm, searchTerm);
+            where.OR = [
+                { fromNumber: { contains: options.search } },
+                { toNumber: { contains: options.search } },
+                { notes: { contains: options.search } }
+            ];
         }
 
-        // Get total count before pagination
-        const countQuery = query.replace('SELECT *', 'SELECT COUNT(*) as count');
-        const countResult = this.db.prepare(countQuery).get(...params) as { count: number };
-
-        // Add ordering and pagination
-        query += ' ORDER BY createdAt DESC';
-
-        if (options.limit) {
-            query += ' LIMIT ? OFFSET ?';
-            params.push(options.limit, options.offset || 0);
-        }
-
-        const calls = this.db.prepare(query).all(...params) as Call[];
-
-        // Get total for user (without filters)
-        const totalQuery = options.includeDeleted
-            ? 'SELECT COUNT(*) as total FROM calls WHERE userId = ?'
-            : 'SELECT COUNT(*) as total FROM calls WHERE userId = ? AND deletedAt IS NULL';
-        const totalResult = this.db.prepare(totalQuery).get(userId) as { total: number };
-
-        return { calls, count: countResult.count, total: totalResult.total };
-    }
-
-    /**
-     * Update call status
-     */
-    updateStatus(id: number, status: CallStatus, additionalData?: Partial<Call>): Call | null {
-        const call = this.findById(id);
-        if (!call) return null;
-
-        const now = new Date().toISOString();
-        let updates = ['status = ?', 'updatedAt = ?'];
-        const params: any[] = [status, now];
-
-        // Handle status-specific updates
-        if (status === 'in-progress' && !call.answerTime) {
-            updates.push('answerTime = ?');
-            params.push(now);
-        }
-
-        if (['completed', 'busy', 'no-answer', 'failed', 'canceled'].includes(status)) {
-            updates.push('endTime = ?');
-            params.push(now);
-
-            // Calculate duration if we have answer time
-            if (call.answerTime) {
-                const duration = Math.floor((new Date(now).getTime() - new Date(call.answerTime).getTime()) / 1000);
-                updates.push('duration = ?');
-                params.push(duration);
-            }
-        }
-
-        // Apply additional data
-        if (additionalData) {
-            if (additionalData.disposition) {
-                updates.push('disposition = ?');
-                params.push(additionalData.disposition);
-            }
-            if (additionalData.notes !== undefined) {
-                updates.push('notes = ?');
-                params.push(additionalData.notes);
-            }
-            if (additionalData.duration !== undefined) {
-                updates.push('duration = ?');
-                params.push(additionalData.duration);
-            }
-        }
-
-        params.push(id);
-
-        const stmt = this.db.prepare(`UPDATE calls SET ${updates.join(', ')} WHERE id = ?`);
-        stmt.run(...params);
-
-        // Add event
-        this.addEvent(id, 'status-change', JSON.stringify({ previousStatus: call.status, newStatus: status }));
-
-        return this.findById(id) || null;
-    }
-
-    /**
-     * Update call notes and disposition
-     */
-    updateCallDetails(id: number, userId: number, data: { notes?: string; disposition?: CallDisposition; summary?: string }): Call | null {
-        const call = this.findById(id);
-        if (!call || call.userId !== userId) return null;
-
-        const now = new Date().toISOString();
-        const updates: string[] = ['updatedAt = ?'];
-        const params: any[] = [now];
-
-        if (data.notes !== undefined) {
-            updates.push('notes = ?');
-            params.push(data.notes);
-        }
-
-        if (data.disposition !== undefined) {
-            updates.push('disposition = ?');
-            params.push(data.disposition);
-        }
-
-        if (data.summary !== undefined) {
-            updates.push('summary = ?');
-            params.push(data.summary);
-        }
-
-        params.push(id);
-
-        const stmt = this.db.prepare(`UPDATE calls SET ${updates.join(', ')} WHERE id = ?`);
-        stmt.run(...params);
-
-        // Add event
-        this.addEvent(id, 'details-updated', JSON.stringify(data), userId);
-
-        return this.findById(id) || null;
-    }
-
-    /**
-     * Soft delete a call
-     */
-    softDelete(id: number, userId: number): boolean {
-        const call = this.findById(id);
-        if (!call || call.userId !== userId) return false;
-
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare('UPDATE calls SET deletedAt = ?, updatedAt = ? WHERE id = ?');
-        const result = stmt.run(now, now, id);
-
-        return result.changes > 0;
-    }
-
-    // ============================================
-    // Call Participants Operations
-    // ============================================
-
-    addParticipant(participantData: Omit<CallParticipant, 'id' | 'createdAt' | 'updatedAt'>): CallParticipant {
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare(`
-      INSERT INTO call_participants (
-        callId, participantSid, phoneNumber, name, role,
-        joinTime, leaveTime, muted, hold, createdAt, updatedAt
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-        const result = stmt.run(
-            participantData.callId,
-            participantData.participantSid || null,
-            participantData.phoneNumber,
-            participantData.name || null,
-            participantData.role,
-            participantData.joinTime || now,
-            participantData.leaveTime || null,
-            participantData.muted ? 1 : 0,
-            participantData.hold ? 1 : 0,
-            now,
-            now
-        );
-
-        return this.getParticipantById(result.lastInsertRowid as number)!;
-    }
-
-    getParticipantById(id: number): CallParticipant | undefined {
-        const stmt = this.db.prepare('SELECT * FROM call_participants WHERE id = ?');
-        const participant = stmt.get(id) as any;
-        if (!participant) return undefined;
-        return { ...participant, muted: !!participant.muted, hold: !!participant.hold };
-    }
-
-    getParticipantsByCallId(callId: number): CallParticipant[] {
-        const stmt = this.db.prepare('SELECT * FROM call_participants WHERE callId = ?');
-        const participants = stmt.all(callId) as any[];
-        return participants.map(p => ({ ...p, muted: !!p.muted, hold: !!p.hold }));
-    }
-
-    // ============================================
-    // Call Recordings Operations
-    // ============================================
-
-    addRecording(recordingData: Omit<CallRecording, 'id' | 'createdAt' | 'updatedAt'>): CallRecording {
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare(`
-      INSERT INTO call_recordings (
-        callId, recordingSid, recordingUrl, localFilePath, duration,
-        fileSize, channels, status, transcriptionSid, transcriptionText,
-        transcriptionStatus, transcriptionUrl, createdAt, updatedAt
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-        const result = stmt.run(
-            recordingData.callId,
-            recordingData.recordingSid,
-            recordingData.recordingUrl || null,
-            recordingData.localFilePath || null,
-            recordingData.duration || 0,
-            recordingData.fileSize || null,
-            recordingData.channels || 1,
-            recordingData.status,
-            recordingData.transcriptionSid || null,
-            recordingData.transcriptionText || null,
-            recordingData.transcriptionStatus || null,
-            recordingData.transcriptionUrl || null,
-            now,
-            now
-        );
-
-        return this.getRecordingById(result.lastInsertRowid as number)!;
-    }
-
-    getRecordingById(id: number): CallRecording | undefined {
-        const stmt = this.db.prepare('SELECT * FROM call_recordings WHERE id = ?');
-        return stmt.get(id) as CallRecording | undefined;
-    }
-
-    getRecordingByCallId(callId: number): CallRecording | undefined {
-        const stmt = this.db.prepare('SELECT * FROM call_recordings WHERE callId = ?');
-        return stmt.get(callId) as CallRecording | undefined;
-    }
-
-    getRecordingByRecordingSid(recordingSid: string): CallRecording | undefined {
-        const stmt = this.db.prepare('SELECT * FROM call_recordings WHERE recordingSid = ?');
-        return stmt.get(recordingSid) as CallRecording | undefined;
-    }
-
-    updateRecording(id: number, data: Partial<CallRecording>): CallRecording | null {
-        const recording = this.getRecordingById(id);
-        if (!recording) return null;
-
-        const now = new Date().toISOString();
-        const updates: string[] = ['updatedAt = ?'];
-        const params: any[] = [now];
-
-        const allowedFields = ['recordingUrl', 'localFilePath', 'duration', 'fileSize', 'status',
-            'transcriptionSid', 'transcriptionText', 'transcriptionStatus', 'transcriptionUrl'];
-
-        for (const field of allowedFields) {
-            if ((data as any)[field] !== undefined) {
-                updates.push(`${field} = ?`);
-                params.push((data as any)[field]);
-            }
-        }
-
-        params.push(id);
-        const stmt = this.db.prepare(`UPDATE call_recordings SET ${updates.join(', ')} WHERE id = ?`);
-        stmt.run(...params);
-
-        return this.getRecordingById(id) || null;
-    }
-
-    // ============================================
-    // Call Events Operations
-    // ============================================
-
-    addEvent(callId: number, eventType: string, eventData?: string, triggeredBy?: number): CallEvent {
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare(`
-      INSERT INTO call_events (callId, eventType, eventData, triggeredBy, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-
-        const result = stmt.run(callId, eventType, eventData || null, triggeredBy || null, now, now);
-        return this.getEventById(result.lastInsertRowid as number)!;
-    }
-
-    getEventById(id: number): CallEvent | undefined {
-        const stmt = this.db.prepare('SELECT * FROM call_events WHERE id = ?');
-        return stmt.get(id) as CallEvent | undefined;
-    }
-
-    getEventsByCallId(callId: number): CallEvent[] {
-        const stmt = this.db.prepare('SELECT * FROM call_events WHERE callId = ? ORDER BY createdAt DESC');
-        return stmt.all(callId) as CallEvent[];
-    }
-
-    // ============================================
-    // Statistics and Analytics
-    // ============================================
-
-    getCallStats(userId: number, options: { startDate?: string; endDate?: string } = {}): {
-        totalCalls: number;
-        inboundCalls: number;
-        outboundCalls: number;
-        completedCalls: number;
-        missedCalls: number;
-        totalDuration: number;
-        averageDuration: number;
-    } {
-        let whereClause = 'WHERE userId = ? AND deletedAt IS NULL';
-        const params: any[] = [userId];
-
-        if (options.startDate) {
-            whereClause += ' AND createdAt >= ?';
-            params.push(options.startDate);
-        }
-
-        if (options.endDate) {
-            whereClause += ' AND createdAt <= ?';
-            params.push(options.endDate);
-        }
-
-        const stmt = this.db.prepare(`
-      SELECT
-        COUNT(*) as totalCalls,
-        SUM(CASE WHEN direction = 'inbound' THEN 1 ELSE 0 END) as inboundCalls,
-        SUM(CASE WHEN direction = 'outbound' THEN 1 ELSE 0 END) as outboundCalls,
-        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completedCalls,
-        SUM(CASE WHEN status IN ('no-answer', 'busy', 'canceled') THEN 1 ELSE 0 END) as missedCalls,
-        COALESCE(SUM(duration), 0) as totalDuration,
-        COALESCE(AVG(CASE WHEN duration > 0 THEN duration END), 0) as averageDuration
-      FROM calls ${whereClause}
-    `);
-
-        const result = stmt.get(...params) as any;
+        const [calls, count, total] = await Promise.all([
+            prisma.call.findMany({
+                where,
+                orderBy: { createdAt: 'desc' },
+                take: options.limit,
+                skip: options.offset || 0
+            }),
+            prisma.call.count({ where }),
+            prisma.call.count({ where: { userId, ...(options.includeDeleted ? {} : { deletedAt: null }) } })
+        ]);
 
         return {
-            totalCalls: result.totalCalls || 0,
-            inboundCalls: result.inboundCalls || 0,
-            outboundCalls: result.outboundCalls || 0,
-            completedCalls: result.completedCalls || 0,
-            missedCalls: result.missedCalls || 0,
-            totalDuration: result.totalDuration || 0,
-            averageDuration: Math.round(result.averageDuration || 0)
+            calls: calls.map((c: any) => this.mapPrismaCallToCall(c)),
+            count,
+            total
         };
     }
 
-    /**
-     * Get recent calls for a contact
-     */
-    getCallsByContactId(contactId: number, limit: number = 10): Call[] {
-        const stmt = this.db.prepare(`
-      SELECT * FROM calls 
-      WHERE contactId = ? AND deletedAt IS NULL 
-      ORDER BY createdAt DESC 
-      LIMIT ?
-    `);
-        return stmt.all(contactId, limit) as Call[];
+    async updateStatus(id: number, status: CallStatus, additionalData?: Partial<Call>): Promise<Call | null> {
+        const call = await this.findById(id);
+        if (!call) return null;
+
+        const now = new Date();
+        const updateData: any = {
+            status,
+            updatedAt: now
+        };
+
+        if (status === 'in-progress' && !call.answerTime) {
+            updateData.answerTime = now;
+        }
+
+        if (['completed', 'busy', 'no-answer', 'failed', 'canceled'].includes(status)) {
+            updateData.endTime = now;
+            if (call.answerTime) {
+                const duration = Math.floor((now.getTime() - new Date(call.answerTime).getTime()) / 1000);
+                updateData.duration = duration;
+            }
+        }
+
+        if (additionalData) {
+            if (additionalData.disposition) updateData.disposition = additionalData.disposition;
+            if (additionalData.notes !== undefined) updateData.notes = additionalData.notes;
+            if (additionalData.duration !== undefined) updateData.duration = additionalData.duration;
+        }
+
+        const updated = await prisma.call.update({
+            where: { id },
+            data: updateData
+        });
+
+        await this.addEvent(id, 'status-change', JSON.stringify({ previousStatus: call.status, newStatus: status }));
+
+        return this.mapPrismaCallToCall(updated);
     }
 
-    /**
-     * Get calls associated with a deal
-     */
-    getCallsByDealId(dealId: number): Call[] {
-        const stmt = this.db.prepare(`
-      SELECT * FROM calls 
-      WHERE dealId = ? AND deletedAt IS NULL 
-      ORDER BY createdAt DESC
-    `);
-        return stmt.all(dealId) as Call[];
+    async updateCallDetails(id: number, userId: number, data: { notes?: string; disposition?: CallDisposition; summary?: string }): Promise<Call | null> {
+        const call = await this.findById(id);
+        if (!call || call.userId !== userId) return null;
+
+        const updated = await prisma.call.update({
+            where: { id },
+            data: {
+                ...(data.notes !== undefined && { notes: data.notes }),
+                ...(data.disposition !== undefined && { disposition: data.disposition }),
+                ...(data.summary !== undefined && { summary: data.summary }),
+                updatedAt: new Date()
+            }
+        });
+
+        await this.addEvent(id, 'details-updated', JSON.stringify(data), userId);
+
+        return this.mapPrismaCallToCall(updated);
     }
 
-    /**
-     * Find contact by phone number (for incoming call lookup)
-     */
-    findContactByPhoneNumber(phoneNumber: string): { contactId: number; name: string; company?: string } | undefined {
-        // Try to find in persons table
-        const stmt = this.db.prepare(`
-      SELECT id as contactId, name, organisation as company 
-      FROM persons 
-      WHERE phone LIKE ? OR phone LIKE ?
-    `);
+    async softDelete(id: number, userId: number): Promise<boolean> {
+        try {
+            await prisma.call.update({
+                where: { id, userId },
+                data: { deletedAt: new Date(), updatedAt: new Date() }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
 
-        // Clean the phone number for matching
-        const cleanNumber = phoneNumber.replace(/\D/g, '');
-        const result = stmt.get(`%${cleanNumber}%`, `%${phoneNumber}%`) as any;
+    async addParticipant(participantData: Omit<CallParticipant, 'id' | 'createdAt' | 'updatedAt'>): Promise<CallParticipant> {
+        const participant = await prisma.callParticipant.create({
+            data: {
+                callId: participantData.callId,
+                participantSid: participantData.participantSid || null,
+                phoneNumber: participantData.phoneNumber,
+                name: participantData.name || null,
+                role: participantData.role,
+                joinTime: participantData.joinTime ? new Date(participantData.joinTime) : new Date(),
+                leaveTime: participantData.leaveTime ? new Date(participantData.leaveTime) : null,
+                muted: participantData.muted,
+                hold: participantData.hold
+            }
+        });
 
-        return result || undefined;
+        return this.mapPrismaParticipantToParticipant(participant);
+    }
+
+    async getParticipantById(id: number): Promise<CallParticipant | null> {
+        const participant = await prisma.callParticipant.findUnique({
+            where: { id }
+        });
+        return participant ? this.mapPrismaParticipantToParticipant(participant) : null;
+    }
+
+    async getParticipantsByCallId(callId: number): Promise<CallParticipant[]> {
+        const participants = await prisma.callParticipant.findMany({
+            where: { callId }
+        });
+        return participants.map((p: any) => this.mapPrismaParticipantToParticipant(p));
+    }
+
+    async addRecording(recordingData: Omit<CallRecording, 'id' | 'createdAt' | 'updatedAt'>): Promise<CallRecording> {
+        const recording = await prisma.callRecording.create({
+            data: {
+                callId: recordingData.callId,
+                recordingSid: recordingData.recordingSid,
+                recordingUrl: recordingData.recordingUrl || null,
+                localFilePath: recordingData.localFilePath || null,
+                duration: recordingData.duration || 0,
+                fileSize: recordingData.fileSize || null,
+                channels: recordingData.channels || 1,
+                status: recordingData.status,
+                transcriptionSid: recordingData.transcriptionSid || null,
+                transcriptionText: recordingData.transcriptionText || null,
+                transcriptionStatus: recordingData.transcriptionStatus || null,
+                transcriptionUrl: recordingData.transcriptionUrl || null
+            }
+        });
+
+        return this.mapPrismaRecordingToRecording(recording);
+    }
+
+    async getRecordingById(id: number): Promise<CallRecording | null> {
+        const recording = await prisma.callRecording.findUnique({
+            where: { id }
+        });
+        return recording ? this.mapPrismaRecordingToRecording(recording) : null;
+    }
+
+    async getRecordingByCallId(callId: number): Promise<CallRecording | null> {
+        const recording = await prisma.callRecording.findFirst({
+            where: { callId }
+        });
+        return recording ? this.mapPrismaRecordingToRecording(recording) : null;
+    }
+
+    async getRecordingByRecordingSid(recordingSid: string): Promise<CallRecording | null> {
+        const recording = await prisma.callRecording.findUnique({
+            where: { recordingSid }
+        });
+        return recording ? this.mapPrismaRecordingToRecording(recording) : null;
+    }
+
+    async updateRecording(id: number, data: Partial<CallRecording>): Promise<CallRecording | null> {
+        try {
+            const updated = await prisma.callRecording.update({
+                where: { id },
+                data: {
+                    ...(data.recordingUrl !== undefined && { recordingUrl: data.recordingUrl }),
+                    ...(data.localFilePath !== undefined && { localFilePath: data.localFilePath }),
+                    ...(data.duration !== undefined && { duration: data.duration }),
+                    ...(data.fileSize !== undefined && { fileSize: data.fileSize }),
+                    ...(data.status !== undefined && { status: data.status }),
+                    ...(data.transcriptionSid !== undefined && { transcriptionSid: data.transcriptionSid }),
+                    ...(data.transcriptionText !== undefined && { transcriptionText: data.transcriptionText }),
+                    ...(data.transcriptionStatus !== undefined && { transcriptionStatus: data.transcriptionStatus }),
+                    ...(data.transcriptionUrl !== undefined && { transcriptionUrl: data.transcriptionUrl }),
+                    updatedAt: new Date()
+                }
+            });
+            return this.mapPrismaRecordingToRecording(updated);
+        } catch (error) {
+            return null;
+        }
+    }
+
+    async addEvent(callId: number, eventType: string, eventData?: string, triggeredBy?: number): Promise<CallEvent> {
+        const event = await prisma.callEvent.create({
+            data: {
+                callId,
+                eventType,
+                eventData: eventData || null,
+                triggeredBy: triggeredBy || null
+            }
+        });
+
+        return this.mapPrismaEventToEvent(event);
+    }
+
+    async getEventById(id: number): Promise<CallEvent | null> {
+        const event = await prisma.callEvent.findUnique({
+            where: { id }
+        });
+        return event ? this.mapPrismaEventToEvent(event) : null;
+    }
+
+    async getEventsByCallId(callId: number): Promise<CallEvent[]> {
+        const events = await prisma.callEvent.findMany({
+            where: { callId },
+            orderBy: { createdAt: 'desc' }
+        });
+        return events.map((e: any) => this.mapPrismaEventToEvent(e));
+    }
+
+    async getCallStats(userId: number, options: { startDate?: string; endDate?: string } = {}): Promise<any> {
+        const where: any = { userId, deletedAt: null };
+        if (options.startDate || options.endDate) {
+            where.createdAt = {};
+            if (options.startDate) where.createdAt.gte = new Date(options.startDate);
+            if (options.endDate) where.createdAt.lte = new Date(options.endDate);
+        }
+
+        const calls = await prisma.call.findMany({ where });
+
+        const stats = {
+            totalCalls: calls.length,
+            inboundCalls: calls.filter((c: any) => c.direction === 'inbound').length,
+            outboundCalls: calls.filter((c: any) => c.direction === 'outbound').length,
+            completedCalls: calls.filter((c: any) => c.status === 'completed').length,
+            missedCalls: calls.filter((c: any) => ['no-answer', 'busy', 'canceled'].includes(c.status || '')).length,
+            totalDuration: calls.reduce((acc: any, c: any) => acc + (c.duration || 0), 0),
+            averageDuration: 0
+        };
+
+        if (stats.completedCalls > 0) {
+            stats.averageDuration = Math.round(stats.totalDuration / stats.completedCalls);
+        }
+
+        return stats;
+    }
+
+    async getCallsByContactId(contactId: number, limit: number = 10): Promise<Call[]> {
+        const calls = await prisma.call.findMany({
+            where: { contactId, deletedAt: null },
+            orderBy: { createdAt: 'desc' },
+            take: limit
+        });
+        return calls.map((c: any) => this.mapPrismaCallToCall(c));
+    }
+
+    async getCallsByDealId(dealId: number): Promise<Call[]> {
+        const calls = await prisma.call.findMany({
+            where: { dealId, deletedAt: null },
+            orderBy: { createdAt: 'desc' }
+        });
+        return calls.map((c: any) => this.mapPrismaCallToCall(c));
+    }
+
+    async findContactByPhoneNumber(phoneNumber: string): Promise<{ contactId: number; name: string; company?: string } | undefined> {
+        const person = await prisma.person.findFirst({
+            where: {
+                OR: [
+                    { phones: { path: ['$[*].number'], array_contains: phoneNumber } },
+                    { phones: { path: ['$[*].number'], string_contains: phoneNumber } }
+                ],
+                deletedAt: null
+            },
+            include: { organization: true }
+        });
+
+        // Prisma doesn't support complex JSON path queries in all DBs easily, but for PostgreSQL:
+        // Better to search in person_phones if we are using that model.
+
+        if (!person) {
+            const phoneResult = await prisma.personPhone.findFirst({
+                where: { phone: { contains: phoneNumber } },
+                include: { person: { include: { organization: true } } }
+            });
+            if (phoneResult) {
+                return {
+                    contactId: phoneResult.personId,
+                    name: `${phoneResult.person.firstName} ${phoneResult.person.lastName || ''}`.trim(),
+                    company: phoneResult.person.organization?.name
+                };
+            }
+        }
+
+        if (person) {
+            return {
+                contactId: person.id,
+                name: `${person.firstName} ${person.lastName || ''}`.trim(),
+                company: person.organization?.name
+            };
+        }
+
+        return undefined;
+    }
+
+    private mapPrismaCallToCall(c: any): Call {
+        return {
+            id: c.id,
+            twilioCallSid: c.twilioCallSid,
+            twilioAccountSid: c.twilioAccountSid,
+            direction: c.direction as CallDirection,
+            status: c.status as CallStatus,
+            fromNumber: c.fromNumber,
+            toNumber: c.toNumber,
+            startTime: c.startTime?.toISOString(),
+            answerTime: c.answerTime?.toISOString(),
+            endTime: c.endTime?.toISOString(),
+            duration: c.duration,
+            ringDuration: c.ringDuration || undefined,
+            userId: c.userId,
+            contactId: c.contactId || undefined,
+            dealId: c.dealId || undefined,
+            leadId: c.leadId || undefined,
+            disposition: c.disposition || undefined,
+            notes: c.notes || undefined,
+            summary: c.summary || undefined,
+            queueName: c.queueName || undefined,
+            assignedAgentId: c.assignedAgentId || undefined,
+            createdAt: c.createdAt.toISOString(),
+            updatedAt: c.updatedAt.toISOString(),
+            deletedAt: c.deletedAt?.toISOString() || undefined
+        };
+    }
+
+    private mapPrismaParticipantToParticipant(p: any): CallParticipant {
+        return {
+            id: p.id,
+            callId: p.callId,
+            participantSid: p.participantSid || undefined,
+            phoneNumber: p.phoneNumber,
+            name: p.name || undefined,
+            role: p.role as any,
+            joinTime: p.joinTime?.toISOString(),
+            leaveTime: p.leaveTime?.toISOString(),
+            muted: p.muted,
+            hold: p.hold,
+            createdAt: p.createdAt.toISOString(),
+            updatedAt: p.updatedAt.toISOString()
+        };
+    }
+
+    private mapPrismaRecordingToRecording(r: any): CallRecording {
+        return {
+            id: r.id,
+            callId: r.callId,
+            recordingSid: r.recordingSid,
+            recordingUrl: r.recordingUrl || undefined,
+            localFilePath: r.localFilePath || undefined,
+            duration: r.duration,
+            fileSize: r.fileSize || undefined,
+            channels: r.channels,
+            status: r.status as any,
+            transcriptionSid: r.transcriptionSid || undefined,
+            transcriptionText: r.transcriptionText || undefined,
+            transcriptionStatus: r.transcriptionStatus as any,
+            transcriptionUrl: r.transcriptionUrl || undefined,
+            createdAt: r.createdAt.toISOString(),
+            updatedAt: r.updatedAt.toISOString()
+        };
+    }
+
+    private mapPrismaEventToEvent(e: any): CallEvent {
+        return {
+            id: e.id,
+            callId: e.callId,
+            eventType: e.eventType,
+            eventData: e.eventData || undefined,
+            triggeredBy: e.triggeredBy || undefined,
+            createdAt: e.createdAt.toISOString(),
+            updatedAt: e.updatedAt.toISOString()
+        };
     }
 }

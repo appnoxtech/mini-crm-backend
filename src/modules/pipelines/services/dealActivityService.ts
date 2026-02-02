@@ -11,7 +11,7 @@ export class DealActivityService {
 
     async createActivity(dealId: number, userId: number, data: Partial<DealActivity>): Promise<DealActivity> {
         // Verify deal exists and user has access
-        const deal = this.dealModel.findById(dealId);
+        const deal = await this.dealModel.findById(dealId);
         if (!deal || deal.userId !== userId) {
             throw new Error('Deal not found');
         }
@@ -34,13 +34,13 @@ export class DealActivityService {
         limit?: number;
     } = {}): Promise<{ deal: any; activities: DealActivity[]; count: number }> {
         // Verify deal exists
-        const deal = this.dealModel.findById(dealId);
+        const deal = await this.dealModel.findById(dealId);
 
         if (!deal) {
             throw new Error('Deal not found');
         }
 
-        const activities = this.activityModel.findByDealId(dealId, filters);
+        const activities = await this.activityModel.findByDealId(dealId, filters);
 
         return {
             deal,
@@ -59,7 +59,7 @@ export class DealActivityService {
         limit?: number;
     } = {}): Promise<{ activities: DealActivity[]; count: number }> {
 
-        const activities = this.activityModel.findByDealId(dealId, filters);
+        const activities = await this.activityModel.findByDealId(dealId, filters);
 
         return {
             activities,
@@ -77,7 +77,7 @@ export class DealActivityService {
     }
 
     async updateActivity(id: number, userId: number, data: Partial<DealActivity>): Promise<DealActivity | null> {
-        const activity = this.activityModel.findById(id);
+        const activity = await this.activityModel.findById(id);
 
         if (!activity || activity.userId !== userId) {
             throw new Error('Activity not found');
@@ -87,7 +87,7 @@ export class DealActivityService {
     }
 
     async markActivityAsComplete(id: number, userId: number): Promise<DealActivity | null> {
-        const activity = this.activityModel.findById(id);
+        const activity = await this.activityModel.findById(id);
 
         if (!activity || activity.userId !== userId) {
             throw new Error('Activity not found');
@@ -102,7 +102,7 @@ export class DealActivityService {
     }
 
     async deleteActivity(id: number, userId: number): Promise<boolean> {
-        const activity = this.activityModel.findById(id);
+        const activity = await this.activityModel.findById(id);
 
         if (!activity || activity.userId !== userId) {
             throw new Error('Activity not found');
@@ -117,7 +117,7 @@ export class DealActivityService {
 
     async createFileActivity(dealId: number, userId: number, files: any[]): Promise<DealActivity> {
         // Verify deal exists and user has access
-        const deal = this.dealModel.findById(dealId);
+        const deal = await this.dealModel.findById(dealId);
         if (!deal || deal.userId !== userId) {
             throw new Error('Deal not found or access denied');
         }

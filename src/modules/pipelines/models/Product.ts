@@ -1,6 +1,5 @@
-import Database from "better-sqlite3";
+import { prisma } from "../../../shared/prisma";
 import { BaseEntity } from "../../../shared/types";
-
 
 export interface Product extends BaseEntity {
     dealId: number,
@@ -16,96 +15,94 @@ export interface Product extends BaseEntity {
 }
 
 export class ProductModel {
-    private db: Database.Database;
-
-    constructor(db: Database.Database) {
-        this.db = db;
-    }
+    constructor(_db?: any) { }
 
     initialize(): void {
-        this.db.exec(`
-            CREATE TABLE IF NOT EXISTS product (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            dealId INTEGER NOT NULL,
-            userId INTEGER NOT NULL,
-            title TEXT NOT NULL,
-            price REAL NOT NULL,
-            quantity REAL NOT NULL,
-            tax REAL NOT NULL,
-            amount REAL NOT NULL,
-            discount REAL,
-            billingDate TEXT,
-            description TEXT,
-            createdAt TEXT NOT NULL,
-            updatedAt TEXT NOT NULL,
-            FOREIGN KEY (dealId) REFERENCES deals(id) ON DELETE CASCADE
-            )
-            `);
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_product_dealId ON product(dealId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_product_title ON product(title)');
-
+        // No-op with Prisma
     }
 
-    create(data: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>): Product {
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare(`
-            INSERT INTO product (dealId, userId, title, price, quantity,tax, amount, discount, billingDate, description, createdAt, updatedAt)
-            VALUES ($dealId, $userId, $title, $price, $quantity, $tax, $amount, $discount, $billingDate, $description, $createdAt, $updatedAt)
-        `);
-
-        const insertData = {
-            ...data,
-            createdAt: now,
-            updatedAt: now
-        };
-
-        const info = stmt.run(insertData);
-        return {
-            ...insertData,
-            id: Number(info.lastInsertRowid),
-        };
-    }
-
-    findById(id: number): Product | undefined {
-        const stmt = this.db.prepare('SELECT * FROM product WHERE id = ?');
-        return stmt.get(id) as Product | undefined;
-    }
-
-    findByDealId(dealId: number): Product[] {
-        const stmt = this.db.prepare('SELECT * FROM product WHERE dealId = ?');
-        return stmt.all(dealId) as Product[];
-    }
-
-    update(id: number, data: Partial<Product>): Product | null {
-        const stmt = this.db.prepare(`
-            UPDATE product
-            SET 
-                userId = $userId,
-                title = $title,
-                price = $price,
-                quantity = $quantity,
-                tax = $tax,
-                amount = $amount,
-                discount = $discount,
-                billingDate = $billingDate,
-                description = $description,
-                updatedAt = $updatedAt
-            WHERE id = $id
-        `);
-        const info = stmt.run({
-            id,
-            ...data,
-            updatedAt: new Date().toISOString()
+    async create(data: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>): Promise<Product> {
+        const product = await prisma.product.create({
+            data: {
+                dealId: data.dealId,
+                userId: data.userId,
+                title: data.title,
+                price: data.price,
+                quantity: data.quantity,
+                tax: data.tax || 0,
+                amount: data.amount || 0,
+                discount: data.discount || null,
+                billingDate: data.billingDate || null,
+                description: data.description || null
+            }
         });
-        if (info.changes === 0) {
+
+        return this.mapPrismaProductToProduct(product);
+    }
+
+    async findById(id: number): Promise<Product | null> {
+        const product = await prisma.product.findUnique({
+            where: { id }
+        });
+        return product ? this.mapPrismaProductToProduct(product) : null;
+    }
+
+    async findByDealId(dealId: number): Promise<Product[]> {
+        const rows = await prisma.product.findMany({
+            where: { dealId }
+        });
+        return rows.map((r: any) => this.mapPrismaProductToProduct(r));
+    }
+
+    async update(id: number, data: Partial<Product>): Promise<Product | null> {
+        try {
+            const updated = await prisma.product.update({
+                where: { id },
+                data: {
+                    ...(data.userId !== undefined && { userId: data.userId }),
+                    ...(data.title !== undefined && { title: data.title }),
+                    ...(data.price !== undefined && { price: data.price }),
+                    ...(data.quantity !== undefined && { quantity: data.quantity }),
+                    ...(data.tax !== undefined && { tax: data.tax }),
+                    ...(data.amount !== undefined && { amount: data.amount }),
+                    ...(data.discount !== undefined && { discount: data.discount }),
+                    ...(data.billingDate !== undefined && { billingDate: data.billingDate }),
+                    ...(data.description !== undefined && { description: data.description }),
+                    updatedAt: new Date()
+                }
+            });
+            return this.mapPrismaProductToProduct(updated);
+        } catch (error) {
             return null;
         }
-        return this.findById(id) || null;
     }
 
-    delete(id: number): boolean {
-        const stmt = this.db.prepare('DELETE FROM product WHERE id = ?');
-        const info = stmt.run(id);
-        return info.changes > 0;
+    async delete(id: number): Promise<boolean> {
+        try {
+            await prisma.product.delete({
+                where: { id }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    private mapPrismaProductToProduct(p: any): Product {
+        return {
+            id: p.id,
+            dealId: p.dealId,
+            userId: p.userId,
+            title: p.title,
+            price: p.price,
+            quantity: p.quantity,
+            tax: p.tax,
+            amount: p.amount,
+            discount: p.discount || undefined,
+            billingDate: p.billingDate || undefined,
+            description: p.description || undefined,
+            createdAt: p.createdAt.toISOString(),
+            updatedAt: p.updatedAt.toISOString()
+        };
     }
 }

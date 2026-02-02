@@ -4,6 +4,7 @@ import { ImapFlow } from 'imapflow';
 import { google } from 'googleapis';
 import { EmailAccount, EmailAttachment } from '../models/types';
 import { ParallelImapSyncService } from './parallelImapSyncService';
+import { EmailModel } from '../models/emailModel';
 
 export class EmailConnectorService {
   private gmailClient: any;
@@ -943,16 +944,9 @@ export class EmailConnectorService {
           if (refreshResult) {
 
 
-            // Update account with new tokens
-            const { EmailService } = require('./emailService');
-            const { EmailModel } = require('../models/emailModel');
-            // Get database instance from global context or pass it properly
-            const Database = require('better-sqlite3');
-            const db = new Database('data.db', { timeout: 10000 });
-            const emailModel = new EmailModel(db);
-            const emailService = new EmailService(emailModel, this);
+            const emailModel = new EmailModel();
 
-            await emailService.updateEmailAccount(account.id, {
+            await emailModel.updateEmailAccount(account.id, {
               accessToken: refreshResult.accessToken,
               refreshToken: refreshResult.refreshToken || account.refreshToken,
               updatedAt: new Date()
@@ -1129,16 +1123,9 @@ export class EmailConnectorService {
           if (refreshResult) {
 
 
-            // Update account with new tokens
-            const { EmailService } = require('./emailService');
-            const { EmailModel } = require('../models/emailModel');
-            // Get database instance from global context or pass it properly
-            const Database = require('better-sqlite3');
-            const db = new Database('data.db', { timeout: 10000 });
-            const emailModel = new EmailModel(db);
-            const emailService = new EmailService(emailModel, this);
+            const emailModel = new EmailModel();
 
-            await emailService.updateEmailAccount(account.id, {
+            await emailModel.updateEmailAccount(account.id, {
               accessToken: refreshResult.accessToken,
               refreshToken: refreshResult.refreshToken || account.refreshToken,
               updatedAt: new Date()

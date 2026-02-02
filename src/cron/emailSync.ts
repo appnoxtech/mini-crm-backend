@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import Database from 'better-sqlite3';
+import { prisma } from '../shared/prisma';
 import { EmailModel } from '../modules/email/models/emailModel';
 import { EmailConnectorService } from '../modules/email/services/emailConnectorService';
 import { EmailService } from '../modules/email/services/emailService';
@@ -7,13 +7,9 @@ import { OAuthService } from '../modules/email/services/oauthService';
 import { RealTimeNotificationService } from '../modules/email/services/realTimeNotificationService';
 
 export function startEmailSyncJob(
-    dbPath: string,
     notificationService?: RealTimeNotificationService
 ) {
-    const db = new Database(dbPath, { timeout: 10000 });
-    db.pragma('journal_mode = WAL');
-    db.pragma('synchronous = NORMAL');
-    const emailModel = new EmailModel(db);
+    const emailModel = new EmailModel();
     const oauthService = new OAuthService();
     const connectorService = new EmailConnectorService(oauthService);
     const emailService = new EmailService(emailModel, connectorService, notificationService);
@@ -32,28 +28,28 @@ export function startEmailSyncJob(
 
         try {
             // Get all active email accounts
-            const accounts = db.prepare(`
-        SELECT * FROM email_accounts WHERE isActive = 1
-      `).all() as any[];
+            const accountRows = await prisma.emailAccount.findMany({
+                where: { isActive: true }
+            });
 
-            console.log(`Found ${accounts.length} active email accounts to sync`);
+            console.log(`Found ${accountRows.length} active email accounts to sync`);
 
-            for (const accountRow of accounts) {
+            for (const accountRow of accountRows) {
                 try {
                     // Convert row to EmailAccount format
                     const account: any = {
                         id: accountRow.id,
-                        userId: accountRow.userId,
+                        userId: accountRow.userId.toString(),
                         email: accountRow.email,
                         provider: accountRow.provider,
-                        accessToken: accountRow.accessToken,
-                        refreshToken: accountRow.refreshToken,
-                        imapConfig: accountRow.imapConfig ? JSON.parse(accountRow.imapConfig) : undefined,
-                        smtpConfig: accountRow.smtpConfig ? JSON.parse(accountRow.smtpConfig) : undefined,
-                        isActive: Boolean(accountRow.isActive),
-                        lastSyncAt: accountRow.lastSyncAt ? new Date(accountRow.lastSyncAt) : undefined,
-                        createdAt: new Date(accountRow.createdAt),
-                        updatedAt: new Date(accountRow.updatedAt),
+                        accessToken: accountRow.accessToken || undefined,
+                        refreshToken: accountRow.refreshToken || undefined,
+                        imapConfig: accountRow.imapConfig ? JSON.parse(accountRow.imapConfig as string) : undefined,
+                        smtpConfig: accountRow.smtpConfig ? JSON.parse(accountRow.smtpConfig as string) : undefined,
+                        isActive: accountRow.isActive,
+                        lastSyncAt: accountRow.lastSyncAt || undefined,
+                        createdAt: accountRow.createdAt,
+                        updatedAt: accountRow.updatedAt,
                     };
 
                     console.log(`Syncing emails for account: ${account.email} (${account.provider})`);
@@ -81,7 +77,7 @@ export function startEmailSyncJob(
     // Schedule email sync every 15 seconds
     cron.schedule('*/15 * * * * *', syncAllAccounts);
 
-    console.log('📧 Email sync cron job scheduled (every 1 seconds)');
+    console.log('📧 Email sync cron job scheduled (every 15 seconds)');
 
-    return syncAllAccounts; // also allow manual invocation
+    return syncAllAccounts;
 }

@@ -1,125 +1,14 @@
-import Database from 'better-sqlite3';
+import { prisma } from '../../../shared/prisma';
 import { ImportJob, ImportStatus, ImportEntityType, ImportFileFormat, DuplicateHandling, FieldMapping, ImportError } from '../types';
 
-interface ImportRow {
-    id: number;
-    userId: number;
-    entityType: string;
-    fileName: string;
-    fileFormat: string;
-    status: string;
-    totalRows: number;
-    processedRows: number;
-    successCount: number;
-    errorCount: number;
-    skippedCount: number;
-    duplicateHandling: string;
-    mapping: string;  // JSON string
-    filePath: string; // Temporary file path
-    createdAt: string;
-    updatedAt: string;
-    completedAt: string | null;
-    errorSummary: string | null;
-}
-
 export class ImportModel {
-    private db: Database.Database;
-
-    constructor(db: Database.Database) {
-        this.db = db;
-    }
+    constructor(_db?: any) { }
 
     initialize(): void {
-        // Create imports table
-        this.db.exec(`
-      CREATE TABLE IF NOT EXISTS imports (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        userId INTEGER NOT NULL,
-        entityType TEXT NOT NULL,
-        fileName TEXT NOT NULL,
-        fileFormat TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending',
-        totalRows INTEGER DEFAULT 0,
-        processedRows INTEGER DEFAULT 0,
-        successCount INTEGER DEFAULT 0,
-        errorCount INTEGER DEFAULT 0,
-        skippedCount INTEGER DEFAULT 0,
-        duplicateHandling TEXT DEFAULT 'skip',
-        mapping TEXT,
-        filePath TEXT,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL,
-        completedAt TEXT,
-        errorSummary TEXT,
-        FOREIGN KEY (userId) REFERENCES users(id)
-      )
-    `);
-
-        // Create import_errors table
-        this.db.exec(`
-      CREATE TABLE IF NOT EXISTS import_errors (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        importId INTEGER NOT NULL,
-        rowNumber INTEGER NOT NULL,
-        columnName TEXT,
-        value TEXT,
-        errorType TEXT NOT NULL,
-        message TEXT NOT NULL,
-        createdAt TEXT NOT NULL,
-        FOREIGN KEY (importId) REFERENCES imports(id) ON DELETE CASCADE
-      )
-    `);
-
-        // Create import_templates table
-        this.db.exec(`
-      CREATE TABLE IF NOT EXISTS import_templates (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        userId INTEGER NOT NULL,
-        name TEXT NOT NULL,
-        entityType TEXT NOT NULL,
-        mapping TEXT NOT NULL,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL,
-        FOREIGN KEY (userId) REFERENCES users(id)
-      )
-    `);
-
-        // Create import_records table to track created entries for rollback
-        this.db.exec(`
-      CREATE TABLE IF NOT EXISTS import_records (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        importId INTEGER NOT NULL,
-        entityId INTEGER NOT NULL,
-        action TEXT NOT NULL, -- 'created' or 'updated'
-        createdAt TEXT NOT NULL,
-        FOREIGN KEY (importId) REFERENCES imports(id) ON DELETE CASCADE
-      )
-    `);
-
-        // Create indexes
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_imports_userId ON imports(userId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_imports_status ON imports(status)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_imports_createdAt ON imports(createdAt)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_import_errors_importId ON import_errors(importId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_import_records_importId ON import_records(importId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_import_templates_userId ON import_templates(userId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_import_templates_entityType ON import_templates(entityType)');
-
-        // Create import_staging table
-        this.db.exec(`
-      CREATE TABLE IF NOT EXISTS import_staging (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        importId INTEGER NOT NULL,
-        data TEXT NOT NULL, -- JSON data
-        rowNumber INTEGER NOT NULL,
-        createdAt TEXT NOT NULL,
-        FOREIGN KEY (importId) REFERENCES imports(id) ON DELETE CASCADE
-      )
-    `);
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_import_staging_importId ON import_staging(importId)');
+        // No-op with Prisma
     }
 
-    private rowToImportJob(row: ImportRow): ImportJob {
+    private rowToImportJob(row: any): ImportJob {
         return {
             id: row.id,
             userId: row.userId,
@@ -133,261 +22,264 @@ export class ImportModel {
             errorCount: row.errorCount,
             skippedCount: row.skippedCount,
             duplicateHandling: row.duplicateHandling as DuplicateHandling,
-            mapping: row.mapping ? JSON.parse(row.mapping) : [],
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt,
-            completedAt: row.completedAt || undefined,
+            mapping: row.mapping ? (typeof row.mapping === 'string' ? JSON.parse(row.mapping) : row.mapping) : [],
+            createdAt: row.createdAt.toISOString(),
+            updatedAt: row.updatedAt.toISOString(),
+            completedAt: row.completedAt?.toISOString() || undefined,
             errorSummary: row.errorSummary || undefined,
         };
     }
 
-    create(data: {
+    async create(data: {
         userId: number;
         entityType: ImportEntityType;
         fileName: string;
         fileFormat: ImportFileFormat;
         totalRows: number;
         filePath: string;
-    }): ImportJob {
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare(`
-      INSERT INTO imports (userId, entityType, fileName, fileFormat, totalRows, filePath, status, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
-    `);
+    }): Promise<ImportJob> {
+        const job = await prisma.import.create({
+            data: {
+                userId: data.userId,
+                entityType: data.entityType,
+                fileName: data.fileName,
+                fileFormat: data.fileFormat,
+                totalRows: data.totalRows,
+                filePath: data.filePath,
+                status: 'pending'
+            }
+        });
 
-        const result = stmt.run(
-            data.userId,
-            data.entityType,
-            data.fileName,
-            data.fileFormat,
-            data.totalRows,
-            data.filePath,
-            now,
-            now
-        );
-
-        return this.findById(result.lastInsertRowid as number)!;
+        return this.rowToImportJob(job);
     }
 
-    findById(id: number): ImportJob | undefined {
-        const stmt = this.db.prepare('SELECT * FROM imports WHERE id = ?');
-        const row = stmt.get(id) as ImportRow | undefined;
-        return row ? this.rowToImportJob(row) : undefined;
+    async findById(id: number): Promise<ImportJob | null> {
+        const row = await prisma.import.findUnique({
+            where: { id }
+        });
+        return row ? this.rowToImportJob(row) : null;
     }
 
-    findByUserId(userId: number, limit: number = 20, offset: number = 0): { imports: ImportJob[]; count: number } {
-        const stmt = this.db.prepare(`
-      SELECT * FROM imports 
-      WHERE userId = ? 
-      ORDER BY createdAt DESC 
-      LIMIT ? OFFSET ?
-    `);
-        const rows = stmt.all(userId, limit, offset) as ImportRow[];
-
-        const countStmt = this.db.prepare('SELECT COUNT(*) as count FROM imports WHERE userId = ?');
-        const countResult = countStmt.get(userId) as { count: number };
+    async findByUserId(userId: number, limit: number = 20, offset: number = 0): Promise<{ imports: ImportJob[]; count: number }> {
+        const [rows, count] = await Promise.all([
+            prisma.import.findMany({
+                where: { userId },
+                orderBy: { createdAt: 'desc' },
+                take: limit,
+                skip: offset
+            }),
+            prisma.import.count({ where: { userId } })
+        ]);
 
         return {
-            imports: rows.map(row => this.rowToImportJob(row)),
-            count: countResult.count,
+            imports: rows.map((row: any) => this.rowToImportJob(row)),
+            count,
         };
     }
 
-    updateStatus(id: number, status: ImportStatus, errorSummary?: string): void {
-        const now = new Date().toISOString();
-        const completedAt = ['completed', 'failed', 'cancelled', 'rolled_back'].includes(status) ? now : null;
+    async updateStatus(id: number, status: ImportStatus, errorSummary?: string): Promise<void> {
+        const completedAt = ['completed', 'failed', 'cancelled', 'rolled_back'].includes(status) ? new Date() : undefined;
 
-        const stmt = this.db.prepare(`
-      UPDATE imports 
-      SET status = ?, updatedAt = ?, completedAt = COALESCE(?, completedAt), errorSummary = ?
-      WHERE id = ?
-    `);
-        stmt.run(status, now, completedAt, errorSummary || null, id);
+        await prisma.import.update({
+            where: { id },
+            data: {
+                status,
+                completedAt,
+                errorSummary: errorSummary || null
+            }
+        });
     }
 
-    updateMapping(id: number, mapping: FieldMapping[]): void {
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare(`
-      UPDATE imports SET mapping = ?, updatedAt = ? WHERE id = ?
-    `);
-        stmt.run(JSON.stringify(mapping), now, id);
+    async updateMapping(id: number, mapping: FieldMapping[]): Promise<void> {
+        await prisma.import.update({
+            where: { id },
+            data: {
+                mapping: mapping as any
+            }
+        });
     }
 
-    updateDuplicateHandling(id: number, duplicateHandling: DuplicateHandling): void {
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare(`
-      UPDATE imports SET duplicateHandling = ?, updatedAt = ? WHERE id = ?
-    `);
-        stmt.run(duplicateHandling, now, id);
+    async updateDuplicateHandling(id: number, duplicateHandling: DuplicateHandling): Promise<void> {
+        await prisma.import.update({
+            where: { id },
+            data: {
+                duplicateHandling
+            }
+        });
     }
 
-    updateProgress(id: number, processedRows: number, successCount: number, errorCount: number, skippedCount: number): void {
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare(`
-      UPDATE imports 
-      SET processedRows = ?, successCount = ?, errorCount = ?, skippedCount = ?, updatedAt = ?
-      WHERE id = ?
-    `);
-        stmt.run(processedRows, successCount, errorCount, skippedCount, now, id);
+    async updateProgress(id: number, processedRows: number, successCount: number, errorCount: number, skippedCount: number): Promise<void> {
+        await prisma.import.update({
+            where: { id },
+            data: {
+                processedRows,
+                successCount,
+                errorCount,
+                skippedCount
+            }
+        });
     }
 
-    getFilePath(id: number): string | undefined {
-        const stmt = this.db.prepare('SELECT filePath FROM imports WHERE id = ?');
-        const result = stmt.get(id) as { filePath: string } | undefined;
-        return result?.filePath;
+    async getFilePath(id: number): Promise<string | null> {
+        const result = await prisma.import.findUnique({
+            where: { id },
+            select: { filePath: true }
+        });
+        return result?.filePath || null;
     }
 
-    delete(id: number): boolean {
-        const stmt = this.db.prepare('DELETE FROM imports WHERE id = ?');
-        const result = stmt.run(id);
-        return result.changes > 0;
+    async delete(id: number): Promise<boolean> {
+        try {
+            await prisma.import.delete({
+                where: { id }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 
     // Staging methods
-    addStagedRecord(importId: number, data: any, rowNumber: number): void {
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare('INSERT INTO import_staging (importId, data, rowNumber, createdAt) VALUES (?, ?, ?, ?)');
-        stmt.run(importId, JSON.stringify(data), rowNumber, now);
+    async addStagedRecord(importId: number, data: any, rowNumber: number): Promise<void> {
+        await prisma.importStaging.create({
+            data: {
+                importId,
+                data: data as any,
+                rowNumber
+            }
+        });
     }
 
-    getStagedRecords(importId: number): { data: any; rowNumber: number }[] {
-        const stmt = this.db.prepare('SELECT data, rowNumber FROM import_staging WHERE importId = ? ORDER BY rowNumber');
-        const rows = stmt.all(importId) as { data: string; rowNumber: number }[];
-        return rows.map(row => ({
-            data: JSON.parse(row.data),
+    async getStagedRecords(importId: number): Promise<{ data: any; rowNumber: number }[]> {
+        const rows = await prisma.importStaging.findMany({
+            where: { importId },
+            orderBy: { rowNumber: 'asc' }
+        });
+
+        return rows.map((row: any) => ({
+            data: row.data,
             rowNumber: row.rowNumber,
         }));
     }
 
-    clearStagedRecords(importId: number): void {
-        this.db.prepare('DELETE FROM import_staging WHERE importId = ?').run(importId);
+    async clearStagedRecords(importId: number): Promise<void> {
+        await prisma.importStaging.deleteMany({
+            where: { importId }
+        });
     }
 
     // Import Actions tracking (for rollback)
-    addRecord(importId: number, entityId: number, action: 'created' | 'updated'): void {
-        if (action !== 'created') return; // We only strictly rollback created records for now
+    async addRecord(importId: number, entityId: number, action: 'created' | 'updated'): Promise<void> {
+        if (action !== 'created') return;
 
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare(`
-      INSERT INTO import_records (importId, entityId, action, createdAt)
-      VALUES (?, ?, ?, ?)
-    `);
-        stmt.run(importId, entityId, action, now);
+        await prisma.importRecord.create({
+            data: {
+                importId,
+                entityId,
+                action
+            }
+        });
     }
 
-    getCreatedEntityIds(importId: number): number[] {
-        const stmt = this.db.prepare(`
-      SELECT entityId FROM import_records 
-      WHERE importId = ? AND action = 'created'
-    `);
-        const rows = stmt.all(importId) as { entityId: number }[];
-        return rows.map(r => r.entityId);
+    async getCreatedEntityIds(importId: number): Promise<number[]> {
+        const rows = await prisma.importRecord.findMany({
+            where: { importId, action: 'created' },
+            select: { entityId: true }
+        });
+        return rows.map((r: any) => r.entityId);
     }
 
     // Import errors methods
-    addError(importId: number, error: ImportError): void {
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare(`
-      INSERT INTO import_errors (importId, rowNumber, columnName, value, errorType, message, createdAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-        stmt.run(
-            importId,
-            error.row,
-            error.column || null,
-            error.value ? String(error.value) : null,
-            error.errorType,
-            error.message,
-            now
-        );
-    }
-
-    addErrors(importId: number, errors: ImportError[]): void {
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare(`
-      INSERT INTO import_errors (importId, rowNumber, columnName, value, errorType, message, createdAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-
-        const insertMany = this.db.transaction((errs: ImportError[]) => {
-            for (const error of errs) {
-                stmt.run(
-                    importId,
-                    error.row,
-                    error.column || null,
-                    error.value ? String(error.value) : null,
-                    error.errorType,
-                    error.message,
-                    now
-                );
+    async addError(importId: number, error: ImportError): Promise<void> {
+        await prisma.importError.create({
+            data: {
+                importId,
+                rowNumber: error.row,
+                columnName: error.column || null,
+                value: error.value ? String(error.value) : null,
+                errorType: error.errorType,
+                message: error.message
             }
         });
-
-        insertMany(errors);
     }
 
-    getErrors(importId: number, limit: number = 100): ImportError[] {
-        const stmt = this.db.prepare(`
-      SELECT rowNumber, columnName, value, errorType, message
-      FROM import_errors 
-      WHERE importId = ? 
-      ORDER BY rowNumber 
-      LIMIT ?
-    `);
-        const rows = stmt.all(importId, limit) as any[];
+    async addErrors(importId: number, errors: ImportError[]): Promise<void> {
+        await prisma.importError.createMany({
+            data: errors.map(error => ({
+                importId,
+                rowNumber: error.row,
+                columnName: error.column || null,
+                value: error.value ? String(error.value) : null,
+                errorType: error.errorType,
+                message: error.message
+            }))
+        });
+    }
 
-        return rows.map(row => ({
+    async getErrors(importId: number, limit: number = 100): Promise<ImportError[]> {
+        const rows = await prisma.importError.findMany({
+            where: { importId },
+            orderBy: { rowNumber: 'asc' },
+            take: limit
+        });
+
+        return rows.map((row: any) => ({
             row: row.rowNumber,
             column: row.columnName || undefined,
             value: row.value || undefined,
-            errorType: row.errorType,
+            errorType: row.errorType as ImportError['errorType'],
             message: row.message,
         }));
     }
 
-    clearErrors(importId: number): void {
-        const stmt = this.db.prepare('DELETE FROM import_errors WHERE importId = ?');
-        stmt.run(importId);
+    async clearErrors(importId: number): Promise<void> {
+        await prisma.importError.deleteMany({
+            where: { importId }
+        });
     }
 
     // Template methods
-    saveTemplate(userId: number, name: string, entityType: ImportEntityType, mapping: FieldMapping[]): number {
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare(`
-      INSERT INTO import_templates (userId, name, entityType, mapping, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-        const result = stmt.run(userId, name, entityType, JSON.stringify(mapping), now, now);
-        return result.lastInsertRowid as number;
+    async saveTemplate(userId: number, name: string, entityType: ImportEntityType, mapping: FieldMapping[]): Promise<number> {
+        const template = await prisma.importTemplate.create({
+            data: {
+                userId,
+                name,
+                entityType,
+                mapping: mapping as any
+            }
+        });
+        return template.id;
     }
 
-    getTemplates(userId: number, entityType?: ImportEntityType): any[] {
-        let query = 'SELECT * FROM import_templates WHERE userId = ?';
-        const params: any[] = [userId];
-
+    async getTemplates(userId: number, entityType?: ImportEntityType): Promise<any[]> {
+        const where: any = { userId };
         if (entityType) {
-            query += ' AND entityType = ?';
-            params.push(entityType);
+            where.entityType = entityType;
         }
 
-        query += ' ORDER BY createdAt DESC';
+        const rows = await prisma.importTemplate.findMany({
+            where,
+            orderBy: { createdAt: 'desc' }
+        });
 
-        const stmt = this.db.prepare(query);
-        const rows = stmt.all(...params) as any[];
-
-        return rows.map(row => ({
+        return rows.map((row: any) => ({
             id: row.id,
             userId: row.userId,
             name: row.name,
             entityType: row.entityType,
-            mapping: JSON.parse(row.mapping),
-            createdAt: row.createdAt,
+            mapping: row.mapping,
+            createdAt: row.createdAt.toISOString(),
         }));
     }
 
-    deleteTemplate(id: number, userId: number): boolean {
-        const stmt = this.db.prepare('DELETE FROM import_templates WHERE id = ? AND userId = ?');
-        const result = stmt.run(id, userId);
-        return result.changes > 0;
+    async deleteTemplate(id: number, userId: number): Promise<boolean> {
+        try {
+            await prisma.importTemplate.delete({
+                where: { id, userId }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 }

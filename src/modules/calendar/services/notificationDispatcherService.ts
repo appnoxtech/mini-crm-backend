@@ -9,7 +9,7 @@ interface EmailService {
 }
 
 interface UserModel {
-    findById(id: number): { id: number; email: string; name: string } | null;
+    findById(id: number): Promise<{ id: number; email: string; name: string } | null | undefined>;
 }
 
 export class NotificationDispatcherService {
@@ -30,7 +30,7 @@ export class NotificationDispatcherService {
      * Process all pending notifications that are due
      */
     async processPendingNotifications(): Promise<{ processed: number; succeeded: number; failed: number }> {
-        const pending = this.notificationModel.findPending();
+        const pending = await this.notificationModel.findPending();
         let processed = 0;
         let succeeded = 0;
         let failed = 0;
@@ -42,7 +42,7 @@ export class NotificationDispatcherService {
                 succeeded++;
             } catch (error: any) {
                 console.error(`Failed to dispatch notification ${notification.id}:`, error);
-                this.notificationModel.markFailed(notification.id, error.message || 'Unknown error');
+                await this.notificationModel.markFailed(notification.id, error.message || 'Unknown error');
                 failed++;
             }
         }
@@ -54,15 +54,15 @@ export class NotificationDispatcherService {
      * Dispatch a single notification via in-app and email
      */
     private async dispatchNotification(notification: EventNotification): Promise<void> {
-        const event = this.eventModel.findById(notification.eventId);
+        const event = await this.eventModel.findById(notification.eventId);
         if (!event) {
-            this.notificationModel.markFailed(notification.id, 'Event not found');
+            await this.notificationModel.markFailed(notification.id, 'Event not found');
             return;
         }
 
-        const user = this.userModel.findById(notification.userId);
+        const user = await this.userModel.findById(notification.userId);
         if (!user) {
-            this.notificationModel.markFailed(notification.id, 'User not found');
+            await this.notificationModel.markFailed(notification.id, 'User not found');
             return;
         }
 
@@ -98,7 +98,7 @@ export class NotificationDispatcherService {
 
             // Emit to user's room (uses underscore to match realTimeNotificationService)
             this.io.to(`user_${notification.userId}`).emit('notification', payload);
-            this.notificationModel.markSent(notification.id, 'inApp');
+            await this.notificationModel.markSent(notification.id, 'inApp');
         }
     }
 
@@ -173,7 +173,7 @@ Your CRM Calendar
             try {
                 // Use Shared SystemEmailHelper
                 await SystemEmailHelper.sendViaSystemSmtp(user.email, subject, textBody, htmlBody);
-                this.notificationModel.markSent(notification.id, 'email');
+                await this.notificationModel.markSent(notification.id, 'email');
             } catch (error: any) {
                 console.error(`Failed to send email for notification ${notification.id}:`, error);
                 // Don't fail the whole notification, just log the email failure

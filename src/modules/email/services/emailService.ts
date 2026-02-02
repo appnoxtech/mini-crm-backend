@@ -898,34 +898,34 @@ export class EmailService {
   }
 
   async getEmailsForDeal(dealId: string): Promise<Email[]> {
-    return this.emailModel.getEmailsForDeal(dealId);
+    return await this.emailModel.getEmailsForDeal(dealId);
   }
 
   async getEmailAccountByUserId(userId: string): Promise<EmailAccount | null> {
-    return this.emailModel.getEmailAccountByUserId(userId);
+    return await this.emailModel.getEmailAccountByUserId(userId);
   }
 
   async getEmailAccountByEmail(email: string): Promise<EmailAccount | null> {
-    return this.emailModel.getEmailAccountByEmail(email);
+    return await this.emailModel.getEmailAccountByEmail(email);
   }
 
   async getEmailAccountById(accountId: string): Promise<EmailAccount | null> {
-    return this.emailModel.getEmailAccountById(accountId);
+    return await this.emailModel.getEmailAccountById(accountId);
   }
 
   async createEmailAccount(account: EmailAccount): Promise<EmailAccount> {
-    return this.emailModel.createEmailAccount(account);
+    return await this.emailModel.createEmailAccount(account);
   }
 
   async updateEmailAccount(
     accountId: string,
     updates: Partial<EmailAccount>
   ): Promise<void> {
-    return this.emailModel.updateEmailAccount(accountId, updates);
+    return await this.emailModel.updateEmailAccount(accountId, updates);
   }
 
   async getEmailAccounts(userId: string): Promise<EmailAccount[]> {
-    return this.emailModel.getEmailAccounts(userId);
+    return await this.emailModel.getEmailAccounts(userId);
   }
 
   // Get emails for a user with filtering options
@@ -940,17 +940,17 @@ export class EmailService {
       accountId?: string;
     } = {}
   ): Promise<{ emails: Email[]; total: number }> {
-    return this.emailModel.getEmailsForUser(userId, options);
+    return await this.emailModel.getEmailsForUser(userId, options);
   }
 
   // In EmailService
   async getAllEmails(options: { limit?: number } = {}) {
-    return this.emailModel.getAllEmails({ limit: 1000 });
+    return await this.emailModel.getAllEmails({ limit: 1000 });
   }
 
   // Get a specific email by ID
   async getEmailById(emailId: string, userId: string): Promise<Email | null> {
-    return this.emailModel.getEmailById(emailId, userId);
+    return await this.emailModel.getEmailById(emailId, userId);
   }
 
   // Mark email as read/unread
@@ -987,11 +987,11 @@ export class EmailService {
   }
 
   async archiveEmail(emailId: string, userId: string): Promise<boolean> {
-    return this.emailModel.archiveEmail(emailId, userId);
+    return await this.emailModel.archiveEmail(emailId, userId);
   }
 
   async unarchiveEmail(emailId: string, userId: string): Promise<boolean> {
-    return this.emailModel.unarchiveEmail(emailId, userId);
+    return await this.emailModel.unarchiveEmail(emailId, userId);
   }
 
   /**
@@ -1000,7 +1000,7 @@ export class EmailService {
    */
   async trashEmail(emailId: string, userId: string): Promise<boolean> {
     // 1. Update local DB immediately
-    const success = this.emailModel.trashEmail(emailId, userId);
+    const success = await this.emailModel.trashEmail(emailId, userId);
     if (!success) {
       return false;
     }
@@ -1030,7 +1030,7 @@ export class EmailService {
    */
   async restoreFromTrash(emailId: string, userId: string): Promise<boolean> {
     // 1. Update local DB immediately
-    const success = this.emailModel.restoreFromTrash(emailId, userId);
+    const success = await this.emailModel.restoreFromTrash(emailId, userId);
     if (!success) {
       return false;
     }
@@ -1116,7 +1116,7 @@ export class EmailService {
     }
 
     // 2. Delete from local DB
-    const success = this.emailModel.deleteEmailPermanently(emailId, userId);
+    const success = await this.emailModel.deleteEmailPermanently(emailId, userId);
     return success;
   }
 
@@ -1559,8 +1559,8 @@ export class EmailService {
 
       for (const folder of folders) {
         // Get unread UIDs + last 50 synced UIDs for this folder
-        const unreadUids = this.emailModel.getUnreadUids(account.id, folder.label);
-        const recentUids = this.emailModel.getRecentUids(account.id, folder.label, 50);
+        const unreadUids = await this.emailModel.getUnreadUids(account.id, folder.label);
+        const recentUids = await this.emailModel.getRecentUids(account.id, folder.label, 50);
 
         // Combine and unique UIDs
         const uidsToRefresh = Array.from(new Set([...unreadUids, ...recentUids]));

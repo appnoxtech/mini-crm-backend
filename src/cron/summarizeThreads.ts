@@ -1,13 +1,9 @@
 import cron from 'node-cron';
 import { summarizeThreadWithVLLM } from '../shared/utils/summarizer';
 import { EmailModel } from '../modules/email/models/emailModel';
-import Database from 'better-sqlite3';
 
-export function startThreadSummaryJob(dbPath: string) {
-  const db = new Database(dbPath, { timeout: 10000 });
-  db.pragma('journal_mode = WAL');
-  db.pragma('synchronous = NORMAL');
-  const emailModel = new EmailModel(db);
+export function startThreadSummaryJob() {
+  const emailModel = new EmailModel();
 
   const summarizeAll = async () => {
     console.log('🕑 Starting thread summarization...');
@@ -17,8 +13,7 @@ export function startThreadSummaryJob(dbPath: string) {
 
     for (const threadId of threads) {
       try {
-        const { emails } = await emailModel.getAllEmails({ limit: 1000 });
-        const threadEmails = emails.filter(e => e.threadId === threadId);
+        const threadEmails = await emailModel.getEmailsForThread(threadId);
         const threadText = threadEmails.map(e => `${e.from}: ${e.body}`).join('\n');
 
         // Directly call VLLM service

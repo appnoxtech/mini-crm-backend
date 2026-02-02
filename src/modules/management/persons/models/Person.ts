@@ -1,6 +1,7 @@
-import Database from 'better-sqlite3';
+import { prisma } from '../../../../shared/prisma';
 import { BaseEntity } from '../../../../shared/types';
 import { Organization } from '../../organisations/models/Organization';
+import { Prisma } from '@prisma/client';
 
 export type EmailLabel = 'work' | 'home' | 'other' | 'personal';
 export type PhoneType = 'home' | 'work' | 'mobile' | 'other';
@@ -26,19 +27,6 @@ export interface Person extends BaseEntity {
     deletedAt?: string;
 }
 
-export interface PersonRow {
-    id: number;
-    firstName: string;
-    lastName: string;
-    emails: string; // JSON string in DB
-    phones: string; // JSON string in DB
-    organizationId: number | null;
-    country: string | null;
-    createdAt: string;
-    updatedAt: string;
-    deletedAt: string | null;
-}
-
 export interface CreatePersonData {
     firstName: string;
     lastName: string;
@@ -58,367 +46,257 @@ export interface UpdatePersonData {
 }
 
 export class PersonModel {
-    private db: Database.Database;
-
-    constructor(db: Database.Database) {
-        this.db = db;
-    }
+    constructor(_db?: any) { }
 
     initialize(): void {
-        // Create table with correct column name and foreign key
-        this.db.exec(`
-      CREATE TABLE IF NOT EXISTS persons (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        firstName TEXT NOT NULL,
-        lastName TEXT,
-        emails TEXT,
-        phones TEXT,
-        organizationId INTEGER,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL,
-        deletedAt TEXT,
-        FOREIGN KEY (organizationId) REFERENCES organizations(id) ON DELETE SET NULL
-      )
-    `);
+        // No-op with Prisma
+    }
 
-        // Migration: Add country column if it doesn't exist
-        const tableInfo = this.db.prepare("PRAGMA table_info(persons)").all() as any[];
-        const hasCountry = tableInfo.some(col => col.name === 'country');
-        if (!hasCountry) {
-            try {
-                this.db.exec('ALTER TABLE persons ADD COLUMN country TEXT');
-
-            } catch (error) {
-                console.error('Error adding country column:', error);
+    async findExistingEmail(emails: string[], excludePersonId?: number): Promise<{ email: string; personId: number } | null> {
+        const result = await prisma.personEmail.findFirst({
+            where: {
+                email: { in: emails.map(e => e.toLowerCase()) },
+                person: { deletedAt: null },
+                ...(excludePersonId && { personId: { not: excludePersonId } })
             }
-        }
+        });
 
-        // Create indexes for persons table
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_firstName ON persons(firstName)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_lastName ON persons(lastName)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_organizationId ON persons(organizationId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_deletedAt ON persons(deletedAt)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_persons_country ON persons(country)');
-
-        // Create lookup tables for email and phone uniqueness checks
-        this.db.exec(`
-          CREATE TABLE IF NOT EXISTS person_emails (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            personId INTEGER NOT NULL,
-            email TEXT NOT NULL,
-            FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE
-          )
-        `);
-
-        this.db.exec(`
-          CREATE TABLE IF NOT EXISTS person_phones (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            personId INTEGER NOT NULL,
-            phone TEXT NOT NULL,
-            FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE
-          )
-        `);
-
-        // Unique indexes on lookup tables
-        this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_person_emails_unique ON person_emails(email)');
-        this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_person_phones_unique ON person_phones(phone)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_person_emails_personId ON person_emails(personId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_person_phones_personId ON person_phones(personId)');
+        return result ? { email: result.email, personId: result.personId } : null;
     }
 
-    // Check if any email already exists for another person
-    findExistingEmail(emails: string[], excludePersonId?: number): { email: string; personId: number } | undefined {
-        for (const email of emails) {
-            let query = 'SELECT pe.email, pe.personId FROM person_emails pe JOIN persons p ON pe.personId = p.id WHERE pe.email = ? AND p.deletedAt IS NULL';
-            const params: any[] = [email.toLowerCase()];
-
-            if (excludePersonId) {
-                query += ' AND pe.personId != ?';
-                params.push(excludePersonId);
+    async findExistingPhone(phones: string[], excludePersonId?: number): Promise<{ phone: string; personId: number } | null> {
+        const result = await prisma.personPhone.findFirst({
+            where: {
+                phone: { in: phones },
+                person: { deletedAt: null },
+                ...(excludePersonId && { personId: { not: excludePersonId } })
             }
+        });
 
-            const result = this.db.prepare(query).get(...params) as { email: string; personId: number } | undefined;
-            if (result) return result;
-        }
-        return undefined;
+        return result ? { phone: result.phone, personId: result.personId } : null;
     }
 
-    // Check if any phone number already exists for another person
-    findExistingPhone(phones: string[], excludePersonId?: number): { phone: string; personId: number } | undefined {
-        for (const phone of phones) {
-            let query = 'SELECT pp.phone, pp.personId FROM person_phones pp JOIN persons p ON pp.personId = p.id WHERE pp.phone = ? AND p.deletedAt IS NULL';
-            const params: any[] = [phone];
-
-            if (excludePersonId) {
-                query += ' AND pp.personId != ?';
-                params.push(excludePersonId);
+    async create(data: CreatePersonData): Promise<Person> {
+        const person = await prisma.person.create({
+            data: {
+                firstName: data.firstName,
+                lastName: data.lastName || '',
+                emails: (data.emails as any) || (Prisma as any).JsonNull,
+                phones: (data.phones as any) || (Prisma as any).JsonNull,
+                organizationId: data.organizationId || null,
+                country: data.country || null,
+                userEmails: {
+                    create: data.emails.map(e => ({ email: e.email.toLowerCase() }))
+                },
+                userPhones: {
+                    create: (data.phones || []).map(p => ({ phone: p.number }))
+                }
             }
+        });
 
-            const result = this.db.prepare(query).get(...params) as { phone: string; personId: number } | undefined;
-            if (result) return result;
-        }
-        return undefined;
+        return this.mapPrismaPersonToPerson(person);
     }
 
-    // Sync lookup tables when creating/updating a person
-    private syncEmailLookup(personId: number, emails: PersonEmail[]): void {
-        this.db.prepare('DELETE FROM person_emails WHERE personId = ?').run(personId);
-        const insertStmt = this.db.prepare('INSERT INTO person_emails (personId, email) VALUES (?, ?)');
-        for (const emailObj of emails) {
-            insertStmt.run(personId, emailObj.email.toLowerCase());
-        }
-    }
-
-    private syncPhoneLookup(personId: number, phones: PersonPhone[]): void {
-        this.db.prepare('DELETE FROM person_phones WHERE personId = ?').run(personId);
-        const insertStmt = this.db.prepare('INSERT INTO person_phones (personId, phone) VALUES (?, ?)');
-        for (const phoneObj of phones) {
-            insertStmt.run(personId, phoneObj.number);
-        }
-    }
-
-    private rowToPerson(row: PersonRow): Person {
-        return {
-            id: row.id,
-            firstName: row.firstName,
-            lastName: row.lastName,
-            emails: JSON.parse(row.emails),
-            phones: JSON.parse(row.phones),
-            organizationId: row.organizationId || undefined,
-            country: row.country || undefined,
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt,
-            deletedAt: row.deletedAt || undefined
-        };
-    }
-
-    create(data: CreatePersonData): Person {
-        return this.db.transaction(() => {
-            const now = new Date().toISOString();
-            const stmt = this.db.prepare(`
-                INSERT INTO persons (firstName, lastName, emails, phones, organizationId, country, createdAt, updatedAt)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            `);
-
-            const result = stmt.run(
-                data.firstName,
-                data.lastName || null,
-                JSON.stringify(data.emails),
-                JSON.stringify(data.phones || []),
-                data.organizationId || null,
-                data.country || null,
-                now,
-                now
-            );
-
-            const personId = result.lastInsertRowid as number;
-
-            this.syncEmailLookup(personId, data.emails);
-            if (data.phones && data.phones.length > 0) {
-                this.syncPhoneLookup(personId, data.phones);
+    async searchByPersonName(search: string): Promise<Person[]> {
+        const rows = await prisma.person.findMany({
+            where: {
+                OR: [
+                    { firstName: { contains: search, mode: 'insensitive' } },
+                    { lastName: { contains: search, mode: 'insensitive' } }
+                ],
+                deletedAt: null
             }
-
-            const person = this.findById(personId);
-            if (!person) throw new Error('Failed to create person');
-
-            return person;
-        })();
+        });
+        return rows.map((r: any) => this.mapPrismaPersonToPerson(r));
     }
 
-    searchByPersonName(search: string): Person[] {
-        const stmt = this.db.prepare(`
-      SELECT * FROM persons WHERE firstName LIKE ? OR lastName LIKE ? OR emails LIKE ? OR phones LIKE ?
-    `);
-        const rows = stmt.all(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`) as PersonRow[];
-        return rows.map(row => this.rowToPerson(row));
+    async findById(id: number, includeDeleted: boolean = false): Promise<Person | null> {
+        const person = await prisma.person.findUnique({
+            where: { id },
+            include: { organization: true }
+        });
+        if (!person || (!includeDeleted && person.deletedAt)) return null;
+        return this.mapPrismaPersonToPerson(person);
     }
 
-    findById(id: number, includeDeleted: boolean = false): Person | undefined {
-        let query = 'SELECT * FROM persons WHERE id = ?';
-        if (!includeDeleted) {
-            query += ' AND deletedAt IS NULL';
-        }
-        const stmt = this.db.prepare(query);
-        const row = stmt.get(id) as PersonRow | undefined;
-        return row ? this.rowToPerson(row) : undefined;
+    async findByEmail(email: string): Promise<Person | null> {
+        const personEmail = await prisma.personEmail.findFirst({
+            where: {
+                email: email.toLowerCase(),
+                person: { deletedAt: null }
+            },
+            include: { person: true }
+        });
+        return personEmail ? this.mapPrismaPersonToPerson(personEmail.person) : null;
     }
 
-    findByEmail(email: string): Person | undefined {
-        const query = 'SELECT p.* FROM persons p JOIN person_emails pe ON p.id = pe.personId WHERE pe.email = ? AND p.deletedAt IS NULL';
-        const stmt = this.db.prepare(query);
-        const row = stmt.get(email.toLowerCase()) as PersonRow | undefined;
-        return row ? this.rowToPerson(row) : undefined;
-    }
-
-    findAll(options: {
+    async findAll(options: {
         search?: string;
         organizationId?: number;
         limit?: number;
         offset?: number;
         includeDeleted?: boolean;
-    } = {}): { persons: Person[]; count: number } {
-        let query = 'SELECT * FROM persons WHERE 1=1';
-        const params: any[] = [];
+    } = {}): Promise<{ persons: Person[]; count: number }> {
+        const where: any = {};
 
         if (!options.includeDeleted) {
-            query += ' AND deletedAt IS NULL';
+            where.deletedAt = null;
         }
 
         if (options.organizationId) {
-            query += ' AND organizationId = ?';
-            params.push(options.organizationId);
+            where.organizationId = options.organizationId;
         }
 
         if (options.search) {
-            query += ' AND (firstName LIKE ? OR lastName LIKE ? OR emails LIKE ?)';
-            const searchTerm = `%${options.search}%`;
-            params.push(searchTerm, searchTerm, searchTerm);
+            where.OR = [
+                { firstName: { contains: options.search, mode: 'insensitive' } },
+                { lastName: { contains: options.search, mode: 'insensitive' } }
+            ];
         }
 
-        query += ' ORDER BY createdAt DESC';
-
-        if (options.limit) {
-            query += ' LIMIT ? OFFSET ?';
-            params.push(options.limit, options.offset || 0);
-        }
-
-        const rows = this.db.prepare(query).all(...params) as PersonRow[];
-        const persons = rows.map(row => this.rowToPerson(row));
-
-        // Get total count
-        let countQuery = 'SELECT COUNT(*) as count FROM persons WHERE 1=1';
-        const countParams: any[] = [];
-
-        if (!options.includeDeleted) {
-            countQuery += ' AND deletedAt IS NULL';
-        }
-
-        if (options.organizationId) {
-            countQuery += ' AND organizationId = ?';
-            countParams.push(options.organizationId);
-        }
-
-        if (options.search) {
-            countQuery += ' AND (firstName LIKE ? OR lastName LIKE ? OR emails LIKE ?)';
-            const searchTerm = `%${options.search}%`;
-            countParams.push(searchTerm, searchTerm, searchTerm);
-        }
-
-        const countResult = this.db.prepare(countQuery).get(...countParams) as { count: number };
+        const [rows, count] = await Promise.all([
+            prisma.person.findMany({
+                where,
+                orderBy: { createdAt: 'desc' },
+                take: options.limit,
+                skip: options.offset || 0,
+                include: { organization: true }
+            }),
+            prisma.person.count({ where })
+        ]);
 
         return {
-            persons,
-            count: countResult.count
+            persons: rows.map((r: any) => this.mapPrismaPersonToPerson(r)),
+            count
         };
     }
 
-    findByorganizationId(organizationId: number, includeDeleted: boolean = false): Person[] {
-        let query = 'SELECT * FROM persons WHERE organizationId = ?';
-        if (!includeDeleted) {
-            query += ' AND deletedAt IS NULL';
+    async findByorganizationId(organizationId: number, includeDeleted: boolean = false): Promise<Person[]> {
+        const rows = await prisma.person.findMany({
+            where: {
+                organizationId,
+                ...(!includeDeleted && { deletedAt: null })
+            },
+            orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
+        });
+        return rows.map((r: any) => this.mapPrismaPersonToPerson(r));
+    }
+
+    async update(id: number, data: UpdatePersonData): Promise<Person | null> {
+        try {
+            const updated = await prisma.$transaction(async (tx: any) => {
+                const updateData: any = {
+                    ...(data.firstName !== undefined && { firstName: data.firstName }),
+                    ...(data.lastName !== undefined && { lastName: data.lastName }),
+                    ...(data.emails !== undefined && { emails: data.emails as any }),
+                    ...(data.phones !== undefined && { phones: data.phones as any }),
+                    ...(data.organizationId !== undefined && { organizationId: data.organizationId }),
+                    ...(data.country !== undefined && { country: data.country }),
+                    updatedAt: new Date()
+                };
+
+                if (data.emails !== undefined) {
+                    await tx.personEmail.deleteMany({ where: { personId: id } });
+                    updateData.userEmails = {
+                        create: data.emails.map(e => ({ email: e.email.toLowerCase() }))
+                    };
+                }
+
+                if (data.phones !== undefined) {
+                    await tx.personPhone.deleteMany({ where: { personId: id } });
+                    updateData.userPhones = {
+                        create: data.phones.map(p => ({ phone: p.number }))
+                    };
+                }
+
+                return tx.person.update({
+                    where: { id },
+                    data: updateData,
+                    include: { organization: true }
+                });
+            });
+
+            return this.mapPrismaPersonToPerson(updated);
+        } catch (error) {
+            return null;
         }
-        query += ' ORDER BY lastName, firstName';
-
-        const rows = this.db.prepare(query).all(organizationId) as PersonRow[];
-        return rows.map(row => this.rowToPerson(row));
     }
 
-    update(id: number, data: UpdatePersonData): Person | null {
-        return this.db.transaction(() => {
-            const existing = this.findById(id);
-            if (!existing) return null;
-
-            const now = new Date().toISOString();
-            const updates: string[] = ['updatedAt = ?'];
-            const params: any[] = [now];
-
-            if (data.firstName !== undefined) {
-                updates.push('firstName = ?');
-                params.push(data.firstName);
-            }
-            if (data.lastName !== undefined) {
-                updates.push('lastName = ?');
-                params.push(data.lastName);
-            }
-            if (data.emails !== undefined) {
-                updates.push('emails = ?');
-                params.push(JSON.stringify(data.emails));
-            }
-            if (data.phones !== undefined) {
-                updates.push('phones = ?');
-                params.push(JSON.stringify(data.phones));
-            }
-            if (data.organizationId !== undefined) {
-                updates.push('organizationId = ?');
-                params.push(data.organizationId);
-            }
-            if (data.country !== undefined) {
-                updates.push('country = ?');
-                params.push(data.country);
-            }
-
-            params.push(id);
-
-            const stmt = this.db.prepare(`
-                UPDATE persons SET ${updates.join(', ')} WHERE id = ?
-            `);
-
-            stmt.run(...params);
-
-            if (data.emails !== undefined) {
-                this.syncEmailLookup(id, data.emails);
-            }
-            if (data.phones !== undefined) {
-                this.syncPhoneLookup(id, data.phones);
-            }
-
-            return this.findById(id) || null;
-        })();
+    async softDelete(id: number): Promise<boolean> {
+        try {
+            await prisma.$transaction([
+                prisma.personEmail.deleteMany({ where: { personId: id } }),
+                prisma.personPhone.deleteMany({ where: { personId: id } }),
+                prisma.person.update({
+                    where: { id },
+                    data: { deletedAt: new Date() }
+                })
+            ]);
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 
-    softDelete(id: number): boolean {
-        return this.db.transaction(() => {
-            const existing = this.findById(id);
-            if (!existing) return false;
+    async restore(id: number): Promise<Person | null> {
+        try {
+            const person = await prisma.$transaction(async (tx: any) => {
+                const p = await tx.person.update({
+                    where: { id },
+                    data: { deletedAt: null },
+                    include: { organization: true }
+                });
 
-            const now = new Date().toISOString();
-            const stmt = this.db.prepare(`
-                UPDATE persons SET deletedAt = ?, updatedAt = ? WHERE id = ?
-            `);
+                const emails = (p.emails as any[]) || [];
+                const phones = (p.phones as any[]) || [];
 
-            const result = stmt.run(now, now, id);
+                await tx.personEmail.createMany({
+                    data: emails.map(e => ({ personId: id, email: e.email.toLowerCase() })),
+                    skipDuplicates: true
+                });
 
-            this.db.prepare('DELETE FROM person_emails WHERE personId = ?').run(id);
-            this.db.prepare('DELETE FROM person_phones WHERE personId = ?').run(id);
+                await tx.personPhone.createMany({
+                    data: phones.map(p => ({ personId: id, phone: p.number })),
+                    skipDuplicates: true
+                });
 
-            return result.changes > 0;
-        })();
+                return p;
+            });
+
+            return this.mapPrismaPersonToPerson(person);
+        } catch (error) {
+            return null;
+        }
     }
 
-    restore(id: number): Person | null {
-        return this.db.transaction(() => {
-            const existing = this.findById(id, true);
-            if (!existing || !existing.deletedAt) return null;
-
-            const now = new Date().toISOString();
-            const stmt = this.db.prepare(`
-                UPDATE persons SET deletedAt = NULL, updatedAt = ? WHERE id = ?
-            `);
-
-            stmt.run(now, id);
-
-            this.syncEmailLookup(id, existing.emails);
-            if (existing.phones && existing.phones.length > 0) {
-                this.syncPhoneLookup(id, existing.phones);
-            }
-
-            return this.findById(id) || null;
-        })();
+    async hardDelete(id: number): Promise<boolean> {
+        try {
+            await prisma.person.delete({
+                where: { id }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 
-    hardDelete(id: number): boolean {
-        const stmt = this.db.prepare('DELETE FROM persons WHERE id = ?');
-        const result = stmt.run(id);
-        return result.changes > 0;
+    private mapPrismaPersonToPerson(p: any): Person {
+        return {
+            id: p.id,
+            firstName: p.firstName,
+            lastName: p.lastName,
+            emails: (p.emails as any[]) || [],
+            phones: (p.phones as any[]) || [],
+            organizationId: p.organizationId || undefined,
+            organization: p.organization ? {
+                id: p.organization.id,
+                name: p.organization.name,
+                // map other fields if needed
+            } as any : undefined,
+            country: p.country || undefined,
+            createdAt: p.createdAt.toISOString(),
+            updatedAt: p.updatedAt.toISOString(),
+            deletedAt: p.deletedAt?.toISOString() || undefined
+        };
     }
 }

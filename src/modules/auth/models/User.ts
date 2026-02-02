@@ -1,7 +1,5 @@
-import Database from 'better-sqlite3';
 import { User, AuthUser } from '../../../shared/types';
-import { profile } from 'console';
-
+import { prisma } from '../../../shared/prisma';
 
 type LoginUserResponse = {
   id: number;
@@ -18,96 +16,59 @@ type LoginUserResponse = {
   role: string | null;
 };
 
-
 export class UserModel {
-  private db: Database.Database;
+  // We no longer need the db instance in constructor as we use the global prisma client
+  constructor(_db?: any) { }
 
-  constructor(db: Database.Database) {
-    this.db = db;
-  }
+  // initialize() is no longer needed with Prisma as we use migrations
+  initialize(): void { }
 
-  initialize(): void {
-    // Create users table
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        email TEXT UNIQUE NOT NULL,
-        name TEXT NOT NULL,
-        passwordHash TEXT NOT NULL,
-        profileImg TEXT,
-        phone TEXT,
-        role TEXT DEFAULT user,
-        dateFormat TEXT,
-        timezone TEXT,
-        language TEXT,
-        defaultCurrency TEXT,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL
-      )
-    `);
-
-    // Add columns if they don't exist (handle migration for existing tables)
-    const columns = [
-      { name: 'profileImg', type: 'TEXT' },
-      { name: 'phone', type: 'TEXT' },
-      { name: 'role', type: 'TEXT' },
-      { name: 'dateFormat', type: 'TEXT' },
-      { name: 'timezone', type: 'TEXT' },
-      { name: 'language', type: 'TEXT' },
-      { name: 'defaultCurrency', type: 'TEXT' }
-    ];
-
-    columns.forEach(col => {
-      try {
-        this.db.exec(`ALTER TABLE users ADD COLUMN ${col.name} ${col.type}`);
-      } catch (e) {
-        // Column probably already exists or table doesn't exist yet (handled by CREATE TABLE)
+  async createUser(email: string, name: string, passwordHash: string, role: string): Promise<User> {
+    const user = await prisma.user.create({
+      data: {
+        email: email.toLowerCase(),
+        name,
+        passwordHash,
+        role,
       }
     });
 
-    // Create indexes
-    this.db.exec('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)');
+    return {
+      ...user,
+      createdAt: user.createdAt.toISOString(),
+      updatedAt: user.updatedAt.toISOString(),
+    } as unknown as User;
   }
 
-  createUser(email: string, name: string, passwordHash: string, role: string): User {
-    const now = new Date().toISOString();
-    const stmt = this.db.prepare(`
-      INSERT INTO users (email, name, passwordHash, role, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-
-    const result = stmt.run(email.toLowerCase(), name, passwordHash, role, now, now);
+  async findByEmail(email: string): Promise<User | undefined> {
+    const user = await prisma.user.findUnique({
+      where: { email: email.toLowerCase() }
+    });
+    if (!user) return undefined;
 
     return {
-      id: result.lastInsertRowid as number,
-      email: email.toLowerCase(),
-      name,
-      passwordHash,
-      role,
-      createdAt: now,
-      updatedAt: now
-    };
+      ...user,
+      createdAt: user.createdAt.toISOString(),
+      updatedAt: user.updatedAt.toISOString(),
+    } as unknown as User;
   }
 
-  findByEmail(email: string): User | undefined {
-    const stmt = this.db.prepare('SELECT * FROM users WHERE email = ?');
-    return stmt.get(email.toLowerCase()) as User | undefined;
+  async findById(id: number): Promise<User | undefined> {
+    const user = await prisma.user.findUnique({
+      where: { id }
+    });
+    if (!user) return undefined;
+
+    return {
+      ...user,
+      createdAt: user.createdAt.toISOString(),
+      updatedAt: user.updatedAt.toISOString(),
+    } as unknown as User;
   }
 
-  findById(id: number): User | undefined {
-    const stmt = this.db.prepare('SELECT * FROM users WHERE id = ?');
-    return stmt.get(id) as User | undefined;
-  }
-
-  updateUser(id: number, updates: Partial<User>): AuthUser | null {
+  async updateUser(id: number, updates: Partial<User>): Promise<AuthUser | null> {
     try {
-      const user = this.findById(id);
-      if (!user) return null;
-
-      const now = new Date().toISOString();
-      const fields: string[] = [];
-      const values: any[] = [];
-
+      const data: any = {};
       const allowedUpdates: (keyof User)[] = [
         'name', 'email', 'profileImg', 'phone', 'dateFormat',
         'timezone', 'language', 'defaultCurrency'
@@ -115,75 +76,85 @@ export class UserModel {
 
       allowedUpdates.forEach(key => {
         if (updates[key] !== undefined) {
-          fields.push(`${key} = ?`);
-          values.push(key === 'email' ? (updates[key] as string).toLowerCase() : updates[key]);
+          data[key] = key === 'email' ? (updates[key] as string).toLowerCase() : updates[key];
         }
       });
 
-      if (fields.length === 0) return null;
+      if (Object.keys(data).length === 0) return null;
 
-      fields.push('updatedAt = ?');
-      values.push(now);
-      values.push(id);
-
-      const stmt = this.db.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`);
-      stmt.run(...values);
-
-      const updatedUser = this.findById(id);
-      if (!updatedUser) return null;
+      const updatedUser = await prisma.user.update({
+        where: { id },
+        data
+      });
 
       const { passwordHash, ...safeUser } = updatedUser;
-      return { ...safeUser, profileImg: JSON.parse(safeUser.profileImg || '[]') };
+      return {
+        ...safeUser,
+        profileImg: safeUser.profileImg as any,
+        createdAt: safeUser.createdAt.toISOString(),
+        updatedAt: safeUser.updatedAt.toISOString(),
+      } as unknown as AuthUser;
     } catch (error) {
       console.error('Error updating user:', error);
       return null;
     }
   }
 
-  getProfile(id: number): AuthUser | null {
-    const user = this.findById(id);
+  async getProfile(id: number): Promise<AuthUser | null> {
+    const user = await prisma.user.findUnique({
+      where: { id }
+    });
     if (!user) return null;
+
     const { passwordHash, ...profile } = user;
-    return { ...profile, profileImg: JSON.parse(profile?.profileImg || '[]') };
+    return {
+      ...profile,
+      profileImg: profile.profileImg as any,
+      createdAt: profile.createdAt.toISOString(),
+      updatedAt: profile.updatedAt.toISOString(),
+    } as unknown as AuthUser;
   }
 
-  updatePassword(id: number, passwordHash: string): boolean {
+  async updatePassword(id: number, passwordHash: string): Promise<boolean> {
     try {
-      const now = new Date().toISOString();
-      const stmt = this.db.prepare('UPDATE users SET passwordHash = ?, updatedAt = ? WHERE id = ?');
-      const result = stmt.run(passwordHash, now, id);
-      return result.changes > 0;
+      await prisma.user.update({
+        where: { id },
+        data: { passwordHash }
+      });
+      return true;
     } catch (error) {
       console.error('Error updating password:', error);
       return false;
     }
   }
 
-  updateAccountRole(id: number, role: string): boolean {
+  async updateAccountRole(id: number, role: string): Promise<boolean> {
     try {
-      const now = new Date().toISOString();
-      const stmt = this.db.prepare('UPDATE users SET role = ?, updatedAt = ? WHERE id = ?');
-      const result = stmt.run(role, now, id);
-      return result.changes > 0;
+      await prisma.user.update({
+        where: { id },
+        data: { role }
+      });
+      return true;
     } catch (error) {
       console.error('Error updating account role:', error);
       return false;
     }
   }
 
-  searchByPersonName(search: string): LoginUserResponse[] {
-    const stmt = this.db.prepare(`
-    SELECT * FROM users
-    WHERE name LIKE ? OR email LIKE ?
-  `);
+  async searchByPersonName(search: string): Promise<LoginUserResponse[]> {
+    const users = await prisma.user.findMany({
+      where: {
+        OR: [
+          { name: { contains: search, mode: 'insensitive' } },
+          { email: { contains: search, mode: 'insensitive' } }
+        ]
+      }
+    });
 
-    const rows = stmt.all(`%${search}%`, `%${search}%`) as User[];
-
-    return rows.map(user => this.mapToLoginUser(user));
+    return users.map((user: any) => this.mapToLoginUser(user));
   }
 
-
-  private mapToLoginUser(user: User): LoginUserResponse {
+  private mapToLoginUser(user: any): LoginUserResponse {
     return {
       id: user.id,
       email: user.email,
@@ -194,12 +165,9 @@ export class UserModel {
       timezone: user.timezone ?? null,
       language: user.language ?? null,
       defaultCurrency: user.defaultCurrency ?? null,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
+      createdAt: user.createdAt.toISOString(),
+      updatedAt: user.updatedAt.toISOString(),
       role: user.role ?? null,
     };
   }
-
-
 }
-

@@ -1,5 +1,6 @@
-import Database from 'better-sqlite3';
+import { prisma } from '../../../shared/prisma';
 import { BaseEntity } from '../../../shared/types';
+import { Prisma } from '@prisma/client';
 
 export interface Pipeline extends BaseEntity {
     name: string;
@@ -21,303 +22,255 @@ type searchResult = {
 }
 
 export class PipelineModel {
-    private db: Database.Database;
-
-    constructor(db: Database.Database) {
-        this.db = db;
-    }
+    constructor(_db?: any) { }
 
     initialize(): void {
-        this.db.exec(`
-      CREATE TABLE IF NOT EXISTS pipelines (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        description TEXT,
-        userId INTEGER NOT NULL,
-        isDefault BOOLEAN DEFAULT 0,
-        isActive BOOLEAN DEFAULT 1,
-        dealRotting BOOLEAN DEFAULT 0,
-        rottenDays INTEGER DEFAULT 30,
-        ownerIds TEXT,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL,
-        FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
-      )
-    `);
-
-
-        const columnsToAdd = [
-            { name: 'ownerIds', definition: 'TEXT' }
-        ];
-
-        for (const column of columnsToAdd) {
-            try {
-                this.db.exec(`ALTER TABLE pipelines ADD COLUMN ${column.name} ${column.definition}`);
-
-            } catch (error) {
-                // Column already exists, ignore error
-            }
-        }
-
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_pipelines_userId ON pipelines(userId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_pipelines_isActive ON pipelines(isActive)');
+        // No-op with Prisma
     }
 
-    create(data: Omit<Pipeline, 'id' | 'createdAt' | 'updatedAt' | 'ownerIds'> & { ownerIds: number[] }): Pipeline {
-        const now = new Date().toISOString();
-
+    async create(data: Omit<Pipeline, 'id' | 'createdAt' | 'updatedAt' | 'ownerIds'> & { ownerIds: number[] }): Promise<Pipeline> {
         // If this is set as default, unset other defaults for these users
         if (data.isDefault) {
-            // Unset for any user who is an owner of this pipeline (approximation since we don't have a reliable per-user default table yet, keeping current logic but scoped to these owners)
-            const placeholders = data.ownerIds.map(() => '?').join(',');
-            this.db.prepare(`UPDATE pipelines SET isDefault = 0 WHERE EXISTS (SELECT 1 FROM json_each(ownerIds) WHERE json_each.value IN (${placeholders}))`).run(...data.ownerIds);
+            // Unset for any user who is an owner of this pipeline
+            await prisma.pipeline.updateMany({
+                where: {
+                    ownerIds: {
+                        path: ['$'],
+                        array_contains: data.ownerIds
+                    }
+                },
+                data: {
+                    isDefault: false
+                }
+            });
         }
 
-        const stmt = this.db.prepare(`
-      INSERT INTO pipelines (name, description, userId, isDefault, isActive, dealRotting, rottenDays, ownerIds, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+        const pipeline = await prisma.pipeline.create({
+            data: {
+                name: data.name,
+                description: data.description || null,
+                userId: data.ownerIds[0] || 0,
+                isDefault: data.isDefault,
+                isActive: data.isActive,
+                dealRotting: data.dealRotting,
+                rottenDays: data.rottenDays,
+                ownerIds: data.ownerIds as any
+            }
+        });
 
-        const result = stmt.run(
-            data.name,
-            data.description || null,
-            data.ownerIds[0] || 0, // Keep userId for schema compatibility, use first owner
-            data.isDefault ? 1 : 0,
-            data.isActive ? 1 : 0,
-            data.dealRotting ? 1 : 0,
-            data.rottenDays,
-            JSON.stringify(data.ownerIds),
-            now,
-            now
-        );
-
-        return this.findById(result.lastInsertRowid as number, data.ownerIds[0] || 0)!;
+        return this.mapPrismaPipelineToPipeline(pipeline);
     }
 
+    async findAccessiblePipelines(userId: number): Promise<Pipeline[]> {
+        const rows = await prisma.pipeline.findMany({
+            where: {
+                OR: [
+                    { userId },
+                    {
+                        ownerIds: {
+                            array_contains: userId
+                        }
+                    }
+                ]
+            }
+        });
 
-    findAccessiblePipelines(userId: number): Pipeline[] {
-        const rows = this.db.prepare(`
-        SELECT * FROM pipelines
-        WHERE userId = ? OR EXISTS (
-            SELECT 1 FROM json_each(ownerIds)
-            WHERE json_each.value = ?
-        )
-    `).all(userId, userId) as any[];
-
-        return rows.map(r => ({
-            ...r,
-            isDefault: Boolean(r.isDefault),
-            isActive: Boolean(r.isActive),
-            dealRotting: Boolean(r.dealRotting),
-            ownerIds: r.ownerIds ? JSON.parse(r.ownerIds) : []
-        }));
+        return rows.map((r: any) => this.mapPrismaPipelineToPipeline(r));
     }
 
-    findById(pipelineId: number, userId: number): Pipeline | undefined {
-        const stmt = this.db.prepare(`
-        SELECT * FROM pipelines
-        WHERE id = ?
-    `);
+    async findById(pipelineId: number, userId: number): Promise<Pipeline | null> {
+        const result = await prisma.pipeline.findUnique({
+            where: { id: pipelineId }
+        });
 
-        const result = stmt.get(pipelineId) as any;
-        if (!result) return undefined;
+        if (!result) return null;
 
-        const ownerIds = result.ownerIds ? JSON.parse(result.ownerIds) : [];
-        if (result.userId !== userId && !ownerIds.includes(userId)) return undefined;
+        const ownerIds = (result.ownerIds as number[]) || [];
+        if (result.userId !== userId && !ownerIds.includes(userId)) return null;
 
-        return {
-            ...result,
-            isDefault: Boolean(result.isDefault),
-            isActive: Boolean(result.isActive),
-            dealRotting: Boolean(result.dealRotting),
-            ownerIds
-        };
+        return this.mapPrismaPipelineToPipeline(result);
     }
 
+    async canUserAccessPipeline(pipelineId: number, userId: number): Promise<boolean> {
+        const pipeline = await prisma.pipeline.findUnique({
+            where: { id: pipelineId },
+            select: { ownerIds: true, userId: true }
+        });
 
-    canUserAccessPipeline(pipelineId: number, userId: number): boolean {
-        const pipeline = this.db
-            .prepare(`SELECT ownerIds FROM pipelines WHERE id = ?`)
-            .get(pipelineId) as any;
+        if (!pipeline) return false;
 
-        if (!pipeline?.ownerIds) return false;
-
-        const ownerIds = JSON.parse(pipeline.ownerIds);
-        return ownerIds.includes(userId);
+        const ownerIds = (pipeline.ownerIds as number[]) || [];
+        return pipeline.userId === userId || ownerIds.includes(userId);
     }
 
-    addOwnersToPipeline(pipelineId: number, dealOwnerIds: number[]) {
-        const pipeline = this.db
-            .prepare(`SELECT ownerIds FROM pipelines WHERE id = ?`)
-            .get(pipelineId) as any;
+    async addOwnersToPipeline(pipelineId: number, dealOwnerIds: number[]): Promise<void> {
+        const pipeline = await prisma.pipeline.findUnique({
+            where: { id: pipelineId },
+            select: { ownerIds: true }
+        });
 
-        const existingOwners = pipeline?.ownerIds
-            ? JSON.parse(pipeline.ownerIds)
-            : [];
+        const existingOwners = (pipeline?.ownerIds as number[]) || [];
+        const mergedOwners = Array.from(new Set([...existingOwners, ...dealOwnerIds]));
 
-        const mergedOwners = Array.from(
-            new Set([...existingOwners, ...dealOwnerIds])
-        );
-
-        this.db.prepare(`
-            UPDATE pipelines
-            SET ownerIds = ?, updatedAt = ?
-            WHERE id = ?
-        `).run(
-            JSON.stringify(mergedOwners),
-            new Date().toISOString(),
-            pipelineId
-        );
+        await prisma.pipeline.update({
+            where: { id: pipelineId },
+            data: {
+                ownerIds: mergedOwners as any,
+                updatedAt: new Date()
+            }
+        });
     }
 
-    recalculatePipelineOwners(pipelineId: number) {
-        const deals = this.db.prepare(`
-        SELECT ownerIds
-        FROM deals
-        WHERE pipelineId = ? AND deletedAt IS NULL
-    `).all(pipelineId) as any[];
+    async recalculatePipelineOwners(pipelineId: number): Promise<void> {
+        const deals = await prisma.deal.findMany({
+            where: { pipelineId, deletedAt: null },
+            select: { ownerIds: true }
+        });
 
         const ownerSet = new Set<number>();
-
         for (const deal of deals) {
             if (!deal.ownerIds) continue;
-            JSON.parse(deal.ownerIds).forEach((id: number) =>
-                ownerSet.add(id)
-            );
+            (deal.ownerIds as number[]).forEach(id => ownerSet.add(id));
         }
 
-        this.db.prepare(`
-        UPDATE pipelines
-        SET ownerIds = ?, updatedAt = ?
-        WHERE id = ?
-    `).run(
-            JSON.stringify([...ownerSet]),
-            new Date().toISOString(),
-            pipelineId
-        );
+        await prisma.pipeline.update({
+            where: { id: pipelineId },
+            data: {
+                ownerIds: Array.from(ownerSet) as any,
+                updatedAt: new Date()
+            }
+        });
     }
 
+    async searchByPipelineName(name: string): Promise<searchResult[]> {
+        const results = await prisma.pipeline.findMany({
+            where: {
+                name: { contains: name, mode: 'insensitive' }
+            }
+        });
 
-
-
-    searchByPipelineName(name: string): searchResult[] {
-        const stmt = this.db.prepare('SELECT * FROM pipelines WHERE name LIKE ?');
-        const results = stmt.all(name) as any[];
-        return results.map(r => ({
-            ...r,
-            isDefault: Boolean(r.isDefault),
-            isActive: Boolean(r.isActive),
-            dealRotting: Boolean(r.dealRotting)
+        return results.map((r: any) => ({
+            id: r.id,
+            name: r.name,
+            description: r.description || undefined,
+            isDefault: r.isDefault,
+            isActive: r.isActive
         }));
     }
 
-    findByUserId(userId: number, includeInactive: boolean = false): Pipeline[] {
-        return this.findAccessiblePipelines(userId).filter(p => includeInactive || p.isActive);
+    async findByUserId(userId: number, includeInactive: boolean = false): Promise<Pipeline[]> {
+        const pipelines = await this.findAccessiblePipelines(userId);
+        return pipelines.filter(p => includeInactive || p.isActive);
     }
 
-    update(id: number, userId: number, data: Partial<Omit<Pipeline, 'id' | 'createdAt' | 'updatedAt' | 'ownerIds'>>): Pipeline | null {
-        const pipeline = this.findById(id, userId);
-        if (!pipeline) {
-            return null;
-        }
+    async update(id: number, userId: number, data: Partial<Omit<Pipeline, 'id' | 'createdAt' | 'updatedAt' | 'ownerIds'>>): Promise<Pipeline | null> {
+        const pipeline = await this.findById(id, userId);
+        if (!pipeline) return null;
 
-        const now = new Date().toISOString();
-        const updates: string[] = [];
-        const values: any[] = [];
+        const updateData: any = {};
 
-        if (data.name !== undefined) {
-            updates.push('name = ?');
-            values.push(data.name);
-        }
-        if (data.description !== undefined) {
-            updates.push('description = ?');
-            values.push(data.description);
-        }
+        if (data.name !== undefined) updateData.name = data.name;
+        if (data.description !== undefined) updateData.description = data.description;
         if (data.isDefault !== undefined) {
             if (data.isDefault) {
-                const placeholders = pipeline.ownerIds.map(() => '?').join(',');
-                this.db.prepare(`UPDATE pipelines SET isDefault = 0 WHERE EXISTS (SELECT 1 FROM json_each(ownerIds) WHERE json_each.value IN (${placeholders}))`).run(...pipeline.ownerIds);
+                await prisma.pipeline.updateMany({
+                    where: {
+                        ownerIds: {
+                            array_contains: pipeline.ownerIds
+                        }
+                    },
+                    data: {
+                        isDefault: false
+                    }
+                });
             }
-            updates.push('isDefault = ?');
-            values.push(data.isDefault ? 1 : 0);
+            updateData.isDefault = data.isDefault;
         }
-        if (data.isActive !== undefined) {
-            updates.push('isActive = ?');
-            values.push(data.isActive ? 1 : 0);
-        }
-        if (data.dealRotting !== undefined) {
-            updates.push('dealRotting = ?');
-            values.push(data.dealRotting ? 1 : 0);
-        }
-        if (data.rottenDays !== undefined) {
-            updates.push('rottenDays = ?');
-            values.push(data.rottenDays);
-        }
+        if (data.isActive !== undefined) updateData.isActive = data.isActive;
+        if (data.dealRotting !== undefined) updateData.dealRotting = data.dealRotting;
+        if (data.rottenDays !== undefined) updateData.rottenDays = data.rottenDays;
 
-        if (updates.length === 0) {
-            return pipeline;
-        }
+        if (Object.keys(updateData).length === 0) return pipeline;
 
-        updates.push('updatedAt = ?');
-        values.push(now);
-        values.push(id);
+        const updated = await prisma.pipeline.update({
+            where: { id },
+            data: updateData
+        });
 
-        const stmt = this.db.prepare(`
-      UPDATE pipelines 
-      SET ${updates.join(', ')}
-      WHERE id = ?
-    `);
-
-        stmt.run(...values);
-        return this.findById(id, userId) || null;
+        return this.mapPrismaPipelineToPipeline(updated);
     }
 
-    delete(id: number, userId: number): boolean {
-        const pipeline = this.findById(id, userId);
-        if (!pipeline) {
-            return false;
-        }
+    async delete(id: number, userId: number): Promise<boolean> {
+        const pipeline = await this.findById(id, userId);
+        if (!pipeline) return false;
 
-        // Check if pipeline has deals
-        const dealCount = this.db.prepare('SELECT COUNT(*) as count FROM deals WHERE pipelineId = ? AND deletedAt IS NULL').get(id) as { count: number };
-        if (dealCount.count > 0) {
+        const dealCount = await prisma.deal.count({
+            where: { pipelineId: id, deletedAt: null }
+        });
+        if (dealCount > 0) {
             throw new Error('Cannot delete pipeline with existing deals');
         }
 
-        const stmt = this.db.prepare('DELETE FROM pipelines WHERE id = ?');
-        const result = stmt.run(id);
-        return result.changes > 0;
+        await prisma.pipeline.delete({
+            where: { id }
+        });
+        return true;
     }
 
-    getStats(pipelineId: number): {
+    async getStats(pipelineId: number): Promise<{
         totalDeals: number;
         totalValue: number;
         wonDeals: number;
         wonValue: number;
         lostDeals: number;
         lostValue: number;
-    } {
-        const stmt = this.db.prepare(`
-      SELECT 
-        COUNT(*) as totalDeals,
-        SUM(CASE WHEN value IS NOT NULL THEN value ELSE 0 END) as totalValue,
-        SUM(CASE WHEN status = 'won' THEN 1 ELSE 0 END) as wonDeals,
-        SUM(CASE WHEN status = 'won' AND value IS NOT NULL THEN value ELSE 0 END) as wonValue,
-        SUM(CASE WHEN status = 'lost' THEN 1 ELSE 0 END) as lostDeals,
-        SUM(CASE WHEN status = 'lost' AND value IS NOT NULL THEN value ELSE 0 END) as lostValue
-      FROM deals 
-      WHERE pipelineId = ?
-    `);
+    }> {
+        const stats = await prisma.deal.groupBy({
+            by: ['status'],
+            where: { pipelineId, deletedAt: null },
+            _count: { _all: true },
+            _sum: { value: true }
+        });
 
-        const result = stmt.get(pipelineId) as any;
+        const result = {
+            totalDeals: 0,
+            totalValue: 0,
+            wonDeals: 0,
+            wonValue: 0,
+            lostDeals: 0,
+            lostValue: 0
+        };
 
+        stats.forEach((s: any) => {
+            const count = s._count._all;
+            const sum = s._sum.value || 0;
+            result.totalDeals += count;
+            result.totalValue += sum;
+            if (s.status === 'won') {
+                result.wonDeals = count;
+                result.wonValue = sum;
+            } else if (s.status === 'lost') {
+                result.lostDeals = count;
+                result.lostValue = sum;
+            }
+        });
+
+        return result;
+    }
+
+    private mapPrismaPipelineToPipeline(p: any): Pipeline {
         return {
-            totalDeals: result.totalDeals || 0,
-            totalValue: result.totalValue || 0,
-            wonDeals: result.wonDeals || 0,
-            wonValue: result.wonValue || 0,
-            lostDeals: result.lostDeals || 0,
-            lostValue: result.lostValue || 0
+            id: p.id,
+            name: p.name,
+            description: p.description || undefined,
+            userId: p.userId,
+            isDefault: p.isDefault,
+            isActive: p.isActive,
+            dealRotting: p.dealRotting,
+            rottenDays: p.rottenDays,
+            ownerIds: (p.ownerIds as number[]) || [],
+            createdAt: p.createdAt.toISOString(),
+            updatedAt: p.updatedAt.toISOString()
         };
     }
 }

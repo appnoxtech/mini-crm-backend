@@ -1,14 +1,11 @@
-import Database from 'better-sqlite3';
 import { ImportError, OrganizationImportData, ProcessResult, DuplicateHandling } from '../../types';
 import { OrganizationModel } from '../../../management/organisations/models/Organization';
 
 export class OrganizationProcessor {
-    private db: Database.Database;
     private orgModel: OrganizationModel;
 
-    constructor(db: Database.Database) {
-        this.db = db;
-        this.orgModel = new OrganizationModel(db);
+    constructor(_db?: any) {
+        this.orgModel = new OrganizationModel();
     }
 
     /**
@@ -104,10 +101,10 @@ export class OrganizationProcessor {
     /**
      * Check for duplicates by name
      */
-    checkDuplicate(data: OrganizationImportData): { isDuplicate: boolean; existingId?: number } {
+    async checkDuplicate(data: OrganizationImportData): Promise<{ isDuplicate: boolean; existingId?: number }> {
         if (!data.name?.trim()) return { isDuplicate: false };
 
-        const existing = this.orgModel.searchByOrgName(data.name.trim());
+        const existing = await this.orgModel.searchByOrgName(data.name.trim());
         const exactMatch = existing.find(org => org.name.toLowerCase() === data.name.trim().toLowerCase());
 
         if (exactMatch) {
@@ -123,13 +120,13 @@ export class OrganizationProcessor {
     /**
      * Process a single organization record
      */
-    process(
+    async process(
         data: OrganizationImportData,
         userId: number,
         duplicateHandling: DuplicateHandling
-    ): ProcessResult {
+    ): Promise<ProcessResult> {
         // Check for duplicates
-        const duplicateCheck = this.checkDuplicate(data);
+        const duplicateCheck = await this.checkDuplicate(data);
 
         if (duplicateCheck.isDuplicate) {
             switch (duplicateHandling) {
@@ -149,7 +146,7 @@ export class OrganizationProcessor {
         const orgData = this.prepareOrganizationData(data);
 
         // Create new organization
-        const org = this.orgModel.create(orgData);
+        const org = await this.orgModel.create(orgData);
 
         return { status: 'created', id: org.id };
     }
@@ -179,12 +176,12 @@ export class OrganizationProcessor {
     /**
      * Update existing organization
      */
-    private updateExistingOrganization(
+    private async updateExistingOrganization(
         orgId: number,
         data: OrganizationImportData
-    ): ProcessResult {
+    ): Promise<ProcessResult> {
         const updateData = this.prepareOrganizationData(data);
-        this.orgModel.update(orgId, updateData);
+        await this.orgModel.update(orgId, updateData);
         return { status: 'updated', id: orgId };
     }
 
@@ -310,7 +307,7 @@ export class OrganizationProcessor {
     /**
      * Delete organization
      */
-    delete(id: number): boolean {
+    async delete(id: number): Promise<boolean> {
         return this.orgModel.hardDelete(id);
     }
 }

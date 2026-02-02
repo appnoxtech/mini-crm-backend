@@ -1,15 +1,6 @@
-import Database from "better-sqlite3";
+import { prisma } from '../../../shared/prisma';
 import { BaseEntity } from '../../../shared/types';
-
-/**
- * needed field
- * Value
-Color
-orderIndex
-pipelineId
-userId
- * 
- */
+import { Prisma } from '@prisma/client';
 
 export interface Label extends BaseEntity {
     value: string;
@@ -19,185 +10,145 @@ export interface Label extends BaseEntity {
     userId?: number;
     organizationId?: number;
     personId?: number;
-
 }
 
 export class LabelModel {
-    private db: Database.Database;
-
-    constructor(db: Database.Database) {
-        this.db = db;
-    }
+    constructor(_db?: any) { }
 
     initialize(): void {
-        this.db.exec('PRAGMA foreign_keys = ON;');
-
-        this.db.exec(`
-    CREATE TABLE IF NOT EXISTS label (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      value TEXT NOT NULL,
-      color TEXT NOT NULL,
-      orderIndex INTEGER NOT NULL,
-      pipelineId INTEGER,
-      userId INTEGER,
-      organizationId INTEGER,
-      personId INTEGER,
-      createdAt TEXT NOT NULL,
-      updatedAt TEXT NOT NULL,
-      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY (pipelineId) REFERENCES pipelines(id) ON DELETE RESTRICT,
-      FOREIGN KEY (organizationId) REFERENCES organizations(id) ON DELETE RESTRICT,
-      FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE RESTRICT
-    )
-  `);
-
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_label_userId ON label(userId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_label_pipelineId ON label(pipelineId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_label_organizationId ON label(organizationId)');
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_label_personId ON label(personId)');
+        // No-op with Prisma
     }
 
+    async create(data: Omit<Label, 'id' | 'createdAt' | 'updatedAt'>): Promise<Label> {
+        const label = await prisma.label.create({
+            data: {
+                value: data.value,
+                color: data.color,
+                orderIndex: data.orderIndex,
+                pipelineId: data.pipelineId || null,
+                userId: data.userId || null,
+                organizationId: data.organizationId || null,
+                personId: data.personId || null
+            }
+        });
 
-    create(data: Omit<Label, 'id' | 'createdAt' | 'updatedAt'>): Label {
-        const now = new Date().toISOString();
-
-        const stmt = this.db.prepare(`
-      INSERT INTO label (
-        value, color, orderIndex, pipelineId, userId, organizationId, personId, createdAt, updatedAt
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-        const result = stmt.run(
-            data.value,
-            data.color,
-            data.orderIndex,
-            data.pipelineId,
-            data.userId,
-            data.organizationId,
-            data.personId,
-            now,
-            now
-        );
-
-        return this.findById(result.lastInsertRowid as number)!;
+        return this.mapPrismaLabelToLabel(label);
     }
 
-    findByPipelineId(pipelineId: number): Label[] {
-        const stmt = this.db.prepare('SELECT * FROM label WHERE pipelineId = ?');
-        const result = stmt.all(pipelineId) as any[];
-        return result;
+    async findByPipelineId(pipelineId: number): Promise<Label[]> {
+        const rows = await prisma.label.findMany({
+            where: { pipelineId }
+        });
+        return rows.map((r: any) => this.mapPrismaLabelToLabel(r));
     }
 
-    findByOrganizationId(organizationId: number): Label[] {
-        const stmt = this.db.prepare('SELECT * FROM label WHERE organizationId = ?');
-        const result = stmt.all(organizationId) as any[];
-        return result;
+    async findByOrganizationId(organizationId: number): Promise<Label[]> {
+        const rows = await prisma.label.findMany({
+            where: { organizationId }
+        });
+        return rows.map((r: any) => this.mapPrismaLabelToLabel(r));
     }
 
-    findByPersonId(personId: number): Label[] {
-        const stmt = this.db.prepare('SELECT * FROM label WHERE personId = ?');
-        const result = stmt.all(personId) as any[];
-        return result;
+    async findByPersonId(personId: number): Promise<Label[]> {
+        const rows = await prisma.label.findMany({
+            where: { personId }
+        });
+        return rows.map((r: any) => this.mapPrismaLabelToLabel(r));
     }
 
-    findById(id: number): Label | undefined {
-        const stmt = this.db.prepare('SELECT * FROM label WHERE id = ?');
-        const result = stmt.get(id) as any;
-        if (!result) return undefined;
-
-        return result;
+    async findById(id: number): Promise<Label | null> {
+        const label = await prisma.label.findUnique({
+            where: { id }
+        });
+        return label ? this.mapPrismaLabelToLabel(label) : null;
     }
 
-    findByUserId(userId: number, filters: {
+    async findByUserId(userId: number, filters: {
         pipelineId?: number;
         stageId?: number;
         status?: string;
         search?: string;
         limit?: number;
         offset?: number;
-    } = {}): { label: Label[]; total: number } {
-        let query = 'SELECT * FROM label WHERE userId = ?';
-        const params: any[] = [userId];
+    } = {}): Promise<{ label: Label[]; total: number }> {
+        const where: any = { userId };
 
         if (filters.pipelineId) {
-            query += ' AND pipelineId = ?';
-            params.push(filters.pipelineId);
+            where.pipelineId = filters.pipelineId;
         }
 
+        // stageId is not directly on label in the new schema, if it was intended to filter by it
+        // we might need a relation, but the original code was:
+        // if (filters.stageId) { query += ' AND pipelineId = ?'; params.push(filters.stageId); }
+        // which seems to reuse pipelineId.
         if (filters.stageId) {
-            query += ' AND pipelineId = ?';
-            params.push(filters.stageId);
-        }
-
-        if (filters.status) {
-            query += ' AND status = ?';
-            params.push(filters.status);
+            where.pipelineId = filters.stageId;
         }
 
         if (filters.search) {
-            query += ' AND (value LIKE ?)';
-            const searchTerm = `%${filters.search}%`;
-            params.push(searchTerm);
+            where.value = { contains: filters.search, mode: 'insensitive' };
         }
 
-        query += ' ORDER BY createdAt DESC';
-
-        // Get total count
-        const countQuery = query.replace('SELECT *', 'SELECT COUNT(*) as count');
-        const countResult = this.db.prepare(countQuery).get(...params) as { count: number };
-
-        // Add pagination
-        if (filters.limit) {
-            query += ' LIMIT ? OFFSET ?';
-            params.push(filters.limit, filters.offset || 0);
-        }
-
-        const stmt = this.db.prepare(query);
-        const results = stmt.all(...params) as any[];
+        const [rows, total] = await Promise.all([
+            prisma.label.findMany({
+                where,
+                orderBy: { createdAt: 'desc' },
+                take: filters.limit,
+                skip: filters.offset || 0
+            }),
+            prisma.label.count({ where })
+        ]);
 
         return {
-            label: results,
-            total: countResult.count
+            label: rows.map((r: any) => this.mapPrismaLabelToLabel(r)),
+            total
         };
     }
 
-    update(id: number, data: Partial<Label>): Label | undefined {
-        const now = new Date().toISOString();
-        const stmt = this.db.prepare(`
-            UPDATE label
-            SET
-                value = ?,
-                color = ?,
-                orderIndex = ?,
-                pipelineId = ?,
-                userId = ?,
-                organizationId = ?,
-                personId = ?,
-                updatedAt = ?
-            WHERE id = ?
-        `);
-
-        const result = stmt.run(
-            data.value,
-            data.color,
-            data.orderIndex,
-            data.pipelineId,
-            data.userId,
-            data.organizationId,
-            data.personId,
-            now,
-            id
-        );
-
-        if (result.changes === 0) return undefined;
-
-        return this.findById(id)!;
+    async update(id: number, data: Partial<Label>): Promise<Label | null> {
+        try {
+            const updated = await prisma.label.update({
+                where: { id },
+                data: {
+                    ...(data.value !== undefined && { value: data.value }),
+                    ...(data.color !== undefined && { color: data.color }),
+                    ...(data.orderIndex !== undefined && { orderIndex: data.orderIndex }),
+                    ...(data.pipelineId !== undefined && { pipelineId: data.pipelineId }),
+                    ...(data.userId !== undefined && { userId: data.userId }),
+                    ...(data.organizationId !== undefined && { organizationId: data.organizationId }),
+                    ...(data.personId !== undefined && { personId: data.personId }),
+                    updatedAt: new Date()
+                }
+            });
+            return this.mapPrismaLabelToLabel(updated);
+        } catch (error) {
+            return null;
+        }
     }
 
-    delete(id: number): boolean {
-        const stmt = this.db.prepare('DELETE FROM label WHERE id = ?');
-        const result = stmt.run(id);
-        return result.changes > 0;
+    async delete(id: number): Promise<boolean> {
+        try {
+            await prisma.label.delete({
+                where: { id }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    private mapPrismaLabelToLabel(l: any): Label {
+        return {
+            id: l.id,
+            value: l.value,
+            color: l.color || '',
+            orderIndex: l.orderIndex,
+            pipelineId: l.pipelineId || undefined,
+            userId: l.userId || undefined,
+            organizationId: l.organizationId || undefined,
+            personId: l.personId || undefined,
+            createdAt: l.createdAt.toISOString(),
+            updatedAt: l.updatedAt.toISOString()
+        };
     }
 }

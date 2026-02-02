@@ -1,52 +1,67 @@
-import Database from 'better-sqlite3';
+import { prisma } from '../../../shared/prisma';
 
 export class OtpModel {
-    private db: Database.Database;
-
-    constructor(db: Database.Database) {
-        this.db = db;
-    }
+    constructor(_db?: any) { }
 
     initialize(): void {
-        this.db.exec(`
-      CREATE TABLE IF NOT EXISTS email_otps (
-        email TEXT PRIMARY KEY,
-        otp TEXT NOT NULL,
-        expiresAt TEXT NOT NULL,
-        createdAt TEXT NOT NULL
-      )
-    `);
+        // No-op with Prisma
     }
 
-    saveOtp(email: string, otp: string, expiresAt: Date): void {
-        const now = new Date().toISOString();
-        const expires = expiresAt.toISOString();
+    async saveOtp(email: string, otp: string, expiresAt: Date): Promise<void> {
+        const emailLower = email.toLowerCase();
 
-        const stmt = this.db.prepare(`
-      INSERT INTO email_otps (email, otp, expiresAt, createdAt)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(email) DO UPDATE SET
-        otp = excluded.otp,
-        expiresAt = excluded.expiresAt,
-        createdAt = excluded.createdAt
-    `);
+        // Find existing OTP for this email
+        const existing = await prisma.otp.findFirst({
+            where: { email: emailLower }
+        });
 
-        stmt.run(email.toLowerCase(), otp, expires, now);
+        if (existing) {
+            await prisma.otp.update({
+                where: { id: existing.id },
+                data: {
+                    otp,
+                    expiresAt,
+                    createdAt: new Date()
+                }
+            });
+        } else {
+            await prisma.otp.create({
+                data: {
+                    email: emailLower,
+                    otp,
+                    expiresAt
+                }
+            });
+        }
     }
 
-    getOtp(email: string): { otp: string; expiresAt: string } | undefined {
-        const stmt = this.db.prepare('SELECT otp, expiresAt FROM email_otps WHERE email = ?');
-        return stmt.get(email.toLowerCase()) as { otp: string; expiresAt: string } | undefined;
+    async getOtp(email: string): Promise<{ otp: string; expiresAt: string } | undefined> {
+        const otp = await prisma.otp.findFirst({
+            where: { email: email.toLowerCase() },
+            orderBy: { createdAt: 'desc' }
+        });
+
+        if (!otp) return undefined;
+
+        return {
+            otp: otp.otp,
+            expiresAt: otp.expiresAt.toISOString()
+        };
     }
 
-    deleteOtp(email: string): void {
-        const stmt = this.db.prepare('DELETE FROM email_otps WHERE email = ?');
-        stmt.run(email.toLowerCase());
+    async deleteOtp(email: string): Promise<void> {
+        await prisma.otp.deleteMany({
+            where: { email: email.toLowerCase() }
+        });
     }
 
-    // Cleanup expired OTPs (can be called periodically)
-    cleanupExpired(): void {
-        const now = new Date().toISOString();
-        this.db.exec(`DELETE FROM email_otps WHERE expiresAt < '${now}'`);
+    async cleanupExpired(): Promise<void> {
+        await prisma.otp.deleteMany({
+            where: {
+                expiresAt: {
+                    lt: new Date()
+                }
+            }
+        });
     }
 }

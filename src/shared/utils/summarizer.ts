@@ -32,7 +32,7 @@ export async function summarizeThreadWithVLLM(threadText: string): Promise<strin
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    const data: RunPodResponse = await response.json();
+    const data: RunPodResponse = (await response.json()) as RunPodResponse;
 
 
     // RunPod returns a job ID for async processing

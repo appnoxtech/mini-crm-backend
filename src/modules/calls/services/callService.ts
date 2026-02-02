@@ -1,7 +1,6 @@
 import { CallModel, Call, CallDirection, CallStatus, CallDisposition, CallRecording } from '../models/Call';
 import { TwilioService, getTwilioService } from './twilioService';
 import { InitiateCallRequest, CallWithDetails, CallListQuery } from '../types';
-import Database from 'better-sqlite3';
 
 /**
  * CallService
@@ -44,14 +43,13 @@ export class CallService {
         // This will be replaced with the real Twilio SID once the call is initiated
         const tempCallSid = `pending-${userId}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
-        const call = this.callModel.createCall({
+        const call = await this.callModel.createCall({
             twilioCallSid: tempCallSid,
             twilioAccountSid: process.env.TWILIO_ACCOUNT_SID || '',
             direction: 'outbound' as CallDirection,
             status: 'initiated' as CallStatus,
             fromNumber: process.env.TWILIO_CALLER_ID || '',
             toNumber: request.toNumber,
-            duration: 0,
             userId,
             contactId: request.contactId,
             dealId: request.dealId,
@@ -68,14 +66,13 @@ export class CallService {
             );
 
             // Update the call record with Twilio SID
-            this.callModel.updateStatus(call.id, 'initiated' as CallStatus, {});
+            // Using a custom update to change SID as updateStatus doesn't normally change SID
+            // We can just update it through the model if we add an update method or use the STATUS update with extra fields
+            const updatedCall = await this.callModel.updateStatus(call.id, 'initiated' as CallStatus, {
+                twilioCallSid: twilioResult.callSid
+            } as any);
 
-            // Update the twilioCallSid directly
-            const db = (this.callModel as any).db as Database.Database;
-            const stmt = db.prepare('UPDATE calls SET twilioCallSid = ?, updatedAt = ? WHERE id = ?');
-            stmt.run(twilioResult.callSid, new Date().toISOString(), call.id);
-
-            const updatedCall = this.callModel.findById(call.id)!;
+            if (!updatedCall) throw new Error('Failed to update call SID');
 
             return {
                 call: updatedCall,
@@ -83,7 +80,7 @@ export class CallService {
             };
         } catch (error: any) {
             // If Twilio call failed, update our record
-            this.callModel.updateStatus(call.id, 'failed' as CallStatus);
+            await this.callModel.updateStatus(call.id, 'failed' as CallStatus);
             throw error;
         }
     }
@@ -91,24 +88,23 @@ export class CallService {
     /**
      * Handle incoming call from Twilio webhook
      */
-    handleIncomingCall(
+    async handleIncomingCall(
         twilioCallSid: string,
         fromNumber: string,
         toNumber: string,
         assignedUserId?: number
-    ): { call: Call; twiml: string } {
+    ): Promise<{ call: Call; twiml: string }> {
         // Try to find the caller in our contacts
-        const contactInfo = this.callModel.findContactByPhoneNumber(fromNumber);
+        const contactInfo = await this.callModel.findContactByPhoneNumber(fromNumber);
 
         // Create call record
-        const call = this.callModel.createCall({
+        const call = await this.callModel.createCall({
             twilioCallSid,
             twilioAccountSid: process.env.TWILIO_ACCOUNT_SID || '',
             direction: 'inbound' as CallDirection,
             status: 'ringing' as CallStatus,
             fromNumber,
             toNumber,
-            duration: 0,
             userId: assignedUserId || 1, // Default to user 1 if no routing
             contactId: contactInfo?.contactId,
         });
@@ -128,12 +124,12 @@ export class CallService {
     /**
      * Update call status from Twilio webhook
      */
-    updateCallStatus(
+    async updateCallStatus(
         twilioCallSid: string,
         twilioStatus: string,
         duration?: number
-    ): Call | null {
-        const call = this.callModel.findByTwilioSid(twilioCallSid);
+    ): Promise<Call | null> {
+        const call = await this.callModel.findByTwilioSid(twilioCallSid);
         if (!call) {
             console.warn(`[CallService] Call not found for SID: ${twilioCallSid}`);
             return null;
@@ -141,7 +137,7 @@ export class CallService {
 
         const mappedStatus = this.twilioService.mapTwilioStatus(twilioStatus) as CallStatus;
 
-        return this.callModel.updateStatus(call.id, mappedStatus, {
+        return await this.callModel.updateStatus(call.id, mappedStatus, {
             duration: duration !== undefined ? duration : undefined
         });
     }
@@ -149,25 +145,25 @@ export class CallService {
     /**
      * Handle recording ready webhook
      */
-    handleRecordingReady(
+    async handleRecordingReady(
         twilioCallSid: string,
         recordingSid: string,
         recordingUrl: string,
         duration: number,
         channels: number = 1
-    ): CallRecording | null {
-        const call = this.callModel.findByTwilioSid(twilioCallSid);
+    ): Promise<CallRecording | null> {
+        const call = await this.callModel.findByTwilioSid(twilioCallSid);
         if (!call) {
             console.warn(`[CallService] Call not found for recording: ${twilioCallSid}`);
             return null;
         }
 
         // Check if recording already exists
-        let recording = this.callModel.getRecordingByRecordingSid(recordingSid);
+        let recording = await this.callModel.getRecordingByRecordingSid(recordingSid);
 
         if (recording) {
             // Update existing recording
-            return this.callModel.updateRecording(recording.id, {
+            return await this.callModel.updateRecording(recording.id, {
                 recordingUrl,
                 duration,
                 status: 'completed'
@@ -175,7 +171,7 @@ export class CallService {
         }
 
         // Create new recording
-        recording = this.callModel.addRecording({
+        recording = await this.callModel.addRecording({
             callId: call.id,
             recordingSid,
             recordingUrl,
@@ -190,37 +186,37 @@ export class CallService {
     /**
      * Get call by ID with full details
      */
-    getCallById(callId: number, userId: number): CallWithDetails | null {
-        const call = this.callModel.findById(callId);
+    async getCallById(callId: number, userId: number): Promise<CallWithDetails | null> {
+        const call = await this.callModel.findById(callId);
         if (!call || call.userId !== userId) {
             return null;
         }
 
-        return this.enrichCallWithDetails(call);
+        return await this.enrichCallWithDetails(call);
     }
 
     /**
      * Get call by Twilio SID
      */
-    getCallByTwilioSid(twilioCallSid: string): Call | undefined {
-        return this.callModel.findByTwilioSid(twilioCallSid);
+    async getCallByTwilioSid(twilioCallSid: string): Promise<Call | null> {
+        return await this.callModel.findByTwilioSid(twilioCallSid);
     }
 
     /**
      * List calls with pagination and filters
      */
-    listCalls(userId: number, query: CallListQuery): {
+    async listCalls(userId: number, query: CallListQuery): Promise<{
         calls: CallWithDetails[];
         count: number;
         total: number;
         page: number;
         limit: number;
-    } {
+    }> {
         const limit = query.limit || 20;
         const page = query.page || 1;
         const offset = (page - 1) * limit;
 
-        const result = this.callModel.findByUserId(userId, {
+        const result = await this.callModel.findByUserId(userId, {
             direction: query.direction as CallDirection | undefined,
             status: query.status as CallStatus | undefined,
             contactId: query.contactId,
@@ -232,8 +228,10 @@ export class CallService {
             offset
         });
 
+        const enrichedCalls = await Promise.all(result.calls.map(call => this.enrichCallWithDetails(call)));
+
         return {
-            calls: result.calls.map(call => this.enrichCallWithDetails(call)),
+            calls: enrichedCalls,
             count: result.count,
             total: result.total,
             page,
@@ -244,19 +242,19 @@ export class CallService {
     /**
      * Update call notes and disposition
      */
-    updateCallDetails(
+    async updateCallDetails(
         callId: number,
         userId: number,
         data: { notes?: string; disposition?: CallDisposition; summary?: string }
-    ): Call | null {
-        return this.callModel.updateCallDetails(callId, userId, data);
+    ): Promise<Call | null> {
+        return await this.callModel.updateCallDetails(callId, userId, data);
     }
 
     /**
      * End an active call
      */
     async endCall(callId: number, userId: number): Promise<Call | null> {
-        const call = this.callModel.findById(callId);
+        const call = await this.callModel.findById(callId);
         if (!call || call.userId !== userId) {
             return null;
         }
@@ -271,20 +269,20 @@ export class CallService {
         }
 
         // Update our record
-        return this.callModel.updateStatus(callId, 'completed' as CallStatus);
+        return await this.callModel.updateStatus(callId, 'completed' as CallStatus);
     }
 
     /**
      * Soft delete a call
      */
-    deleteCall(callId: number, userId: number): boolean {
-        return this.callModel.softDelete(callId, userId);
+    async deleteCall(callId: number, userId: number): Promise<boolean> {
+        return await this.callModel.softDelete(callId, userId);
     }
 
     /**
      * Get call statistics for a user
      */
-    getCallStats(userId: number, options?: { startDate?: string; endDate?: string }): {
+    async getCallStats(userId: number, options?: { startDate?: string; endDate?: string }): Promise<{
         totalCalls: number;
         inboundCalls: number;
         outboundCalls: number;
@@ -292,36 +290,36 @@ export class CallService {
         missedCalls: number;
         totalDuration: number;
         averageDuration: number;
-    } {
-        return this.callModel.getCallStats(userId, options);
+    }> {
+        return await this.callModel.getCallStats(userId, options);
     }
 
     /**
      * Get calls for a specific contact
      */
-    getCallsForContact(contactId: number, limit: number = 10): CallWithDetails[] {
-        const calls = this.callModel.getCallsByContactId(contactId, limit);
-        return calls.map(call => this.enrichCallWithDetails(call));
+    async getCallsForContact(contactId: number, limit: number = 10): Promise<CallWithDetails[]> {
+        const calls = await this.callModel.getCallsByContactId(contactId, limit);
+        return await Promise.all(calls.map(call => this.enrichCallWithDetails(call)));
     }
 
     /**
      * Get calls for a specific deal
      */
-    getCallsForDeal(dealId: number): CallWithDetails[] {
-        const calls = this.callModel.getCallsByDealId(dealId);
-        return calls.map(call => this.enrichCallWithDetails(call));
+    async getCallsForDeal(dealId: number): Promise<CallWithDetails[]> {
+        const calls = await this.callModel.getCallsByDealId(dealId);
+        return await Promise.all(calls.map(call => this.enrichCallWithDetails(call)));
     }
 
     /**
      * Get call events/history
      */
-    getCallEvents(callId: number): Array<{
+    async getCallEvents(callId: number): Promise<Array<{
         id: number;
         eventType: string;
         eventData: any;
         createdAt: string;
-    }> {
-        const events = this.callModel.getEventsByCallId(callId);
+    }>> {
+        const events = await this.callModel.getEventsByCallId(callId);
         return events.map(event => ({
             id: event.id,
             eventType: event.eventType,
@@ -333,15 +331,15 @@ export class CallService {
     /**
      * Get recording for a call
      */
-    getCallRecording(callId: number): CallRecording | undefined {
-        return this.callModel.getRecordingByCallId(callId);
+    async getCallRecording(callId: number): Promise<CallRecording | null> {
+        return await this.callModel.getRecordingByCallId(callId);
     }
 
     /**
      * Add call event
      */
-    addCallEvent(callId: number, eventType: string, eventData?: any, triggeredBy?: number): void {
-        this.callModel.addEvent(
+    async addCallEvent(callId: number, eventType: string, eventData?: any, triggeredBy?: number): Promise<void> {
+        await this.callModel.addEvent(
             callId,
             eventType,
             eventData ? JSON.stringify(eventData) : undefined,
@@ -352,12 +350,11 @@ export class CallService {
     /**
      * Enrich a call with related data (contact, recording, etc.)
      */
-    private enrichCallWithDetails(call: Call): CallWithDetails {
-        const recording = this.callModel.getRecordingByCallId(call.id);
-        const participants = this.callModel.getParticipantsByCallId(call.id);
-
-        // TODO: Fetch contact and deal info from their respective services
-        // For now, we'll return what we have
+    private async enrichCallWithDetails(call: Call): Promise<CallWithDetails> {
+        const [recording, participants] = await Promise.all([
+            this.callModel.getRecordingByCallId(call.id),
+            this.callModel.getParticipantsByCallId(call.id)
+        ]);
 
         return {
             id: call.id,

@@ -71,7 +71,7 @@ export class HistoricalSyncService {
                 }
 
                 // Update last synced UID for incremental sync later
-                this.emailModel.updateLastSyncedUid(account.id, folder, highestUid);
+                await this.emailModel.updateLastSyncedUid(account.id, folder, highestUid);
             } catch (error) {
                 console.error(`[QuickLoad] Error in folder ${folder}:`, error);
             }
@@ -79,7 +79,7 @@ export class HistoricalSyncService {
 
         // Bulk insert all fetched emails
         if (allEmails.length > 0) {
-            this.emailModel.bulkCreateEmails(allEmails);
+            await this.emailModel.bulkCreateEmails(allEmails);
         }
 
         // Update lastSyncAt
@@ -145,7 +145,7 @@ export class HistoricalSyncService {
 
         try {
             const highestUid = await this.connectorService.getHighestUid(account, folder);
-            const lastSyncedUid = this.emailModel.getLastSyncedUid(account.id, folder) || 0;
+            const lastSyncedUid = (await this.emailModel.getLastSyncedUid(account.id, folder)) || 0;
 
             // Start from where quick load left off (go backwards from lastSyncedUid - 1 down to 1)
             let endUid = Math.max(0, lastSyncedUid - 1);
@@ -202,7 +202,7 @@ export class HistoricalSyncService {
                     }
 
                     if (emailsToSave.length > 0) {
-                        this.emailModel.bulkCreateEmails(emailsToSave);
+                        await this.emailModel.bulkCreateEmails(emailsToSave);
                         fetchedCount += emailsToSave.length;
                     }
 
@@ -238,7 +238,7 @@ export class HistoricalSyncService {
 
         for (const folderConfig of resolvedFolders) {
             const folder = folderConfig.path;
-            const lastUid = this.emailModel.getLastSyncedUid(account.id, folder) || 0;
+            const lastUid = (await this.emailModel.getLastSyncedUid(account.id, folder)) || 0;
             console.log(`[IncrementalSync] ${account.email} folder ${folder} since UID ${lastUid}`);
 
             const rawMessages = await this.connectorService.fetchEmailsIncrementalByUid(account, folder, lastUid);
@@ -280,8 +280,8 @@ export class HistoricalSyncService {
             }
 
             if (emailsToSave.length > 0) {
-                this.emailModel.bulkCreateEmails(emailsToSave);
-                this.emailModel.updateLastSyncedUid(account.id, folder, maxUid);
+                await this.emailModel.bulkCreateEmails(emailsToSave);
+                await this.emailModel.updateLastSyncedUid(account.id, folder, maxUid);
             }
         }
 

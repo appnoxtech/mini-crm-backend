@@ -6,11 +6,8 @@ import { ResponseHandler } from '../../../shared/responses/responses';
 import {
     initiateCallSchema,
     updateCallSchema,
-    callListQuerySchema,
-    twilioVoiceWebhookSchema,
-    twilioRecordingWebhookSchema
+    callListQuerySchema
 } from '../validations/callValidation';
-import { getWebhookUrls } from '../config/twilioConfig';
 
 /**
  * CallController
@@ -76,7 +73,7 @@ export class CallController {
                 return;
             }
 
-            const result = this.callService.listCalls(req.user.id, validationResult.data);
+            const result = await this.callService.listCalls(req.user.id, validationResult.data);
 
             ResponseHandler.success(res, result);
         } catch (error: any) {
@@ -102,14 +99,14 @@ export class CallController {
                 return;
             }
 
-            const call = this.callService.getCallById(callId, req.user.id);
+            const call = await this.callService.getCallById(callId, req.user.id);
             if (!call) {
                 ResponseHandler.notFound(res, 'Call not found');
                 return;
             }
 
             // Also get events and recording
-            const events = this.callService.getCallEvents(callId);
+            const events = await this.callService.getCallEvents(callId);
 
             ResponseHandler.success(res, { ...call, events });
         } catch (error: any) {
@@ -142,7 +139,7 @@ export class CallController {
                 return;
             }
 
-            const call = this.callService.updateCallDetails(
+            const call = await this.callService.updateCallDetails(
                 callId,
                 req.user.id,
                 validationResult.data
@@ -177,7 +174,7 @@ export class CallController {
                 return;
             }
 
-            const deleted = this.callService.deleteCall(callId, req.user.id);
+            const deleted = await this.callService.deleteCall(callId, req.user.id);
             if (!deleted) {
                 ResponseHandler.notFound(res, 'Call not found');
                 return;
@@ -252,7 +249,7 @@ export class CallController {
             }
 
             const { startDate, endDate } = req.query as { startDate?: string; endDate?: string };
-            const stats = this.callService.getCallStats(req.user.id, { startDate, endDate });
+            const stats = await this.callService.getCallStats(req.user.id, { startDate, endDate });
 
             ResponseHandler.success(res, stats);
         } catch (error: any) {
@@ -279,7 +276,7 @@ export class CallController {
             }
 
             const limit = parseInt(req.query.limit as string, 10) || 10;
-            const calls = this.callService.getCallsForContact(contactId, limit);
+            const calls = await this.callService.getCallsForContact(contactId, limit);
 
             ResponseHandler.success(res, { calls });
         } catch (error: any) {
@@ -305,7 +302,7 @@ export class CallController {
                 return;
             }
 
-            const calls = this.callService.getCallsForDeal(dealId);
+            const calls = await this.callService.getCallsForDeal(dealId);
 
             ResponseHandler.success(res, { calls });
         } catch (error: any) {
@@ -332,13 +329,13 @@ export class CallController {
             }
 
             // Verify user has access to this call
-            const call = this.callService.getCallById(callId, req.user.id);
+            const call = await this.callService.getCallById(callId, req.user.id);
             if (!call) {
                 ResponseHandler.notFound(res, 'Call not found');
                 return;
             }
 
-            const recording = this.callService.getCallRecording(callId);
+            const recording = await this.callService.getCallRecording(callId);
             if (!recording) {
                 ResponseHandler.notFound(res, 'Recording not found');
                 return;

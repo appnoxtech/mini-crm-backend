@@ -1,236 +1,160 @@
-import Database from 'better-sqlite3';
+import { prisma } from '../../../shared/prisma';
 import { BaseEntity } from '../../../shared/types';
+import { Prisma } from '@prisma/client';
 
 export interface DealActivity extends BaseEntity {
     dealId: number;
     userId: number;
     activityType: string;
-
     subject?: string;
-
     label?: string;
-
     startDate?: string;
     endDate?: string;
     startTime?: string;
     endTime?: string;
-
     priority?: 'low' | 'medium' | 'high' | "none";
     busyFree?: 'busy' | 'free' | 'notSet';
-
     note?: string;
     organization?: string;
-
     email?: {
         from: string;
         to: string[];
         subject: string;
         body: string;
     }
-
     files?: {
         url: string;
-
-    }[],
-
+    }[];
     participants?: {
         id: number;
         name: string;
         email?: string;
         phone?: string;
     }[];
-
     deal?: {
         name?: string;
         value?: string;
     };
-
     persons?: {
         id?: number;
         name?: string;
         email?: string;
         phone?: string;
     }[];
-
     mataData?: {
         key?: string;
         value?: string;
         type?: string;
     }[];
-
     isDone: boolean;
     completedAt?: string;
 }
 
 export class DealActivityModel {
-    private db: Database.Database;
-
-    constructor(db: Database.Database) {
-        this.db = db;
-    }
+    constructor(_db?: any) { }
 
     initialize() {
-        this.db.exec(`
-        CREATE TABLE IF NOT EXISTS deal_activities (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            dealId INTEGER NOT NULL,
-            userId INTEGER NOT NULL,
-            activityType TEXT NOT NULL,
-            subject TEXT,
-            label TEXT,
-            startDate TEXT,
-            endDate TEXT,
-            startTime TEXT,
-            endTime TEXT,
-            priority TEXT CHECK(priority IN ('low','medium','high','none')),
-            busyFree TEXT CHECK(busyFree IN ('busy','free','notSet')),
-            note TEXT,
-            organization TEXT,
-            email TEXT,
-            files TEXT,
-            participants TEXT,   -- store JSON string
-            deal TEXT,           -- store JSON string
-            persons TEXT,        -- store JSON string
-            mataData TEXT,       -- store JSON string
-            isDone INTEGER NOT NULL DEFAULT 0,
-            completedAt TEXT,
-            createdAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updatedAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-    `);
-
-        // Add missing columns if they don't exist (for existing databases)
-        const columnsToAdd = [
-            { name: 'activityType', definition: 'TEXT' },
-            { name: 'subject', definition: 'TEXT' },
-            { name: 'label', definition: 'TEXT' },
-            { name: 'startDate', definition: 'TEXT' },
-            { name: 'endDate', definition: 'TEXT' },
-            { name: 'startTime', definition: 'TEXT' },
-            { name: 'endTime', definition: 'TEXT' },
-            { name: 'priority', definition: 'TEXT' },
-            { name: 'busyFree', definition: 'TEXT' },
-            { name: 'note', definition: 'TEXT' },
-            { name: 'organization', definition: 'TEXT' },
-            { name: 'email', definition: 'TEXT' },
-            { name: 'files', definition: 'TEXT' },
-            { name: 'participants', definition: 'TEXT' },
-            { name: 'deal', definition: 'TEXT' },
-            { name: 'persons', definition: 'TEXT' },
-            { name: 'mataData', definition: 'TEXT' },
-            { name: 'isDone', definition: 'INTEGER DEFAULT 0' },
-            { name: 'completedAt', definition: 'TEXT' },
-        ];
-
-        for (const column of columnsToAdd) {
-            try {
-                this.db.exec(`ALTER TABLE deal_activities ADD COLUMN ${column.name} ${column.definition}`);
-
-            } catch (error) {
-                // Column already exists, ignore error
-            }
-        }
+        // No-op with Prisma
     }
 
-    create(data: Omit<DealActivity, 'id' | 'createdAt' | 'updatedAt'>): DealActivity {
-        const now = new Date().toISOString();
-
-        const stmt = this.db.prepare(`
-        INSERT INTO deal_activities (
-            dealId, userId, activityType, subject, label,
-            startDate, endDate, startTime, endTime,
-            priority, busyFree, note, organization,
-            email, files, participants, deal, persons, mataData,
-            isDone, completedAt, createdAt, updatedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-        const result = stmt.run(
-            data.dealId,
-            data.userId,
-            data.activityType,
-            data.subject || null,
-            data.label || null,
-            data.startDate || null,
-            data.endDate || null,
-            data.startTime || null,
-            data.endTime || null,
-            data.priority || null,
-            data.busyFree || null,
-            data.note || null,
-            data.organization || null,
-            data.email ? JSON.stringify(data.email) : null,
-            data.files ? JSON.stringify(data.files) : null,
-            data.participants ? JSON.stringify(data.participants) : null,
-            data.deal ? JSON.stringify(data.deal) : null,
-            data.persons ? JSON.stringify(data.persons) : null,
-            data.mataData ? JSON.stringify(data.mataData) : null,
-            data.isDone ? 1 : 0,
-            data.completedAt || null,
-            now,
-            now
-        );
+    async create(data: Omit<DealActivity, 'id' | 'createdAt' | 'updatedAt'>): Promise<DealActivity> {
+        const activity = await prisma.dealActivity.create({
+            data: {
+                dealId: data.dealId,
+                userId: data.userId,
+                activityType: data.activityType,
+                subject: data.subject || null,
+                label: data.label || null,
+                startDate: data.startDate || null,
+                endDate: data.endDate || null,
+                startTime: data.startTime || null,
+                endTime: data.endTime || null,
+                priority: data.priority || null,
+                busyFree: data.busyFree || null,
+                note: data.note || null,
+                organization: data.organization || null,
+                email: data.email ? (data.email as any) : (Prisma as any).JsonNull,
+                files: data.files ? (data.files as any) : (Prisma as any).JsonNull,
+                participants: data.participants ? (data.participants as any) : (Prisma as any).JsonNull,
+                deal: data.deal ? (data.deal as any) : (Prisma as any).JsonNull,
+                persons: data.persons ? (data.persons as any) : (Prisma as any).JsonNull,
+                mataData: data.mataData ? (data.mataData as any) : (Prisma as any).JsonNull,
+                isDone: data.isDone || false,
+                completedAt: data.completedAt ? new Date(data.completedAt) : null,
+            }
+        });
 
         // Update deal's lastActivityAt
-        this.db.prepare('UPDATE deals SET lastActivityAt = ? WHERE id = ?').run(now, data.dealId);
+        await prisma.deal.update({
+            where: { id: data.dealId },
+            data: { lastActivityAt: new Date() }
+        });
 
-        return this.findById(result.lastInsertRowid as number)!;
+        return this.formatActivity(activity);
     }
 
     private formatActivity(result: any): DealActivity {
         return {
-            ...result,
-            isDone: Boolean(result.isDone),
-            email: result.email ? JSON.parse(result.email) : undefined,
-            participants: result.participants ? JSON.parse(result.participants) : [],
-            deal: result.deal ? JSON.parse(result.deal) : {},
-            files: result.files ? JSON.parse(result.files) : [],
-            persons: result.persons ? JSON.parse(result.persons) : [],
-            mataData: result.mataData ? JSON.parse(result.mataData) : []
+            id: result.id,
+            dealId: result.dealId,
+            userId: result.userId,
+            activityType: result.activityType,
+            subject: result.subject || undefined,
+            label: result.label || undefined,
+            startDate: result.startDate || undefined,
+            endDate: result.endDate || undefined,
+            startTime: result.startTime || undefined,
+            endTime: result.endTime || undefined,
+            priority: result.priority as any,
+            busyFree: result.busyFree as any,
+            note: result.note || undefined,
+            organization: result.organization || undefined,
+            isDone: result.isDone,
+            completedAt: result.completedAt?.toISOString() || undefined,
+            createdAt: result.createdAt.toISOString(),
+            updatedAt: result.updatedAt.toISOString(),
+            email: result.email || undefined,
+            participants: result.participants || [],
+            deal: result.deal || {},
+            files: result.files || [],
+            persons: result.persons || [],
+            mataData: result.mataData || []
         };
     }
 
-    findById(id: number): DealActivity | undefined {
-        const stmt = this.db.prepare('SELECT * FROM deal_activities WHERE id = ?');
-        const result = stmt.get(id) as any;
-        if (!result) return undefined;
-
+    async findById(id: number): Promise<DealActivity | null> {
+        const result = await prisma.dealActivity.findUnique({
+            where: { id }
+        });
+        if (!result) return null;
         return this.formatActivity(result);
     }
 
-    findByDealId(dealId: number, filters: {
+    async findByDealId(dealId: number, filters: {
         activityType?: string;
         isDone?: boolean;
         limit?: number;
-    } = {}): DealActivity[] {
-        let query = 'SELECT * FROM deal_activities WHERE dealId = ?';
-        const params: any[] = [dealId];
+    } = {}): Promise<DealActivity[]> {
+        const where: any = { dealId };
 
         if (filters.activityType) {
-            query += ' AND activityType = ?';
-            params.push(filters.activityType);
+            where.activityType = filters.activityType;
         }
 
         if (filters.isDone !== undefined) {
-            query += ' AND isDone = ?';
-            params.push(filters.isDone ? 1 : 0);
+            where.isDone = filters.isDone;
         }
 
-        query += ' ORDER BY startDate DESC, createdAt DESC';
+        const results = await prisma.dealActivity.findMany({
+            where,
+            orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }],
+            take: filters.limit
+        });
 
-        if (filters.limit) {
-            query += ' LIMIT ?';
-            params.push(filters.limit);
-        }
-
-        const stmt = this.db.prepare(query);
-        const results = stmt.all(...params) as any[];
-
-        return results.map(r => this.formatActivity(r));
+        return results.map((r: any) => this.formatActivity(r));
     }
 
-    // create note type activity 
-    createNoteActivity(userId: number, dealId: number, note: string): DealActivity {
+    async createNoteActivity(userId: number, dealId: number, note: string): Promise<DealActivity> {
         return this.create({
             userId,
             dealId,
@@ -240,8 +164,7 @@ export class DealActivityModel {
         });
     }
 
-
-    createFileActivity(userId: number, dealId: number, files: any[]): DealActivity {
+    async createFileActivity(userId: number, dealId: number, files: any[]): Promise<DealActivity> {
         return this.create({
             userId,
             dealId,
@@ -251,150 +174,134 @@ export class DealActivityModel {
         });
     }
 
-
-
-
-
-    findByUserId(userId: number, filters: {
+    async findByUserId(userId: number, filters: {
         activityType?: string;
         isDone?: boolean;
         upcoming?: boolean;
         limit?: number;
-    } = {}): DealActivity[] {
-        let query = 'SELECT * FROM deal_activities WHERE userId = ?';
-        const params: any[] = [userId];
+    } = {}): Promise<DealActivity[]> {
+        const where: any = { userId };
 
         if (filters.activityType) {
-            query += ' AND activityType = ?';
-            params.push(filters.activityType);
+            where.activityType = filters.activityType;
         }
 
         if (filters.isDone !== undefined) {
-            query += ' AND isDone = ?';
-            params.push(filters.isDone ? 1 : 0);
+            where.isDone = filters.isDone;
         }
 
         if (filters.upcoming) {
             const today = new Date().toISOString().split('T')[0];
-            query += ' AND startDate >= ? AND isDone = 0';
-            params.push(today);
+            where.startDate = { gte: today };
+            where.isDone = false;
         }
 
-        query += ' ORDER BY startDate ASC, createdAt DESC';
+        const results = await prisma.dealActivity.findMany({
+            where,
+            orderBy: [{ startDate: 'asc' }, { createdAt: 'desc' }],
+            take: filters.limit
+        });
 
-        if (filters.limit) {
-            query += ' LIMIT ?';
-            params.push(filters.limit);
-        }
-
-        const stmt = this.db.prepare(query);
-        const results = stmt.all(...params) as any[];
-
-        return results.map(r => this.formatActivity(r));
+        return results.map((r: any) => this.formatActivity(r));
     }
 
-    update(
+    async update(
         id: number,
         data: Partial<Omit<DealActivity, 'id' | 'dealId' | 'userId' | 'createdAt' | 'updatedAt'>>
-    ): DealActivity | null {
-        const activity = this.findById(id);
+    ): Promise<DealActivity | null> {
+        const activity = await this.findById(id);
         if (!activity) return null;
 
-        const now = new Date().toISOString();
-        const updates: string[] = [];
-        const values: any[] = [];
+        const updateData: any = {
+            ...(data.activityType !== undefined && { activityType: data.activityType }),
+            ...(data.subject !== undefined && { subject: data.subject }),
+            ...(data.label !== undefined && { label: data.label }),
+            ...(data.startDate !== undefined && { startDate: data.startDate }),
+            ...(data.endDate !== undefined && { endDate: data.endDate }),
+            ...(data.startTime !== undefined && { startTime: data.startTime }),
+            ...(data.endTime !== undefined && { endTime: data.endTime }),
+            ...(data.priority !== undefined && { priority: data.priority }),
+            ...(data.busyFree !== undefined && { busyFree: data.busyFree }),
+            ...(data.note !== undefined && { note: data.note }),
+            ...(data.organization !== undefined && { organization: data.organization }),
+            ...(data.email !== undefined && { email: data.email as any }),
+            ...(data.files !== undefined && { files: data.files as any }),
+            ...(data.participants !== undefined && { participants: data.participants as any }),
+            ...(data.deal !== undefined && { deal: data.deal as any }),
+            ...(data.persons !== undefined && { persons: data.persons as any }),
+            ...(data.mataData !== undefined && { mataData: data.mataData as any }),
+            ...(data.isDone !== undefined && { isDone: data.isDone }),
+            ...(data.completedAt !== undefined && { completedAt: data.completedAt ? new Date(data.completedAt) : null }),
+            updatedAt: new Date()
+        };
 
-        Object.entries(data).forEach(([key, value]) => {
-            if (key === 'isDone') {
-                updates.push(`${key} = ?`);
-                values.push(value ? 1 : 0);
-            } else if (['participants', 'deal', 'persons', 'mataData', 'files', 'email'].includes(key)) {
-                updates.push(`${key} = ?`);
-                values.push(value ? JSON.stringify(value) : null);
-            } else {
-                updates.push(`${key} = ?`);
-                values.push(value === undefined ? null : value);
+        const updated = await prisma.dealActivity.update({
+            where: { id },
+            data: updateData
+        });
+
+        // Update deal's lastActivityAt
+        await prisma.deal.update({
+            where: { id: activity.dealId },
+            data: { lastActivityAt: new Date() }
+        });
+
+        return this.formatActivity(updated);
+    }
+
+    async markAsComplete(id: number): Promise<DealActivity | null> {
+        const now = new Date();
+        const updated = await prisma.dealActivity.update({
+            where: { id },
+            data: {
+                isDone: true,
+                completedAt: now,
+                updatedAt: now
             }
         });
 
-        if (updates.length === 0) return activity;
-
-        updates.push('updatedAt = ?');
-        values.push(now);
-        values.push(id);
-
-        const stmt = this.db.prepare(`
-        UPDATE deal_activities 
-        SET ${updates.join(', ')}
-        WHERE id = ?
-    `);
-
-        stmt.run(...values);
-
-        // Update deal's lastActivityAt
-        this.db.prepare('UPDATE deals SET lastActivityAt = ? WHERE id = ?').run(now, activity.dealId);
-
-        return this.findById(id) || null;
-    }
-
-    markAsComplete(id: number): DealActivity | null {
-        const now = new Date().toISOString();
-
-        const stmt = this.db.prepare(`
-        UPDATE deal_activities 
-        SET isDone = 1, completedAt = ?, updatedAt = ?
-        WHERE id = ?
-    `);
-
-        stmt.run(now, now, id);
-
-        const activity = this.findById(id);
-        if (activity) {
-            // Update deal's lastActivityAt
-            this.db.prepare('UPDATE deals SET lastActivityAt = ? WHERE id = ?').run(now, activity.dealId);
+        if (updated) {
+            await prisma.deal.update({
+                where: { id: updated.dealId },
+                data: { lastActivityAt: now }
+            });
         }
 
-        return activity || null;
+        return this.formatActivity(updated);
     }
 
-    delete(id: number): boolean {
-        const stmt = this.db.prepare('DELETE FROM deal_activities WHERE id = ?');
-        const result = stmt.run(id);
-        return result.changes > 0;
+    async delete(id: number): Promise<boolean> {
+        try {
+            await prisma.dealActivity.delete({
+                where: { id }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 
-    addActivityNote(userId: number, activityId: number, note: string): DealActivity | null {
-        const stmt = this.db.prepare(`
-        UPDATE deal_activities 
-        SET note = ?
-        WHERE id = ?
-    `);
-
-        stmt.run(note, activityId);
-
-        return this.findById(activityId) || null;
+    async addActivityNote(userId: number, activityId: number, note: string): Promise<DealActivity | null> {
+        return this.update(activityId, { note });
     }
 
-    getUpcomingActivities(userId: number, days: number = 7): DealActivity[] {
+    async getUpcomingActivities(userId: number, days: number = 7): Promise<DealActivity[]> {
         const today = new Date();
         const futureDate = new Date();
         futureDate.setDate(today.getDate() + days);
 
-        const stmt = this.db.prepare(`
-        SELECT * FROM deal_activities 
-        WHERE userId = ? 
-          AND isDone = 0 
-          AND startDate >= ? 
-          AND startDate <= ?
-        ORDER BY startDate ASC, startTime ASC
-    `);
+        const results = await prisma.dealActivity.findMany({
+            where: {
+                userId,
+                isDone: false,
+                startDate: {
+                    gte: today.toISOString().split('T')[0],
+                    lte: futureDate.toISOString().split('T')[0]
+                }
+            },
+            orderBy: [{ startDate: 'asc' }, { startTime: 'asc' }]
+        });
 
-        const results = stmt.all(
-            userId,
-            today.toISOString().split('T')[0],
-            futureDate.toISOString().split('T')[0]
-        ) as any[];
-
-        return results.map(r => this.formatActivity(r));
+        return results.map((r: any) => this.formatActivity(r));
     }
 }

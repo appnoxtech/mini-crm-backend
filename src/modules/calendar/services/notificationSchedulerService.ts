@@ -14,7 +14,7 @@ export class NotificationSchedulerService {
      */
     async scheduleForEvent(event: CalendarEvent, reminders: EventReminder[]): Promise<void> {
         // Get all users who should receive notifications
-        const userIds = [event.userId, ...this.shareModel.getSharedUserIds(event.id)];
+        const userIds = [event.userId, ...(await this.shareModel.getSharedUserIds(event.id))];
 
         for (const userId of userIds) {
             await this.scheduleForUser(event, reminders, userId);
@@ -33,7 +33,7 @@ export class NotificationSchedulerService {
             // Only schedule if in the future
             if (scheduledAt > new Date()) {
                 // Idempotent - will not create duplicate due to UNIQUE constraint
-                this.notificationModel.create({
+                await this.notificationModel.create({
                     eventId: event.id,
                     reminderId: reminder.id,
                     userId,
@@ -48,7 +48,7 @@ export class NotificationSchedulerService {
      */
     async rescheduleForEvent(event: CalendarEvent, reminders: EventReminder[]): Promise<void> {
         // Delete all pending notifications for this event
-        this.notificationModel.deleteByEventId(event.id);
+        await this.notificationModel.deleteByEventId(event.id);
 
         // Reschedule
         await this.scheduleForEvent(event, reminders);
@@ -57,7 +57,7 @@ export class NotificationSchedulerService {
     /**
      * Remove notifications for a specific user (when unsharing)
      */
-    removeForUser(eventId: number, userId: number): void {
+    async removeForUser(eventId: number, userId: number): Promise<void> {
         // This requires a custom query - add to model if needed
         // For now, the notifications will be orphaned but won't cause issues
         // The cron job can skip notifications for unshared users
@@ -66,8 +66,8 @@ export class NotificationSchedulerService {
     /**
      * Remove notifications for a specific reminder (when deleting reminder)
      */
-    removeForReminder(reminderId: number): void {
-        this.notificationModel.deleteByReminderId(reminderId);
+    async removeForReminder(reminderId: number): Promise<void> {
+        await this.notificationModel.deleteByReminderId(reminderId);
     }
 
     /**

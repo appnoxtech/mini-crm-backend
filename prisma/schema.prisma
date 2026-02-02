@@ -1,0 +1,839 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// Auth Module
+// ============================================
+
+model User {
+  id              Int      @id @default(autoincrement())
+  email           String   @unique
+  name            String
+  passwordHash    String
+  profileImg      Json?
+  phone           String?
+  role            String?  @default("user")
+  dateFormat      String?
+  timezone        String?
+  language        String?
+  defaultCurrency String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relationships
+  emailAccounts   EmailAccount[]
+  leads           Lead[]
+  pipelines       Pipeline[]
+  deals           Deal[]         @relation("DealOwner")
+  assignedDeals   Deal[]         @relation("DealAssigned")
+  calls           Call[]
+  callEvents      CallEvent[]
+  assignedCalls   Call[]         @relation("CallAssigned")
+  dealHistories   DealHistory[]
+  labels          Label[]
+  activities      DealActivity[]
+  imports         Import[]
+  calendarEvents  CalendarEvent[]
+
+  @@map("users")
+}
+
+model Otp {
+  id        Int      @id @default(autoincrement())
+  email     String
+  otp       String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("otps")
+}
+
+// ============================================
+// Email Module
+// ============================================
+
+model EmailAccount {
+  id            String    @id @default(uuid())
+  userId        Int
+  email         String
+  provider      String
+  accessToken   String?
+  refreshToken  String?
+  imapConfig    String?   // JSON string
+  smtpConfig    String?   // JSON string
+  isActive      Boolean   @default(true)
+  lastSyncAt    DateTime?
+  lastHistoryId String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user          User      @relation(fields: [userId], references: [id])
+  emails        Email[]
+  drafts        EmailDraft[]
+
+  @@map("email_accounts")
+}
+
+model Email {
+  id              String   @id @default(uuid())
+  messageId       String
+  threadId        String?
+  accountId       String
+  from            String   @map("from_address")
+  to              Json     @map("to_addresses")
+  cc              Json?    @map("cc_addresses")
+  bcc             Json?    @map("bcc_addresses")
+  subject         String
+  body            String
+  htmlBody        String?
+  isRead          Boolean  @default(false)
+  isIncoming      Boolean  @default(true)
+  sentAt          DateTime
+  receivedAt      DateTime?
+  contactIds      Json?
+  dealIds         Json?
+  accountEntityIds Json?
+  trackingPixelId String?
+  opens           Int      @default(0)
+  clicks          Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  labelIds        Json?
+  attachments      Json?
+  uid             Int?
+  folder          String?
+  providerId      String?
+  snippet         String?
+
+  account         EmailAccount @relation(fields: [accountId], references: [id])
+  content         EmailContent @relation(fields: [messageId], references: [messageId])
+  threadSummary   ThreadSummary? @relation(fields: [threadId], references: [threadId])
+
+  @@unique([messageId, accountId])
+  @@map("emails")
+}
+
+model EmailContent {
+  messageId   String   @id
+  body        String
+  htmlBody    String?
+  attachments Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  emails      Email[]
+
+  @@map("email_contents")
+}
+
+model ThreadSummary {
+  threadId         String   @id @map("thread_id")
+  summary          String
+  keyPoints        Json?    @map("key_points")
+  actionItems      Json?    @map("action_items")
+  sentiment        String?
+  participants     Json?
+  processingTime   Int?     @map("processing_time")
+  modelVersion     String?  @map("model_version")
+  status           String   @default("pending")
+  runpodJobId      String?  @map("runpod_job_id")
+  submittedAt      DateTime? @map("submitted_at")
+  completedAt      DateTime? @map("completed_at")
+  lastSummarizedAt DateTime @map("last_summarized_at")
+
+  emails           Email[]
+
+  @@map("thread_summaries")
+}
+
+model EmailDraft {
+  id                   String   @id @default(uuid())
+  accountId            String
+  userId               Int
+  toRecipients         Json     @map("to_recipients")
+  ccRecipients         Json?    @map("cc_recipients")
+  bccRecipients        Json?    @map("bcc_recipients")
+  subject              String
+  body                 String
+  htmlBody             String?  @map("html_body")
+  attachments          Json?
+  replyToMessageId     String?  @map("reply_to_message_id")
+  forwardFromMessageId String?  @map("forward_from_message_id")
+  threadId             String?  @map("thread_id")
+  contactIds           Json?    @map("contact_ids")
+  dealIds              Json?    @map("deal_ids")
+  accountEntityIds     Json?    @map("account_entity_ids")
+  enableTracking       Boolean  @default(false) @map("enable_tracking")
+  isScheduled          Boolean  @default(false) @map("is_scheduled")
+  scheduledFor         DateTime? @map("scheduled_for")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  account              EmailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([accountId])
+  @@index([createdAt(sort: Desc)])
+  @@index([isScheduled, scheduledFor])
+  @@map("email_drafts")
+}
+
+// ============================================
+// Leads Module
+// ============================================
+
+model Lead {
+  id        Int      @id @default(autoincrement())
+  name      String
+  company   String?
+  value     Float?
+  stage     String   @default("OPEN")
+  notes     String?
+  userId    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  closedAt  DateTime?
+
+  user      User     @relation(fields: [userId], references: [id])
+  history   LeadHistory[]
+
+  @@map("leads")
+}
+
+model LeadHistory {
+  id      Int      @id @default(autoincrement())
+  leadId  Int
+  type    String
+  text    String
+  at      DateTime @default(now())
+
+  lead    Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@map("lead_history")
+}
+
+// ============================================
+// Pipelines & Deals Module
+// ============================================
+
+model Pipeline {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  userId      Int
+  isDefault   Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  dealRotting Boolean  @default(false)
+  rottenDays  Int      @default(30)
+  ownerIds    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stages      PipelineStage[]
+  deals       Deal[]
+  labels      Label[]
+
+  @@map("pipelines")
+}
+
+model PipelineStage {
+  id          Int      @id @default(autoincrement())
+  pipelineId  Int
+  name        String
+  orderIndex  Int
+  rottenDays  Int?
+  probability Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  pipeline    Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  deals       Deal[]
+  historyFrom DealHistory[] @relation("HistoryFromStage")
+  historyTo   DealHistory[] @relation("HistoryToStage")
+
+  @@unique([pipelineId, orderIndex])
+  @@map("pipeline_stages")
+}
+
+model Deal {
+  id                Int      @id @default(autoincrement())
+  title             String
+  value             Float?   @default(0)
+  currency          String?  @default("USD")
+  pipelineId        Int
+  stageId           Int
+  email             Json?
+  phone             Json?
+  description       String?
+  expectedCloseDate DateTime?
+  actualCloseDate   DateTime?
+  probability       Int      @default(0)
+  userId            Int
+  assignedTo        Int?
+  status            String?  @default("OPEN")
+  lostReason        String?
+  lastActivityAt    DateTime?
+  isRotten          Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  deletedAt         DateTime?
+  archivedAt        DateTime?
+  personId          Int?
+  organizationId    Int?
+  source            String?
+  labelIds          Json?
+  customFields      Json?
+  ownerIds          Json?
+  isVisibleToAll    Boolean @default(true)
+
+  user              User     @relation("DealOwner", fields: [userId], references: [id], onDelete: Cascade)
+  assignedUser      User?    @relation("DealAssigned", fields: [assignedTo], references: [id])
+  pipeline          Pipeline @relation(fields: [pipelineId], references: [id])
+  stage             PipelineStage @relation(fields: [stageId], references: [id])
+  calls             Call[]
+  history           DealHistory[]
+  products          Product[]
+  activities        DealActivity[]
+  person            Person?        @relation(fields: [personId], references: [id])
+  organization      Organization?  @relation(fields: [organizationId], references: [id])
+
+  @@map("deals")
+}
+
+model DealHistory {
+  id            Int      @id @default(autoincrement())
+  dealId        Int
+  userId        Int
+  eventType     String
+  fromValue     String?
+  toValue       String?
+  fromStageId   Int?
+  toStageId     Int?
+  stageDuration Float?
+  description   String?
+  metadata      String?
+  createdAt     DateTime @default(now())
+  leftAt        DateTime?
+
+  deal          Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id])
+  fromStage     PipelineStage? @relation("HistoryFromStage", fields: [fromStageId], references: [id])
+  toStage       PipelineStage? @relation("HistoryToStage", fields: [toStageId], references: [id])
+
+  @@map("deal_history")
+}
+
+model Product {
+  id          Int      @id @default(autoincrement())
+  dealId      Int
+  userId      Int
+  title       String
+  price       Float
+  quantity    Float
+  tax         Float
+  amount      Float
+  discount    Float?
+  billingDate DateTime?
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  deal        Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@map("products")
+}
+
+model Label {
+  id             Int      @id @default(autoincrement())
+  value          String
+  color          String?
+  orderIndex     Int
+  pipelineId     Int?
+  userId         Int?
+  organizationId Int?
+  personId       Int?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user           User?    @relation(fields: [userId], references: [id])
+  pipeline       Pipeline? @relation(fields: [pipelineId], references: [id])
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  person         Person?   @relation(fields: [personId], references: [id])
+
+  @@map("labels")
+}
+
+model DealActivity {
+  id           Int       @id @default(autoincrement())
+  dealId       Int
+  userId       Int
+  activityType String
+  subject      String?
+  label        String?
+  startDate    String?
+  endDate      String?
+  startTime    String?
+  endTime      String?
+  priority     String?
+  busyFree     String?
+  note         String?
+  organization String?
+  email        Json?
+  files        Json?
+  participants Json?
+  deal         Json?
+  persons      Json?
+  mataData     Json?
+  isDone       Boolean   @default(false)
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  dealRelation Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("deal_activities")
+}
+
+// ============================================
+// Management Module
+// ============================================
+
+model Organization {
+  id                Int       @id @default(autoincrement())
+  name              String
+  description       String?
+  industry          String?
+  website           String?
+  status            String?   @default("active")
+  emails            Json?
+  phones            Json?
+  annualRevenue     Float?
+  numberOfEmployees Int?
+  linkedinProfile   String?
+  address           Json?
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  deletedAt         DateTime?
+  
+  persons           Person[]
+  labels            Label[]
+  deals             Deal[]
+
+  @@map("organisations")
+}
+
+model Person {
+  id             Int           @id @default(autoincrement())
+  firstName      String
+  lastName       String?
+  organizationId Int?
+  emails         Json?
+  phones         Json?
+  country        String?
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
+
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  calls          Call[]
+  userEmails     PersonEmail[]
+  userPhones     PersonPhone[]
+  labels         Label[]
+  deals          Deal[]
+
+  @@map("persons")
+}
+
+model PersonEmail {
+  id       Int    @id @default(autoincrement())
+  personId Int
+  email    String @unique
+
+  person   Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@map("person_emails")
+}
+
+model PersonPhone {
+  id       Int    @id @default(autoincrement())
+  personId Int
+  phone    String @unique
+
+  person   Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@map("person_phones")
+}
+
+// ============================================
+// Calls Module
+// ============================================
+
+model Call {
+  id               Int      @id @default(autoincrement())
+  twilioCallSid    String?  @unique
+  twilioAccountSid String?
+  direction        String   @default("outbound")
+  status           String   @default("initiated")
+  fromNumber       String
+  toNumber         String
+  startTime        DateTime?
+  answerTime       DateTime?
+  endTime          DateTime?
+  duration         Int      @default(0)
+  ringDuration     Int?
+  userId           Int
+  contactId        Int?
+  dealId           Int?
+  leadId           Int?
+  disposition      String?
+  notes            String?
+  summary          String?
+  queueName        String?
+  assignedAgentId  Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  deletedAt        DateTime?
+
+  user             User     @relation(fields: [userId], references: [id])
+  assignedAgent    User?    @relation("CallAssigned", fields: [assignedAgentId], references: [id])
+  contact          Person?  @relation(fields: [contactId], references: [id])
+  deal             Deal?    @relation(fields: [dealId], references: [id])
+  // Lead relation intentionally omitted if not fully defined yet, can add later
+  participants     CallParticipant[]
+  recordings       CallRecording[]
+  events           CallEvent[]
+
+  @@map("calls")
+}
+
+model CallParticipant {
+  id             Int      @id @default(autoincrement())
+  callId         Int
+  participantSid String?
+  phoneNumber    String
+  name           String?
+  role           String   @default("callee")
+  joinTime       DateTime?
+  leaveTime      DateTime?
+  muted          Boolean  @default(false)
+  hold           Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  call           Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@map("call_participants")
+}
+
+model CallRecording {
+  id                  Int      @id @default(autoincrement())
+  callId              Int
+  recordingSid        String?  @unique
+  recordingUrl        String?
+  localFilePath       String?
+  duration            Int      @default(0)
+  fileSize            Int?
+  channels            Int      @default(1)
+  status              String   @default("processing")
+  transcriptionSid    String?
+  transcriptionText   String?
+  transcriptionStatus String?
+  transcriptionUrl    String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  call                Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@map("call_recordings")
+}
+
+model EmailSyncState {
+  id             String   @id @default(uuid())
+  accountId      String
+  folder         String
+  lastSyncedUid  Int      @default(0)
+  updatedAt      DateTime @updatedAt
+
+  @@unique([accountId, folder])
+  @@map("email_sync_state")
+}
+
+model CallEvent {
+  id          Int      @id @default(autoincrement())
+  callId      Int
+  eventType   String
+  eventData   String?
+  triggeredBy Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  call        Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
+  user        User?    @relation(fields: [triggeredBy], references: [id])
+
+  @@map("call_events")
+}
+// ============================================
+// Import Module
+// ============================================
+
+model Import {
+  id                Int           @id @default(autoincrement())
+  userId            Int
+  entityType        String
+  fileName          String
+  fileFormat        String
+  status            String        @default("pending")
+  totalRows         Int           @default(0)
+  processedRows     Int           @default(0)
+  successCount      Int           @default(0)
+  errorCount        Int           @default(0)
+  skippedCount      Int           @default(0)
+  duplicateHandling String        @default("skip")
+  mapping           Json?
+  filePath          String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  completedAt       DateTime?
+  errorSummary      String?
+
+  user              User          @relation(fields: [userId], references: [id])
+  errors            ImportError[]
+  records           ImportRecord[]
+  staging           ImportStaging[]
+
+  @@map("imports")
+}
+
+model ImportError {
+  id         Int      @id @default(autoincrement())
+  importId   Int
+  rowNumber  Int
+  columnName String?
+  value      String?
+  errorType  String
+  message    String
+  createdAt  DateTime @default(now())
+
+  import     Import   @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@map("import_errors")
+}
+
+model ImportRecord {
+  id        Int      @id @default(autoincrement())
+  importId  Int
+  entityId  Int
+  action    String   // 'created' or 'updated'
+  createdAt DateTime @default(now())
+
+  import     Import   @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@map("import_records")
+}
+
+model ImportTemplate {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  name       String
+  entityType String
+  mapping    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("import_templates")
+}
+
+model ImportStaging {
+  id         Int      @id @default(autoincrement())
+  importId   Int
+  data       Json
+  rowNumber  Int
+  createdAt  DateTime @default(now())
+
+  import     Import   @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@map("import_staging")
+}
+
+// ============================================
+// Calendar Module
+// ============================================
+
+model CalendarEvent {
+  id            Int             @id @default(autoincrement())
+  userId        Int
+  title         String
+  description   String?
+  startTime     DateTime
+  endTime       DateTime
+  location      String?
+  isAllDay      Boolean         @default(false)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  deletedAt     DateTime?
+
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reminders     EventReminder[]
+  shares        EventShare[]
+  notifications EventNotification[]
+
+  @@map("calendar_events")
+}
+
+model EventReminder {
+  id                    Int      @id @default(autoincrement())
+  eventId               Int
+  reminderMinutesBefore Int
+  isDefault             Boolean  @default(false)
+  createdAt             DateTime @default(now())
+
+  event                 CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  notifications         EventNotification[]
+
+  @@map("event_reminders")
+}
+
+model EventShare {
+  id               Int      @id @default(autoincrement())
+  eventId          Int
+  sharedWithUserId Int
+  participantType  String   @default("user") // 'user' or 'person'
+  createdAt        DateTime @default(now())
+
+  event            CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, sharedWithUserId, participantType])
+  @@map("event_shares")
+}
+
+model EventNotification {
+  id            Int      @id @default(autoincrement())
+  eventId       Int
+  reminderId    Int
+  userId        Int
+  userType      String   @default("user") // 'user' or 'person'
+  scheduledAt   DateTime
+  status        String   @default("pending")
+  inAppSentAt   DateTime?
+  emailSentAt   DateTime?
+  failureReason String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  event         CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  reminder      EventReminder @relation(fields: [reminderId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, reminderId, userId, userType])
+  @@map("event_notifications")
+}
+
+// ============================================
+// AI Agent Module
+// ============================================
+
+model PricingTier {
+  id            String         @id @default(uuid())
+  name          String
+  basePrice     Float
+  currency      String         @default("EUR")
+  features      Json?          // Array of strings
+  contractTerms String?
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  discountRules DiscountRule[]
+
+  @@map("pricing_tiers")
+}
+
+model DiscountRule {
+  id         String      @id @default(uuid())
+  tierId     String
+  type       String      // volume, duration, seasonal, loyalty
+  percentage Float
+  conditions Json?       // Object with specific rules
+  createdAt  DateTime    @default(now())
+
+  tier       PricingTier @relation(fields: [tierId], references: [id], onDelete: Cascade)
+
+  @@map("discount_rules")
+}
+
+model BrandGuidelines {
+  id                  String   @id @default("default")
+  tone                String   @default("professional")
+  voiceCharacteristics Json?    // Array of strings
+  openingPhrases      Json?    // Array of strings
+  closingPhrases      Json?    // Array of strings
+  signatureTemplate   String?
+  ctaPatterns         Json?    // Array of strings
+  avoidPhrases        Json?    // Array of strings
+  updatedAt           DateTime @default(now()) @updatedAt
+
+  @@map("brand_guidelines")
+}
+
+model KnowledgeBase {
+  id        Int      @id @default(autoincrement())
+  category  String
+  topic     String
+  content   String
+  keywords  Json?    // Array of strings
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@map("knowledge_base")
+}
+
+model ClientProfile {
+  id                String   @id @default(uuid())
+  dealId            Int?
+  personId          Int?
+  organizationId    Int?
+  requirements      Json?    // Array of strings
+  budgetMin         Float?
+  budgetMax         Float?
+  timeline          String?
+  decisionMakers    Json?    // Array of strings
+  objections        Json?    // Array of strings
+  preferences       Json?    // Object
+  relationshipStage String?
+  maturityScore     Float?
+  lastUpdated       DateTime @default(now()) @updatedAt
+  createdAt         DateTime @default(now())
+
+  @@map("client_profiles")
+}
+
+model EmailSuggestion {
+  id              String    @id @default(uuid())
+  dealId          Int?
+  personId        Int?
+  subjectLine     String
+  body            String
+  htmlBody        String?
+  emailType       String
+  confidenceScore Float?
+  reasoning       String?
+  qualityScore    Float?
+  issues          Json?     // Array of objects
+  status          String    @default("generated")
+  userEdits       String?   // JSON object or string
+  sentAt          DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@map("email_suggestions")
+}

@@ -1,4 +1,3 @@
-import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
@@ -10,8 +9,7 @@ import {
     ImportFileFormat,
     DuplicateHandling,
     ImportError,
-    FieldDefinition,
-    ParsedFileData
+    FieldDefinition
 } from '../types';
 import { ImportModel } from '../models/Import';
 import { FileParserService } from './fileParserService';
@@ -26,20 +24,18 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 }
 
 export class ImportService {
-    private db: Database.Database;
     private importModel: ImportModel;
     private fileParser: FileParserService;
     private processors: Map<ImportEntityType, any>;
 
-    constructor(db: Database.Database) {
-        this.db = db;
-        this.importModel = new ImportModel(db);
+    constructor(_db?: any) {
+        this.importModel = new ImportModel();
         this.fileParser = new FileParserService();
 
         // Initialize entity processors
         this.processors = new Map<ImportEntityType, any>([
-            ['person', new PersonProcessor(db)],
-            ['organization', new OrganizationProcessor(db)],
+            ['person', new PersonProcessor()],
+            ['organization', new OrganizationProcessor()],
         ] as [ImportEntityType, any][]);
     }
 
@@ -77,7 +73,7 @@ export class ImportService {
             );
 
             // Create import job
-            const importJob = this.importModel.create({
+            const importJob = await this.importModel.create({
                 userId,
                 entityType,
                 fileName: file.originalname,
@@ -110,22 +106,22 @@ export class ImportService {
         importId: number,
         mapping: FieldMapping[]
     ): Promise<{ valid: boolean; errors: ImportError[]; totalErrors: number }> {
-        const job = this.importModel.findById(importId);
+        const job = await this.importModel.findById(importId);
         if (!job) throw new Error('Import job not found');
         if (job.userId !== userId) throw new Error('Unauthorized');
 
         // Update status
-        this.importModel.updateStatus(importId, 'validating');
+        await this.importModel.updateStatus(importId, 'validating');
 
         // Clear previous errors
-        this.importModel.clearErrors(importId);
+        await this.importModel.clearErrors(importId);
 
         // Get processor
         const processor = this.processors.get(job.entityType);
         if (!processor) throw new Error(`Unsupported entity type: ${job.entityType}`);
 
         // Get file path
-        const filePath = this.importModel.getFilePath(importId);
+        const filePath = await this.importModel.getFilePath(importId);
         if (!filePath || !fs.existsSync(filePath)) {
             throw new Error('Import file not found');
         }
@@ -146,7 +142,7 @@ export class ImportService {
 
             // Also check for duplicates during validation
             try {
-                const duplicateCheck = processor.checkDuplicate(mappedData);
+                const duplicateCheck = await processor.checkDuplicate(mappedData);
                 if (duplicateCheck.isDuplicate) {
                     errors.push({
                         row: i + 2,
@@ -162,12 +158,12 @@ export class ImportService {
         }
 
         // Save mapping
-        this.importModel.updateMapping(importId, mapping);
-        this.importModel.updateStatus(importId, 'mapping');
+        await this.importModel.updateMapping(importId, mapping);
+        await this.importModel.updateStatus(importId, 'mapping');
 
         // Save errors
         if (errors.length > 0) {
-            this.importModel.addErrors(importId, errors.slice(0, 1000)); // Limit stored errors
+            await this.importModel.addErrors(importId, errors.slice(0, 1000)); // Limit stored errors
         }
 
         return {
@@ -185,21 +181,21 @@ export class ImportService {
         importId: number,
         options: { duplicateHandling: DuplicateHandling }
     ): Promise<ImportResult> {
-        const job = this.importModel.findById(importId);
+        const job = await this.importModel.findById(importId);
         if (!job) throw new Error('Import job not found');
         if (job.userId !== userId) throw new Error('Unauthorized');
 
         // Update job configuration
-        this.importModel.updateDuplicateHandling(importId, options.duplicateHandling);
-        this.importModel.updateStatus(importId, 'processing');
-        this.importModel.clearErrors(importId);
+        await this.importModel.updateDuplicateHandling(importId, options.duplicateHandling);
+        await this.importModel.updateStatus(importId, 'processing');
+        await this.importModel.clearErrors(importId);
 
         // Get processor
         const processor = this.processors.get(job.entityType);
         if (!processor) throw new Error(`Unsupported entity type: ${job.entityType}`);
 
         // Get file path
-        const filePath = this.importModel.getFilePath(importId);
+        const filePath = await this.importModel.getFilePath(importId);
         if (!filePath || !fs.existsSync(filePath)) {
             throw new Error('Import file not found');
         }
@@ -237,7 +233,7 @@ export class ImportService {
                 }
 
                 // Stage the record
-                this.importModel.addStagedRecord(importId, mappedData, i + 2);
+                await this.importModel.addStagedRecord(importId, mappedData, i + 2);
                 result.summary.success++;
             } catch (error: any) {
                 result.summary.errors++;
@@ -250,7 +246,7 @@ export class ImportService {
 
             // Update progress every 10 rows
             if ((i + 1) % 10 === 0 || i === parsedData.rows.length - 1) {
-                this.importModel.updateProgress(
+                await this.importModel.updateProgress(
                     importId,
                     i + 1,
                     result.summary.success,
@@ -264,7 +260,7 @@ export class ImportService {
         // If we have successful staged records, status is 'staged', else 'failed' or 'completed' (if 0 rows)
         if (result.summary.success > 0) {
             result.status = 'staged';
-            this.importModel.updateStatus(
+            await this.importModel.updateStatus(
                 importId,
                 'staged',
                 result.summary.errors > 0 ? `${result.summary.errors} errors occurred during staging` : undefined
@@ -274,21 +270,23 @@ export class ImportService {
             // But for now let's use 'failed' if 0 success, implies nothing to merge
             if (result.summary.errors > 0 || result.summary.total > 0) {
                 result.status = 'failed';
-                this.importModel.updateStatus(importId, 'failed', 'No valid records to merge');
+                await this.importModel.updateStatus(importId, 'failed', 'No valid records to merge');
             } else {
                 result.status = 'completed'; // 0 rows total?
-                this.importModel.updateStatus(importId, 'completed');
+                await this.importModel.updateStatus(importId, 'completed');
             }
         }
 
         // Save any remaining errors (limit to 1000)
         if (result.errors.length > 0) {
-            this.importModel.addErrors(importId, result.errors.slice(0, 1000));
+            await this.importModel.addErrors(importId, result.errors.slice(0, 1000));
         }
 
         // Clean up file
         try {
-            fs.unlinkSync(filePath);
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
         } catch (e) {
             console.error('Failed to delete import file:', e);
         }
@@ -303,7 +301,7 @@ export class ImportService {
      * Merge staged import data into actual tables
      */
     async mergeImport(userId: number, importId: number): Promise<ImportResult> {
-        const job = this.importModel.findById(importId);
+        const job = await this.importModel.findById(importId);
         if (!job) throw new Error('Import job not found');
         if (job.userId !== userId) throw new Error('Unauthorized');
 
@@ -311,14 +309,14 @@ export class ImportService {
             throw new Error(`Cannot merge import with status: ${job.status}`);
         }
 
-        this.importModel.updateStatus(importId, 'processing');
+        await this.importModel.updateStatus(importId, 'processing');
 
         // Get processor
         const processor = this.processors.get(job.entityType);
         if (!processor) throw new Error(`Unsupported entity type: ${job.entityType}`);
 
         // Get staged records
-        const stagedRecords = this.importModel.getStagedRecords(importId);
+        const stagedRecords = await this.importModel.getStagedRecords(importId);
         const duplicateHandling = job.duplicateHandling || 'skip';
 
         const result: ImportResult = {
@@ -343,7 +341,7 @@ export class ImportService {
 
             try {
                 // Process the record (duplicate check and write)
-                const processResult = processor.process(
+                const processResult = await processor.process(
                     data,
                     userId,
                     duplicateHandling
@@ -354,12 +352,12 @@ export class ImportService {
                     if (processResult.id) {
                         result.createdEntityIds.push(processResult.id);
                         // Track created record for rollback
-                        this.importModel.addRecord(importId, processResult.id, 'created');
+                        await this.importModel.addRecord(importId, processResult.id, 'created');
                     }
                 } else if (processResult.status === 'updated') {
                     result.summary.success++;
                     if (processResult.id) {
-                        this.importModel.addRecord(importId, processResult.id, 'updated');
+                        await this.importModel.addRecord(importId, processResult.id, 'updated');
                     }
                 } else if (processResult.status === 'skipped') {
                     result.summary.skipped++;
@@ -373,7 +371,7 @@ export class ImportService {
                     message: error.message,
                 });
                 // Log error to DB
-                this.importModel.addError(importId, {
+                await this.importModel.addError(importId, {
                     row: rowNumber,
                     errorType: 'system',
                     message: error.message
@@ -382,7 +380,7 @@ export class ImportService {
 
             // Update progress every 10 rows
             if ((i + 1) % 10 === 0 || i === stagedRecords.length - 1) {
-                this.importModel.updateProgress(
+                await this.importModel.updateProgress(
                     importId,
                     i + 1, // We are re-using processedRows to count merged rows
                     result.summary.success,
@@ -394,18 +392,16 @@ export class ImportService {
 
         // Finalize
         result.status = 'completed';
-        const totalErrors = result.summary.errors + (job.errorCount || 0); // Include validation errors from staging phase?
-        // Actually, validation errors were filtered out during staging. Staged records shouldn't have validation errors.
-        // But processing errors (e.g. DB constraints) are new.
+        const totalErrors = result.summary.errors + (job.errorCount || 0);
 
-        this.importModel.updateStatus(
+        await this.importModel.updateStatus(
             importId,
             'completed',
             totalErrors > 0 ? `${totalErrors} errors occurred` : undefined
         );
 
         // Clear staged data
-        this.importModel.clearStagedRecords(importId);
+        await this.importModel.clearStagedRecords(importId);
 
         return result;
     }
@@ -413,8 +409,8 @@ export class ImportService {
     /**
      * Get import job by ID
      */
-    getImportJob(userId: number, importId: number): ImportJob | undefined {
-        const job = this.importModel.findById(importId);
+    async getImportJob(userId: number, importId: number): Promise<ImportJob | undefined> {
+        const job = await this.importModel.findById(importId);
         if (!job || job.userId !== userId) return undefined;
         return job;
     }
@@ -422,15 +418,15 @@ export class ImportService {
     /**
      * Get import history for user
      */
-    getImportHistory(userId: number, limit: number = 20, offset: number = 0): { imports: ImportJob[]; count: number } {
+    async getImportHistory(userId: number, limit: number = 20, offset: number = 0): Promise<{ imports: ImportJob[]; count: number }> {
         return this.importModel.findByUserId(userId, limit, offset);
     }
 
     /**
      * Get import errors
      */
-    getImportErrors(userId: number, importId: number, limit: number = 100): ImportError[] {
-        const job = this.importModel.findById(importId);
+    async getImportErrors(userId: number, importId: number, limit: number = 100): Promise<ImportError[]> {
+        const job = await this.importModel.findById(importId);
         if (!job || job.userId !== userId) {
             throw new Error('Import job not found');
         }
@@ -440,14 +436,14 @@ export class ImportService {
     /**
      * Cancel/delete import
      */
-    cancelImport(userId: number, importId: number): boolean {
-        const job = this.importModel.findById(importId);
+    async cancelImport(userId: number, importId: number): Promise<boolean> {
+        const job = await this.importModel.findById(importId);
         if (!job || job.userId !== userId) {
             throw new Error('Import job not found');
         }
 
         // Delete file if exists
-        const filePath = this.importModel.getFilePath(importId);
+        const filePath = await this.importModel.getFilePath(importId);
         if (filePath && fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
         }
@@ -458,11 +454,10 @@ export class ImportService {
     /**
      * Rollback import (undo created records)
      */
-    rollbackImport(userId: number, importId: number): { success: boolean; count: number } {
-        const job = this.importModel.findById(importId);
-        if (!job || job.userId !== userId) {
-            throw new Error('Import job not found');
-        }
+    async rollbackImport(userId: number, importId: number): Promise<{ success: boolean; count: number }> {
+        const job = await this.importModel.findById(importId);
+        if (!job) throw new Error('Import job not found');
+        if (job.userId !== userId) throw new Error('Unauthorized');
 
         if (job.status === 'rolled_back') {
             throw new Error('Import is already rolled back');
@@ -473,15 +468,13 @@ export class ImportService {
         if (!processor) throw new Error(`Unsupported entity type: ${job.entityType}`);
 
         // Get created entity IDs
-        const createdIds = this.importModel.getCreatedEntityIds(importId);
+        const createdIds = await this.importModel.getCreatedEntityIds(importId);
         let deletedCount = 0;
 
         // Delete each entity
-        // We do this one by one for now, as processors expose single delete
-        // In a more optimized version, we could add bulk delete to processors
         for (const id of createdIds) {
             try {
-                if (processor.delete(id)) {
+                if (await processor.delete(id)) {
                     deletedCount++;
                 }
             } catch (error) {
@@ -490,7 +483,7 @@ export class ImportService {
         }
 
         // Update status
-        this.importModel.updateStatus(importId, 'rolled_back', `Rolled back: Deleted ${deletedCount} records`);
+        await this.importModel.updateStatus(importId, 'rolled_back', `Rolled back: Deleted ${deletedCount} records`);
 
         return {
             success: true,
@@ -501,21 +494,21 @@ export class ImportService {
     /**
      * Save import template
      */
-    saveTemplate(userId: number, name: string, entityType: ImportEntityType, mapping: FieldMapping[]): number {
+    async saveTemplate(userId: number, name: string, entityType: ImportEntityType, mapping: FieldMapping[]): Promise<number> {
         return this.importModel.saveTemplate(userId, name, entityType, mapping);
     }
 
     /**
      * Get user's templates
      */
-    getTemplates(userId: number, entityType?: ImportEntityType): any[] {
+    async getTemplates(userId: number, entityType?: ImportEntityType): Promise<any[]> {
         return this.importModel.getTemplates(userId, entityType);
     }
 
     /**
      * Delete template
      */
-    deleteTemplate(userId: number, templateId: number): boolean {
+    async deleteTemplate(userId: number, templateId: number): Promise<boolean> {
         return this.importModel.deleteTemplate(templateId, userId);
     }
 

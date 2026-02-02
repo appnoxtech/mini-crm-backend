@@ -33,7 +33,7 @@ export class PipelineService {
             throw new Error('Rotten days must be between 1 and 365');
         }
 
-        const pipeline = this.pipelineModel.create({
+        const pipeline = await this.pipelineModel.create({
             name: data.name.trim(),
             description: data.description?.trim(),
             userId,
@@ -54,52 +54,59 @@ export class PipelineService {
                 { name: 'Negotiation', probability: 75 },
             ];
 
-        stagesToCreate.forEach((stage, index) => {
-            this.stageModel.create({
+        for (const [index, stage] of stagesToCreate.entries()) {
+            await this.stageModel.create({
                 pipelineId: pipeline.id,
                 name: stage.name,
                 orderIndex: index,
                 probability: stage.probability,
             });
-        });
+        }
 
         return pipeline;
     }
 
     async getPipelines(userId: number, includeStages: boolean = false, includeInactive: boolean = false): Promise<any[]> {
-        const pipelines = this.pipelineModel.findByUserId(userId, includeInactive);
+        const pipelines = await this.pipelineModel.findByUserId(userId, includeInactive);
 
         if (!includeStages) {
-            return pipelines.map(p => ({
-                ...p,
-                stageCount: this.stageModel.findByPipelineId(p.id).length
-            }));
+            const result = [];
+            for (const p of pipelines) {
+                const stages = await this.stageModel.findByPipelineId(p.id);
+                result.push({
+                    ...p,
+                    stageCount: stages.length
+                });
+            }
+            return result;
         }
 
-        return pipelines.map(p => {
-            const stages = this.stageModel.getStageWithDealCount(p.id);
-            const stats = this.pipelineModel.getStats(p.id);
+        const result = [];
+        for (const p of pipelines) {
+            const stages = await this.stageModel.getStageWithDealCount(p.id);
+            const stats = await this.pipelineModel.getStats(p.id);
 
-            return {
+            result.push({
                 ...p,
                 stages,
                 stageCount: stages.length,
                 dealCount: stats.totalDeals,
                 totalValue: stats.totalValue,
                 stats
-            };
-        });
+            });
+        }
+        return result;
     }
 
     async getPipelineById(id: number, userId: number): Promise<any | null> {
-        const pipeline = this.pipelineModel.findById(id, userId);
+        const pipeline = await this.pipelineModel.findById(id, userId);
 
         if (!pipeline) {
             return null;
         }
 
-        const stages = this.stageModel.getStageWithDealCount(id);
-        const stats = this.pipelineModel.getStats(id);
+        const stages = await this.stageModel.getStageWithDealCount(id);
+        const stats = await this.pipelineModel.getStats(id);
 
         // Calculate conversion rate
         const conversionRate = stats.totalDeals > 0
@@ -147,7 +154,7 @@ export class PipelineService {
         }
 
         // Update pipeline basic info
-        const pipeline = this.pipelineModel.update(id, userId, {
+        const pipeline = await this.pipelineModel.update(id, userId, {
             name: data.name,
             description: data.description,
             isDefault: data.isDefault,
@@ -166,9 +173,9 @@ export class PipelineService {
                 const moveDealsToStageId = stageToDelete.moveDealsToStageId;
                 const stageId = stageToDelete.stageId;
 
-                const stage = this.stageModel.findById(Number(stageId));
+                const stage = await this.stageModel.findById(Number(stageId));
                 if (stage && stage.pipelineId === id) {
-                    this.stageModel.delete(Number(stageId), Number(moveDealsToStageId));
+                    await this.stageModel.delete(Number(stageId), Number(moveDealsToStageId));
                 }
             }
         }
@@ -189,12 +196,12 @@ export class PipelineService {
                     rottenDays: s.rottenDays
                 }));
 
-                this.stageModel.bulkUpdate(id, stagesToUpdate);
+                await this.stageModel.bulkUpdate(id, stagesToUpdate);
             }
 
             // Create new stages
             for (const stageInfo of newStages) {
-                this.stageModel.create({
+                await this.stageModel.create({
                     pipelineId: id,
                     name: stageInfo.name,
                     orderIndex: stageInfo.orderIndex,
@@ -209,25 +216,25 @@ export class PipelineService {
 
     async deletePipeline(id: number, userId: number): Promise<{ success: boolean; dealsAffected: number }> {
 
-        const pipeline = this.pipelineModel.findById(id, userId);
+        const pipeline = await this.pipelineModel.findById(id, userId);
 
         if (!pipeline) {
             throw new Error('Pipeline not found');
         }
 
-        const stats = this.pipelineModel.getStats(id);
+        const stats = await this.pipelineModel.getStats(id);
 
         if (stats.totalDeals > 0) {
             throw new Error(`Cannot delete pipeline with ${stats.totalDeals} existing deals`);
         }
 
         // Ensure user has at least one other pipeline
-        const userPipelines = this.pipelineModel.findByUserId(userId);
+        const userPipelines = await this.pipelineModel.findByUserId(userId);
         if (userPipelines.length <= 1) {
             throw new Error('Cannot delete the only pipeline. Create another pipeline first.');
         }
 
-        const success = this.pipelineModel.delete(id, userId);
+        const success = await this.pipelineModel.delete(id, userId);
 
         return {
             success,
@@ -236,7 +243,7 @@ export class PipelineService {
     }
 
     async getDefaultPipeline(userId: number): Promise<Pipeline | null> {
-        const pipelines = this.pipelineModel.findByUserId(userId);
+        const pipelines = await this.pipelineModel.findByUserId(userId);
         return pipelines.find(p => p.isDefault) || pipelines[0] || null;
     }
 }
