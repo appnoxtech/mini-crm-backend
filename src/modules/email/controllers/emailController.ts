@@ -1230,7 +1230,7 @@ export class EmailController {
         }
       }
 
-      // Special handling for 'drafts' folder: Use DraftService
+      // Special handling for 'drafts' folder: Use DraftService with merged local + provider drafts
       if ((folder as string) === 'drafts') {
         const draftOptions: ListDraftsOptions = {
           limit: limit ? parseInt(limit as string) : 50,
@@ -1239,7 +1239,7 @@ export class EmailController {
           accountId: effectiveAccountId,
         };
 
-        const draftResult = await this.draftService.listDrafts(req.user.id.toString(), draftOptions);
+        const draftResult = await this.draftService.listAllDrafts(req.user.id.toString(), draftOptions);
 
         // Map drafts to Email interface structure for compatibility
         const mappedDrafts = draftResult.drafts.map(draft => ({
