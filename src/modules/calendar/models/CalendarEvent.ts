@@ -76,11 +76,17 @@ export class CalendarEventModel {
         };
 
         if (filters.startDate) {
-            where.startTime = { gte: new Date(filters.startDate) };
+            let start = filters.startDate;
+            if (start.length === 10) start += 'T00:00:00.000Z';
+            query += ` AND startTime >= ?`;
+            params.push(start);
         }
 
         if (filters.endDate) {
-            where.startTime = { ...where.startTime, lte: new Date(filters.endDate) };
+            let end = filters.endDate;
+            if (end.length === 10) end += 'T23:59:59.999Z';
+            query += ` AND startTime <= ?`;
+            params.push(end);
         }
 
         const [events, total] = await Promise.all([
@@ -114,11 +120,17 @@ export class CalendarEventModel {
         };
 
         if (filters.startDate) {
-            where.startTime = { gte: new Date(filters.startDate) };
+            let start = filters.startDate;
+            if (start.length === 10) start += 'T00:00:00.000Z';
+            query += ` AND e.startTime >= ?`;
+            params.push(start);
         }
 
         if (filters.endDate) {
-            where.startTime = { ...where.startTime, lte: new Date(filters.endDate) };
+            let end = filters.endDate;
+            if (end.length === 10) end += 'T23:59:59.999Z';
+            query += ` AND e.startTime <= ?`;
+            params.push(end);
         }
 
         const [events, total] = await Promise.all([
