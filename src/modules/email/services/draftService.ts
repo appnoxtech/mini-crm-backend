@@ -117,6 +117,96 @@ export class DraftService {
     }
 
     /**
+     * List ALL drafts - both from local DB and provider-synced drafts
+     * This merges drafts from email_drafts table and emails table (where folder='DRAFT')
+     * No deduplication - shows all drafts from both sources
+     */
+    async listAllDrafts(
+        userId: string,
+        options: ListDraftsOptions = {}
+    ): Promise<{ drafts: EmailDraft[]; total: number }> {
+        const {
+            limit = 50,
+            offset = 0,
+            search,
+            accountId,
+        } = options;
+
+        console.log('listAllDrafts called with:', { userId, accountId, search, limit, offset });
+
+        // 1. Get local drafts from email_drafts table
+        const localDrafts = await this.draftModel.listDrafts(userId, {
+            ...options,
+            limit: 1000, // Get all local drafts for merging
+            offset: 0,
+        });
+
+        console.log('Local drafts count:', localDrafts.total, 'drafts:', localDrafts.drafts.length);
+
+        // 2. Get provider-synced drafts from emails table
+        const providerDrafts = await this.emailService.getEmailsForUser(userId, {
+            folder: 'drafts',
+            limit: 1000, // Get all provider drafts for merging
+            offset: 0,
+            accountId,
+            search,
+        });
+
+        console.log('Provider drafts count:', providerDrafts.total, 'emails:', providerDrafts.emails.length);
+
+        // 3. Convert provider emails to EmailDraft format
+        const providerDraftsAsDrafts: EmailDraft[] = providerDrafts.emails.map(email => ({
+            id: email.id,
+            accountId: email.accountId,
+            userId: userId,
+            to: email.to,
+            cc: email.cc,
+            bcc: email.bcc,
+            subject: email.subject,
+            body: email.body,
+            htmlBody: email.htmlBody,
+            attachments: email.attachments,
+            threadId: email.threadId,
+            providerDraftId: email.providerId || email.id,
+            enableTracking: false,
+            isScheduled: false,
+            createdAt: email.createdAt || new Date(),
+            updatedAt: email.updatedAt || new Date(),
+        }));
+
+        // 4. Merge all drafts (no deduplication)
+        let allDrafts = [...localDrafts.drafts, ...providerDraftsAsDrafts];
+
+        console.log('Total merged drafts before filtering:', allDrafts.length);
+
+        // 5. Sort by updatedAt (most recent first)
+        allDrafts.sort((a, b) => {
+            const dateA = a.updatedAt instanceof Date ? a.updatedAt : new Date(a.updatedAt);
+            const dateB = b.updatedAt instanceof Date ? b.updatedAt : new Date(b.updatedAt);
+            return dateB.getTime() - dateA.getTime();
+        });
+
+        // 6. Apply search filter if needed (in case provider search didn't work)
+        if (search) {
+            allDrafts = allDrafts.filter(draft =>
+                draft.subject.toLowerCase().includes(search.toLowerCase()) ||
+                draft.body.toLowerCase().includes(search.toLowerCase())
+            );
+        }
+
+        // 7. Apply pagination
+        const total = allDrafts.length;
+        const paginatedDrafts = allDrafts.slice(offset, offset + limit);
+
+        console.log('Final result - total:', total, 'paginated:', paginatedDrafts.length);
+
+        return {
+            drafts: paginatedDrafts,
+            total,
+        };
+    }
+
+    /**
      * Update an existing draft
      * Business rule: Validate changes before applying
      */
