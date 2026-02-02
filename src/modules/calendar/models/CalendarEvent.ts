@@ -89,13 +89,17 @@ export class CalendarEventModel {
         const params: any[] = [userId];
 
         if (filters.startDate) {
+            let start = filters.startDate;
+            if (start.length === 10) start += 'T00:00:00.000Z';
             query += ` AND startTime >= ?`;
-            params.push(filters.startDate);
+            params.push(start);
         }
 
         if (filters.endDate) {
+            let end = filters.endDate;
+            if (end.length === 10) end += 'T23:59:59.999Z';
             query += ` AND startTime <= ?`;
-            params.push(filters.endDate);
+            params.push(end);
         }
 
         query += ` ORDER BY startTime ASC`;
@@ -134,13 +138,17 @@ export class CalendarEventModel {
         const params: any[] = [userId, userId];
 
         if (filters.startDate) {
+            let start = filters.startDate;
+            if (start.length === 10) start += 'T00:00:00.000Z';
             query += ` AND e.startTime >= ?`;
-            params.push(filters.startDate);
+            params.push(start);
         }
 
         if (filters.endDate) {
+            let end = filters.endDate;
+            if (end.length === 10) end += 'T23:59:59.999Z';
             query += ` AND e.startTime <= ?`;
-            params.push(filters.endDate);
+            params.push(end);
         }
 
         query += ` ORDER BY e.startTime ASC`;
