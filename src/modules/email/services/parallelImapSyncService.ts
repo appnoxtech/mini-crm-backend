@@ -331,7 +331,7 @@ export class ParallelImapSyncService {
             maxConnections: 20,
             batchSize: 5,
             lastSyncTime,
-            foldersToSync: ['INBOX', 'SENT'],
+            foldersToSync: ['INBOX', 'SENT', 'DRAFT'],
         });
     }
 

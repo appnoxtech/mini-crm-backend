@@ -886,7 +886,7 @@ export class EmailModel {
       whereClause += ` AND (e.labelIds LIKE '%SPAM%' OR e.labelIds LIKE '%JUNK%')`;
 
     } else if (folder === "drafts" || folder === "drfts") {
-      whereClause += ` AND e.labelIds LIKE '%DRAFT%'`;
+      whereClause += ` AND (e.folder = 'DRAFT' OR e.labelIds LIKE '%DRAFT%')`;
 
     } else if (folder === "trash") {
       whereClause += ` AND e.labelIds LIKE '%TRASH%'`;
