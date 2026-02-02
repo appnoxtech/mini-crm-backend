@@ -116,7 +116,7 @@ model Email {
 
   account         EmailAccount @relation(fields: [accountId], references: [id])
   content         EmailContent @relation(fields: [messageId], references: [messageId])
-  threadSummary   ThreadSummary? @relation(fields: [threadId], references: [threadId])
+  // Note: threadId is intentionally NOT a foreign key - thread summaries are created asynchronously
 
   @@unique([messageId, accountId])
   @@map("emails")
@@ -149,8 +149,6 @@ model ThreadSummary {
   submittedAt      DateTime? @map("submitted_at")
   completedAt      DateTime? @map("completed_at")
   lastSummarizedAt DateTime @map("last_summarized_at")
-
-  emails           Email[]
 
   @@map("thread_summaries")
 }

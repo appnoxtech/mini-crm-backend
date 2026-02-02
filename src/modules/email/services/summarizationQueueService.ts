@@ -134,21 +134,16 @@ export class SummarizationQueueService {
      * Get threads that need summarization
      */
     async getThreadsNeedingSummary(limit: number = 50): Promise<string[]> {
-        const threads = await prisma.email.findMany({
-            where: {
-                threadId: { not: null },
-                threadSummary: {
-                    is: null
-                }
-            },
-            distinct: ['threadId'],
-            take: limit,
-            select: { threadId: true }
-        });
+        // Use raw SQL to find threads without summaries since the relation was removed
+        const threads = await prisma.$queryRaw<{ threadId: string }[]>`
+            SELECT DISTINCT e."threadId"
+            FROM emails e
+            WHERE e."threadId" IS NOT NULL
+              AND e."threadId" NOT IN (SELECT ts."thread_id" FROM thread_summaries ts)
+            LIMIT ${limit}
+        `;
 
-        // Prisma distinct on threadId might not be enough if we want to ensure no summary exists.
-        // The above query finds emails with threadId where threadSummary (related record) is null.
-        return threads.map((t: any) => t.threadId as string);
+        return threads.map((t: any) => t.threadId);
     }
 
     /**
