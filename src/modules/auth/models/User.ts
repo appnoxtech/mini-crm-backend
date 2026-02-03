@@ -99,6 +99,13 @@ export class UserModel {
     return stmt.get(id) as User | undefined;
   }
 
+  findByIds(ids: number[]): User[] {
+    if (ids.length === 0) return [];
+    const placeholders = ids.map(() => '?').join(',');
+    const stmt = this.db.prepare(`SELECT * FROM users WHERE id IN (${placeholders})`);
+    return stmt.all(...ids) as User[];
+  }
+
   updateUser(id: number, updates: Partial<User>): AuthUser | null {
     try {
       const user = this.findById(id);
