@@ -131,6 +131,12 @@ import { NotificationController } from './modules/calendar/controllers/notificat
 import { createCalendarRoutes } from './modules/calendar/routes/calendarRoutes';
 import { startReminderProcessor } from './cron/reminderProcessor';
 
+// Import new Activity Scheduler module
+import { ActivityModel as SchedulerActivityModel } from './modules/activities/models/Activity';
+import { ActivityService as SchedulerActivityService } from './modules/activities/services/ActivityService';
+import { ActivityController as SchedulerActivityController } from './modules/activities/controllers/ActivityController';
+import { createActivityRoutes as createSchedulerRoutes } from './modules/activities/routes/activityRoutes';
+
 
 
 const app = express();
@@ -196,6 +202,16 @@ calendarEventModel.initialize();
 eventReminderModel.initialize();
 eventShareModel.initialize();
 eventNotificationModel.initialize();
+
+// Initialize calendar tables
+calendarEventModel.initialize();
+eventReminderModel.initialize();
+eventShareModel.initialize();
+eventNotificationModel.initialize();
+
+// Initialize Activity Scheduler model
+const schedulerActivityModel = new SchedulerActivityModel(db);
+schedulerActivityModel.initialize();
 
 // Initialize import model
 const importModel = new ImportModel(db);
@@ -302,12 +318,26 @@ app.use('/api/pipelines', createPipelineRoutes(pipelineController));
 app.use('/api/label', createLabelRoutes(labelController));
 app.use('/api/deals', createDealRoutes(dealController));
 app.use('/api/products', createProductRoutes(productController));
-app.use('/api/activities', createActivityRoutes(activityController));
+app.use('/api/deals-activities', createActivityRoutes(activityController)); // Deal-specific activities
+
+// Management module routes
 app.use('/api/organisations', createOrganizationRoutes(organizationController));
 app.use('/api/persons', createPersonRoutes(personController));
 app.use('/api/profile', createProfileRoutes(profileController));
 app.use('/api/calls', createCallRoutes(callController));
 app.use('/api/webhooks/twilio', createWebhookRoutes(webhookController));
+
+// Call module routes
+app.use('/api/calls', createCallRoutes(callController));
+app.use('/api/webhooks/twilio', createWebhookRoutes(webhookController));
+
+// Activity Scheduler routes (General activities)
+// Initialize service and controller for scheduler
+const schedulerActivityService = new SchedulerActivityService(schedulerActivityModel, userModel);
+const schedulerActivityController = new SchedulerActivityController(schedulerActivityService);
+app.use('/api/activities', createSchedulerRoutes(schedulerActivityController));
+
+// Import module routes
 app.use('/api/import', createImportRoutes(importController));
 app.use('/api/ai', createSuggestionRoutes(suggestionController, aiConfigController));
 app.use('/api/webhooks/email', createEmailWebhookRoutes());
@@ -329,6 +359,38 @@ app.use('*', (req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
+
+
+function getLocalIP(): string {
+  const interfaces = os.networkInterfaces();
+
+  for (const name in interfaces) {
+    const nets = interfaces[name];
+    if (!nets) continue;
+
+    for (const net of nets) {
+      if (net.family === 'IPv4' && !net.internal) {
+        return net.address;
+      }
+    }
+  }
+
+  return 'localhost';
+}
+
+
+const localIP = getLocalIP();
+
+// Global error handlers
+process.on('uncaughtException', (error) => {
+  console.error('UNCAUGHT EXCEPTION:', error);
+  // Keep the process alive for debugging in dev, or exit with 1 in prod
+  // process.exit(1); 
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('UNHANDLED REJECTION:', reason);
+});
 
 // Start the server
 server.listen(PORT, '0.0.0.0', () => {
