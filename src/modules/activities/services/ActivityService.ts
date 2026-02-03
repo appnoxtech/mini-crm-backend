@@ -90,10 +90,21 @@ export class ActivityService {
         limit?: number;
         offset?: number;
     }) {
-        const result = this.model.findAll({ ...filters, userId });
+        const limit = filters.limit || 10;
+        const offset = filters.offset || 0;
+
+        const result = this.model.findAll({ ...filters, limit, offset, userId });
+        const enriched = this.enrichActivities(result.activities);
+
         return {
-            ...result,
-            activities: this.enrichActivities(result.activities)
+            data: enriched,
+            pagination: {
+                total: result.total,
+                limit: limit,
+                offset: offset,
+                currentPage: Math.floor(offset / limit) + 1,
+                totalPages: Math.ceil(result.total / limit)
+            }
         };
     }
 
