@@ -34,10 +34,11 @@ export class DraftModel {
                 contactIds: (input.contactIds as any) || null,
                 dealIds: (input.dealIds as any) || null,
                 accountEntityIds: (input.accountEntityIds as any) || null,
-                enableTracking: input.enableTracking || false,
                 isScheduled: input.isScheduled || false,
                 scheduledFor: input.scheduledFor || null,
-            }
+                providerId: null,
+                remoteUid: null,
+            } as any
         });
 
         return this.mapRowToDraft(row);
@@ -128,9 +129,10 @@ export class DraftModel {
         if (updates.contactIds !== undefined) data.contactIds = (updates.contactIds as any) || null;
         if (updates.dealIds !== undefined) data.dealIds = (updates.dealIds as any) || null;
         if (updates.accountEntityIds !== undefined) data.accountEntityIds = (updates.accountEntityIds as any) || null;
-        if (updates.enableTracking !== undefined) data.enableTracking = updates.enableTracking;
         if (updates.isScheduled !== undefined) data.isScheduled = updates.isScheduled;
         if (updates.scheduledFor !== undefined) data.scheduledFor = updates.scheduledFor;
+        if ((updates as any).providerId !== undefined) data.providerId = (updates as any).providerId;
+        if ((updates as any).remoteUid !== undefined) data.remoteUid = (updates as any).remoteUid;
 
         try {
             const row = await prisma.emailDraft.update({
@@ -203,9 +205,10 @@ export class DraftModel {
             contactIds: (row.contactIds as string[]) || undefined,
             dealIds: (row.dealIds as string[]) || undefined,
             accountEntityIds: (row.accountEntityIds as string[]) || undefined,
-            enableTracking: row.enableTracking,
             isScheduled: row.isScheduled,
             scheduledFor: row.scheduledFor || undefined,
+            providerId: row.providerId || undefined,
+            remoteUid: row.remoteUid || undefined,
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,
         };

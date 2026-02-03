@@ -6,6 +6,7 @@ import { simpleParser } from 'mailparser';
 import { DealActivityModel } from "../../pipelines/models/DealActivity";
 import { HistoricalSyncService } from "./historicalSyncService";
 import nodemailer from 'nodemailer';
+import { DraftModel } from "../models/draftModel";
 
 export class EmailService {
   private emailModel: EmailModel;
@@ -13,17 +14,20 @@ export class EmailService {
   private notificationService?: RealTimeNotificationService;
   private activityModel?: DealActivityModel;
   private historicalSyncService: HistoricalSyncService;
+  private draftModel: DraftModel;
 
   constructor(
     emailModel: EmailModel,
     connectorService: EmailConnectorService,
     notificationService?: RealTimeNotificationService,
-    activityModel?: DealActivityModel
+    activityModel?: DealActivityModel,
+    draftModel?: DraftModel
   ) {
     this.emailModel = emailModel;
     this.connectorService = connectorService;
     this.notificationService = notificationService;
     this.activityModel = activityModel;
+    this.draftModel = draftModel || new DraftModel();
     this.historicalSyncService = new HistoricalSyncService(
       emailModel,
       connectorService,
@@ -122,8 +126,6 @@ export class EmailService {
       contactIds: [],
       dealIds: emailData.dealId ? [emailData.dealId.toString()] : [],
       accountEntityIds: [],
-      opens: 0,
-      clicks: 0,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -432,8 +434,6 @@ export class EmailService {
       contactIds,
       dealIds,
       accountEntityIds,
-      opens: 0,
-      clicks: 0,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -1700,6 +1700,183 @@ export class EmailService {
       }
     } catch (error: any) {
       console.error(`Failed to refresh Outlook flags for account ${account.id}:`, error.message);
+    }
+  }
+
+  /**
+   * Sync a CRM draft to the email server (Gmail, Outlook, or IMAP)
+   */
+  async syncDraftToServer(userId: string, draftId: string): Promise<string | null> {
+    try {
+      const draft = await this.draftModel.getDraftById(draftId, userId);
+      if (!draft) return null;
+
+      const account = await this.emailModel.getEmailAccountById(draft.accountId);
+      if (!account) return null;
+
+      let remoteId: string | null = null;
+
+      // Custom/IMAP providers (like Hostinger)
+      if (account.provider === 'custom' || (!['gmail', 'outlook'].includes(account.provider) && account.imapConfig)) {
+        // If there was a previous version on server, try to delete it
+        if (draft.remoteUid) {
+          try {
+            // Find Drafts folder
+            const mailboxes = await this.connectorService.getIMAPFolderConfigs(account);
+            const draftFolder = (mailboxes.find(f => f.label === 'DRAFT') as any)?.path || 'Drafts';
+            await this.connectorService.deleteImapEmailPermanently(account, draftFolder, parseInt(draft.remoteUid), draft.id);
+          } catch (err) {
+            console.warn(`Failed to delete old IMAP draft ${draft.remoteUid}:`, err);
+          }
+        }
+
+        remoteId = await this.connectorService.saveDraftToIMAP(account, draft);
+        if (remoteId) {
+          await this.draftModel.updateDraft(draftId, userId, { remoteUid: remoteId } as any);
+        }
+      }
+      // Gmail provider
+      else if (account.provider === 'gmail') {
+        // If update, delete old draft first
+        if (draft.providerId) {
+          try {
+            await this.connectorService.deleteGmailEmailPermanently(account, draft.providerId);
+          } catch (err) {
+            console.warn(`Failed to delete old Gmail draft ${draft.providerId}:`, err);
+          }
+        }
+
+        remoteId = await this.connectorService.saveDraftToGmail(account, draft);
+        if (remoteId) {
+          await this.draftModel.updateDraft(draftId, userId, { providerId: remoteId } as any);
+        }
+      }
+      // Outlook provider
+      else if (account.provider === 'outlook') {
+        // If update, delete old draft first
+        if (draft.providerId) {
+          try {
+            await this.connectorService.deleteOutlookEmailPermanently(account, draft.providerId);
+          } catch (err) {
+            console.warn(`Failed to delete old Outlook draft ${draft.providerId}:`, err);
+          }
+        }
+
+        remoteId = await this.connectorService.saveDraftToOutlook(account, draft);
+        if (remoteId) {
+          await this.draftModel.updateDraft(draftId, userId, { providerId: remoteId } as any);
+        }
+      }
+
+      return remoteId;
+    } catch (error: any) {
+      console.error(`Error syncing draft ${draftId} to server:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Mark an email as spam
+   */
+  async markEmailAsSpam(userId: string, emailId: string): Promise<void> {
+    const email = await this.emailModel.getEmailById(emailId, userId);
+    if (!email) throw new Error("Email not found");
+
+    const account = await this.emailModel.getEmailAccountById(email.accountId);
+    if (!account) throw new Error("Email account not found");
+
+    try {
+      if (account.provider === 'gmail') {
+        await this.connectorService.markGmailAsSpam(account, email.providerId || email.messageId);
+      } else if (account.provider === 'outlook') {
+        await this.connectorService.markOutlookAsSpam(account, email.providerId || email.messageId);
+      } else if (account.imapConfig) {
+        await this.connectorService.markImapAsSpam(account, email.folder || 'INBOX', email.uid as number);
+      }
+
+      // Update local record
+      await this.emailModel.updateEmail(emailId, {
+        folder: 'SPAM',
+        labelIds: ['SPAM'],
+        updatedAt: new Date()
+      });
+
+      console.log(`[EmailService] Marked email ${emailId} as Spam`);
+    } catch (error) {
+      console.error(`Failed to mark email ${emailId} as spam:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Unmark an email as spam (move back to Inbox)
+   */
+  async unmarkEmailAsSpam(userId: string, emailId: string): Promise<void> {
+    const email = await this.emailModel.getEmailById(emailId, userId);
+    if (!email) throw new Error("Email not found");
+
+    const account = await this.emailModel.getEmailAccountById(email.accountId);
+    if (!account) throw new Error("Email account not found");
+
+    try {
+      if (account.provider === 'gmail') {
+        // Just remove SPAM label and add INBOX
+        await this.connectorService.setGmailLabel(account, email.providerId || email.messageId, {
+          add: ['INBOX'],
+          remove: ['SPAM']
+        });
+      } else if (account.provider === 'outlook') {
+        // Move back to inbox
+        await this.connectorService.untrashOutlookEmail(account, email.providerId || email.messageId);
+      } else if (account.imapConfig) {
+        // Move from Spam to Inbox
+        const client = await this.connectorService.connectIMAP(account);
+        try {
+          await client.mailboxOpen(email.folder || 'Spam');
+          await client.messageMove(`${email.uid}`, 'INBOX', { uid: true });
+        } finally {
+          await client.logout();
+        }
+      }
+
+      // Update local record
+      await this.emailModel.updateEmail(emailId, {
+        folder: 'INBOX',
+        labelIds: ['INBOX'],
+        updatedAt: new Date()
+      });
+
+      console.log(`[EmailService] Unmarked email ${emailId} from Spam (moved to INBOX)`);
+    } catch (error) {
+      console.error(`Failed to unmark email ${emailId} from spam:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a draft from the email server
+   */
+  async deleteDraftFromServer(userId: string, draftId: string): Promise<void> {
+    try {
+      const draft = await this.draftModel.getDraftById(draftId, userId);
+      if (!draft) return;
+
+      const account = await this.emailModel.getEmailAccountById(draft.accountId);
+      if (!account) return;
+
+      if (account.provider === 'custom' || (!['gmail', 'outlook'].includes(account.provider) && account.imapConfig)) {
+        if (draft.remoteUid) {
+          const mailboxes = await this.connectorService.getIMAPFolderConfigs(account);
+          const draftFolder = (mailboxes.find(f => f.label === 'DRAFT') as any)?.path || 'Drafts';
+          await this.connectorService.deleteImapEmailPermanently(account, draftFolder, parseInt(draft.remoteUid), draft.id);
+        }
+      } else if (account.provider === 'gmail' && draft.providerId) {
+        await this.connectorService.deleteGmailEmailPermanently(account, draft.providerId);
+      } else if (account.provider === 'outlook' && draft.providerId) {
+        await this.connectorService.deleteOutlookEmailPermanently(account, draft.providerId);
+      }
+    } catch (error) {
+      console.warn(`Failed to delete draft ${draftId} from server:`, error);
     }
   }
 }

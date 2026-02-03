@@ -46,14 +46,54 @@ export class DraftService {
             }
         }
 
-        return this.draftModel.createDraft(userId, input);
+        const draft = await this.draftModel.createDraft(userId, input);
+
+        // Sync to server in background
+        this.emailService.syncDraftToServer(userId, draft.id).catch(err => {
+            console.error(`Failed to sync new draft ${draft.id} to server:`, err);
+        });
+
+        return draft;
     }
 
     /**
      * Get a draft by ID
      */
     async getDraftById(draftId: string, userId: string): Promise<EmailDraft | null> {
-        return this.draftModel.getDraftById(draftId, userId);
+        const draft = await this.draftModel.getDraftById(draftId, userId);
+        if (draft) return draft;
+
+        // Fallback: check if it's a synced draft in the Email table
+        const email = await this.emailService.getEmailById(draftId, userId);
+        if (email && (email.folder === 'DRAFT' || email.labelIds?.includes('SPAM'))) {
+            // Map Email to EmailDraft structure
+            return {
+                id: email.id,
+                accountId: email.accountId,
+                userId: userId.toString(),
+                to: email.to,
+                cc: email.cc || [],
+                bcc: email.bcc || [],
+                subject: email.subject,
+                body: email.body || '',
+                htmlBody: email.htmlBody || undefined,
+                attachments: email.attachments as any,
+                replyToMessageId: undefined,
+                forwardFromMessageId: undefined,
+                threadId: email.threadId || undefined,
+                contactIds: email.contactIds as any,
+                dealIds: email.dealIds as any,
+                accountEntityIds: email.accountEntityIds as any,
+                isScheduled: false,
+                scheduledFor: undefined,
+                createdAt: new Date(email.createdAt),
+                updatedAt: new Date(email.updatedAt),
+                providerId: (email as any).providerId || undefined,
+                remoteUid: (email as any).uid?.toString() || undefined
+            };
+        }
+
+        return null;
     }
 
     /**
@@ -100,13 +140,27 @@ export class DraftService {
             }
         }
 
-        return this.draftModel.updateDraft(draftId, userId, updates);
+        const draft = await this.draftModel.updateDraft(draftId, userId, updates);
+
+        if (draft) {
+            // Sync updated draft to server in background
+            this.emailService.syncDraftToServer(userId, draft.id).catch(err => {
+                console.error(`Failed to sync updated draft ${draft.id} to server:`, err);
+            });
+        }
+
+        return draft;
     }
 
     /**
      * Delete a draft
      */
     async deleteDraft(draftId: string, userId: string): Promise<boolean> {
+        // Delete from server first
+        await this.emailService.deleteDraftFromServer(userId, draftId).catch(err => {
+            console.warn(`Failed to delete draft ${draftId} from server:`, err);
+        });
+
         return this.draftModel.deleteDraft(draftId, userId);
     }
 
@@ -201,7 +255,6 @@ export class DraftService {
             contactIds: original.contactIds,
             dealIds: original.dealIds,
             accountEntityIds: original.accountEntityIds,
-            enableTracking: original.enableTracking,
             // Don't copy scheduling info
             isScheduled: false,
             scheduledFor: undefined,

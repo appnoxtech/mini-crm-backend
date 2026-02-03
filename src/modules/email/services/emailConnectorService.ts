@@ -1593,31 +1593,46 @@ export class EmailConnectorService {
     const client = await this.connectIMAP(account);
     try {
       // Common trash folder names
-      const trashFolderNames = ['Trash', 'INBOX.Trash', 'Deleted', 'Deleted Items', 'Deleted Messages', '[Gmail]/Trash'];
+      const potentialTrashNames = ['Trash', 'INBOX.Trash', 'Deleted', 'Deleted Items', 'Deleted Messages', '[Gmail]/Trash'];
 
-      let restored = false;
-      let trashFolder = 'Trash';
+      // Get actual folders from server
+      const existingFolders = await client.list();
+      const validTrashFolders: string[] = [];
 
-      // Try to find the actual Trash folder
-      try {
-        const folders = await client.list();
-        for (const folder of folders) {
-          const lowerName = folder.path.toLowerCase();
-          if (lowerName.includes('trash') || lowerName.includes('deleted') ||
-            folder.specialUse === '\\Trash') {
-            trashFolder = folder.path;
-            break;
-          }
-        }
-      } catch (listError) {
-        console.warn('Could not list folders, using default Trash folder');
+      // 1. Add any folder with \Trash special use
+      const specialTrash = existingFolders.find(f => f.specialUse === '\\Trash');
+      if (specialTrash) {
+        validTrashFolders.push(specialTrash.path);
       }
 
-      // If we have a Message-ID, search for the email in trash folders
+      // 2. Add matching names from our list
+      for (const name of potentialTrashNames) {
+        const exists = existingFolders.find(f => f.path === name || f.path === `INBOX.${name}` || f.name === name);
+        if (exists && !validTrashFolders.includes(exists.path)) {
+          validTrashFolders.push(exists.path);
+        }
+      }
+
+      // 3. Fallback: Check existing folders that look like trash
+      if (validTrashFolders.length === 0) {
+        for (const folder of existingFolders) {
+          const lower = folder.path.toLowerCase();
+          if ((lower.includes('trash') || lower.includes('deleted')) && !validTrashFolders.includes(folder.path)) {
+            validTrashFolders.push(folder.path);
+          }
+        }
+      }
+
+      let restored = false;
+      // Use the first valid trash folder found as the primary one, or default to 'Trash' if none
+      // Explicitly checking for length to satisfy TS
+      let trashFolder: string = (validTrashFolders.length > 0 && validTrashFolders[0]) ? validTrashFolders[0] : 'Trash';
+
+      // If we have a Message-ID, search for the email in all valid trash folders
       if (messageId) {
         const cleanMessageId = messageId.replace(/[<>]/g, '');
 
-        for (const folder of [trashFolder, ...trashFolderNames]) {
+        for (const folder of validTrashFolders) {
           try {
             await client.mailboxOpen(folder);
 
@@ -1672,7 +1687,37 @@ export class EmailConnectorService {
     const client = await this.connectIMAP(account);
     try {
       // Common trash folder names across different email providers
-      const trashFolderNames = ['Trash', 'INBOX.Trash', 'Deleted', 'Deleted Items', 'Deleted Messages', '[Gmail]/Trash'];
+      const potentialTrashNames = ['Trash', 'INBOX.Trash', 'Deleted', 'Deleted Items', 'Deleted Messages', '[Gmail]/Trash'];
+
+      // Get actual folders from server to avoid "Mailbox doesn't exist" errors
+      const existingFolders = await client.list();
+      const validTrashFolders: string[] = [];
+
+      // 1. Add any folder with \Trash special use
+      const specialTrash = existingFolders.find(f => f.specialUse === '\\Trash');
+      if (specialTrash) {
+        validTrashFolders.push(specialTrash.path);
+      }
+
+      // 2. Add matching names from our list if they exist, avoiding duplicates
+      for (const name of potentialTrashNames) {
+        // Check if this potential name exists in the folders list
+        const exists = existingFolders.find(f => f.path === name || f.path === `INBOX.${name}` || f.name === name);
+        if (exists && !validTrashFolders.includes(exists.path)) {
+          validTrashFolders.push(exists.path);
+        }
+      }
+
+      // 3. If we found nothing, fall back to checking strict paths from our list that match by suffix
+      if (validTrashFolders.length === 0) {
+        // Fallback: Check existing folders that *look* like trash
+        for (const folder of existingFolders) {
+          const lower = folder.path.toLowerCase();
+          if ((lower.includes('trash') || lower.includes('deleted')) && !validTrashFolders.includes(folder.path)) {
+            validTrashFolders.push(folder.path);
+          }
+        }
+      }
 
       let deleted = false;
 
@@ -1681,7 +1726,7 @@ export class EmailConnectorService {
         // Clean Message-ID (remove < > if present)
         const cleanMessageId = messageId.replace(/[<>]/g, '');
 
-        for (const trashFolder of trashFolderNames) {
+        for (const trashFolder of validTrashFolders) {
           try {
             const mailbox = await client.mailboxOpen(trashFolder);
             if (!mailbox) continue;
@@ -1780,6 +1825,176 @@ export class EmailConnectorService {
     } catch (error) {
       console.error(`Failed to permanently delete Outlook message ${messageId}:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Save a draft to IMAP server
+   */
+  async saveDraftToIMAP(account: EmailAccount, emailData: any): Promise<string | null> {
+    const client = await this.connectIMAP(account);
+    try {
+      const mailboxes = await client.list();
+      const draftBox = mailboxes.find((box: any) =>
+        box.specialUse === '\\Drafts' || box.name.toLowerCase().includes('draft')
+      );
+
+      const draftFolder = draftBox ? draftBox.path : 'Drafts';
+
+      const composer = new MailComposer({
+        from: account.email,
+        to: emailData.to?.join(', '),
+        cc: emailData.cc?.join(', '),
+        bcc: emailData.bcc?.join(', '),
+        subject: emailData.subject,
+        text: emailData.body,
+        html: emailData.htmlBody,
+        attachments: emailData.attachments?.map((att: any) => ({
+          filename: att.filename,
+          content: att.content,
+          encoding: att.encoding || 'base64',
+          contentType: att.contentType,
+          cid: att.contentId
+        }))
+      });
+
+      const messageBuffer = await composer.compile().build();
+      // Use \Draft flag to mark as draft
+      const result = await client.append(draftFolder, messageBuffer, ['\\Draft']);
+      return (result && typeof result !== 'boolean') ? result.uid?.toString() || null : null;
+    } catch (error) {
+      console.error(`Failed to save IMAP draft:`, error);
+      return null;
+    } finally {
+      await client.logout();
+    }
+  }
+
+  /**
+   * Save a draft to Gmail
+   */
+  async saveDraftToGmail(account: EmailAccount, emailData: any): Promise<string | null> {
+    await this.connectGmail(account);
+    try {
+      const composer = new MailComposer({
+        from: account.email,
+        to: emailData.to?.join(', '),
+        cc: emailData.cc?.join(', '),
+        bcc: emailData.bcc?.join(', '),
+        subject: emailData.subject,
+        text: emailData.body,
+        html: emailData.htmlBody,
+        attachments: emailData.attachments?.map((att: any) => ({
+          filename: att.filename,
+          content: att.content,
+          encoding: att.encoding || 'base64',
+          contentType: att.contentType,
+          cid: att.contentId
+        }))
+      });
+
+      const messageBuffer = await composer.compile().build();
+      const encodedMessage = messageBuffer.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+      const response = await this.gmailClient.users.drafts.create({
+        userId: 'me',
+        requestBody: {
+          message: {
+            raw: encodedMessage
+          }
+        }
+      });
+
+      return response.data.id;
+    } catch (error) {
+      console.error(`Failed to save Gmail draft:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Save a draft to Outlook
+   */
+  async saveDraftToOutlook(account: EmailAccount, emailData: any): Promise<string | null> {
+    await this.connectOutlook(account);
+    try {
+      const response = await this.outlookClient.api('/me/messages').post({
+        subject: emailData.subject,
+        body: {
+          contentType: emailData.htmlBody ? 'html' : 'text',
+          content: emailData.htmlBody || emailData.body
+        },
+        toRecipients: emailData.to?.map((email: string) => ({ emailAddress: { address: email } })),
+        ccRecipients: emailData.cc?.map((email: string) => ({ emailAddress: { address: email } })),
+        bccRecipients: emailData.bcc?.map((email: string) => ({ emailAddress: { address: email } })),
+        isDraft: true
+      });
+
+      return response.id;
+    } catch (error) {
+      console.error(`Failed to save Outlook draft:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Mark Gmail email as spam
+   */
+  async markGmailAsSpam(account: EmailAccount, messageId: string): Promise<void> {
+    await this.connectGmail(account);
+    try {
+      await this.gmailClient.users.messages.modify({
+        userId: 'me',
+        id: messageId,
+        requestBody: {
+          addLabelIds: ['SPAM'],
+          removeLabelIds: ['INBOX']
+        }
+      });
+      console.log(`[Gmail] Marked message ${messageId} as SPAM`);
+    } catch (error) {
+      console.error(`Failed to mark Gmail message ${messageId} as spam:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Mark Outlook email as spam
+   */
+  async markOutlookAsSpam(account: EmailAccount, messageId: string): Promise<void> {
+    await this.connectOutlook(account);
+    try {
+      await this.outlookClient.api(`/me/messages/${messageId}/move`).post({
+        destinationId: 'junkemail'
+      });
+      console.log(`[Outlook] Marked message ${messageId} as SPAM (moved to Junk Email)`);
+    } catch (error) {
+      console.error(`Failed to mark Outlook message ${messageId} as spam:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Mark IMAP email as spam
+   */
+  async markImapAsSpam(account: EmailAccount, sourceFolder: string, uid: number): Promise<void> {
+    const client = await this.connectIMAP(account);
+    try {
+      const folders = await client.list();
+      const spamFolder = folders.find(f =>
+        f.specialUse === '\\Junk' ||
+        f.path.toLowerCase().includes('spam') ||
+        f.path.toLowerCase().includes('junk')
+      )?.path || 'Spam';
+
+      await client.mailboxOpen(sourceFolder);
+      await client.messageMove(`${uid}`, spamFolder, { uid: true });
+      console.log(`[IMAP] Moved message ${uid} from ${sourceFolder} to ${spamFolder}`);
+    } catch (error) {
+      console.error(`Failed to mark IMAP message ${uid} as spam:`, error);
+      throw error;
+    } finally {
+      await client.logout();
     }
   }
 }

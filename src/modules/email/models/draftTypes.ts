@@ -30,9 +30,6 @@ export interface EmailDraft {
     dealIds?: string[];
     accountEntityIds?: string[];
 
-    // Tracking
-    enableTracking?: boolean;
-
     // Timestamps
     createdAt: Date;
     updatedAt: Date;
@@ -40,6 +37,8 @@ export interface EmailDraft {
     // Metadata
     isScheduled?: boolean;
     scheduledFor?: Date;
+    providerId?: string; // For Gmail/Outlook
+    remoteUid?: string;  // For IMAP
 }
 
 /**
@@ -60,7 +59,6 @@ export interface CreateDraftInput {
     contactIds?: string[];
     dealIds?: string[];
     accountEntityIds?: string[];
-    enableTracking?: boolean;
     isScheduled?: boolean;
     scheduledFor?: Date;
 }
@@ -79,7 +77,6 @@ export interface UpdateDraftInput {
     contactIds?: string[];
     dealIds?: string[];
     accountEntityIds?: string[];
-    enableTracking?: boolean;
     isScheduled?: boolean;
     scheduledFor?: Date;
 }

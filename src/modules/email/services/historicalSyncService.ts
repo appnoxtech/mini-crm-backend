@@ -54,12 +54,10 @@ export class HistoricalSyncService {
                             contactIds: [],
                             dealIds: [],
                             accountEntityIds: [],
-                            opens: 0,
-                            clicks: 0,
                             createdAt: new Date(),
                             updatedAt: new Date(),
                             uid: raw.uid,
-                            folder: folder.toUpperCase(),
+                            folder: folder,
                             labelIds: [folder.toUpperCase()],
                             attachments: parsed.attachments || []
                         };
@@ -185,12 +183,10 @@ export class HistoricalSyncService {
                                 contactIds: [],
                                 dealIds: [],
                                 accountEntityIds: [],
-                                opens: 0,
-                                clicks: 0,
                                 createdAt: new Date(),
                                 updatedAt: new Date(),
                                 uid: raw.uid,
-                                folder: folder.toUpperCase(),
+                                folder: folder,
                                 labelIds: [folder.toUpperCase()],
                                 attachments: parsed.attachments || []
                             };
@@ -267,12 +263,10 @@ export class HistoricalSyncService {
                     contactIds: [],
                     dealIds: [],
                     accountEntityIds: [],
-                    opens: 0,
-                    clicks: 0,
                     createdAt: new Date(),
                     updatedAt: new Date(),
                     uid: raw.uid,
-                    folder: folder.toUpperCase()
+                    folder: folder
                 };
 
                 emailsToSave.push(email);

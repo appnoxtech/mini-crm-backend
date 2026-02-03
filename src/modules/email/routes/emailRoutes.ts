@@ -5,9 +5,6 @@ import { authMiddleware } from '../../../shared/middleware/auth';
 export function createEmailRoutes(emailController: EmailController): Router {
   const router = Router();
 
-  // Public tracking endpoints (no auth required)
-  router.post('/track/open/:trackingId', (req, res) => emailController.handleEmailOpen(req, res));
-  router.get('/track/click/:trackingId', (req, res) => emailController.handleLinkClick(req, res));
   router.get('/proxy-image', (req, res) => emailController.proxyImage(req, res));
 
   // OAuth authorization endpoints (no auth required)
@@ -60,12 +57,21 @@ export function createEmailRoutes(emailController: EmailController): Router {
   router.get('/trash', (req: any, res) => emailController.getTrash(req, res));
   router.get('/archive', (req: any, res) => emailController.getArchive(req, res));
 
+  // Batch Operations (MUST be before singular routes to avoid shadowing)
+  router.post('/batch/archive', (req: any, res) => emailController.batchArchive(req, res));
+  router.post('/batch/restore', (req: any, res) => emailController.batchRestore(req, res));
+  router.post('/batch/trash', (req: any, res) => emailController.batchTrash(req, res));
+  router.delete('/batch/delete', (req: any, res) => emailController.batchDelete(req, res));
+  router.patch('/batch/read', (req: any, res) => emailController.batchMarkAsRead(req, res));
+
   router.post('/:emailId/archive', (req: any, res) => emailController.archiveEmail(req, res));
   router.post('/:emailId/unarchive', (req: any, res) => emailController.unarchiveEmail(req, res));
 
   // Trash (soft delete) and permanent delete routes
   router.post('/:emailId/trash', (req: any, res) => emailController.trashEmail(req, res));
   router.post('/:emailId/restore', (req: any, res) => emailController.restoreFromTrash(req, res));
+  router.post('/:emailId/spam', (req: any, res) => emailController.markAsSpam(req, res));
+  router.post('/:emailId/unspam', (req: any, res) => emailController.unmarkAsSpam(req, res));
   router.delete('/trash/all', (req: any, res) => emailController.deleteAllTrash(req, res));
   router.delete('/:emailId', (req: any, res) => emailController.deleteEmailPermanently(req, res));
 
@@ -73,6 +79,7 @@ export function createEmailRoutes(emailController: EmailController): Router {
 
   // Unified Read/Unread Status
   router.patch('/:emailId/read', (req: any, res) => emailController.markEmailAsRead(req, res));
+
 
   return router;
 }

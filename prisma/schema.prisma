@@ -102,9 +102,6 @@ model Email {
   contactIds      Json?
   dealIds         Json?
   accountEntityIds Json?
-  trackingPixelId String?
-  opens           Int      @default(0)
-  clicks          Int      @default(0)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   labelIds        Json?
@@ -119,6 +116,7 @@ model Email {
   // Note: threadId is intentionally NOT a foreign key - thread summaries are created asynchronously
 
   @@unique([messageId, accountId])
+  @@index([accountId, sentAt(sort: Desc)])
   @@map("emails")
 }
 
@@ -170,9 +168,10 @@ model EmailDraft {
   contactIds           Json?    @map("contact_ids")
   dealIds              Json?    @map("deal_ids")
   accountEntityIds     Json?    @map("account_entity_ids")
-  enableTracking       Boolean  @default(false) @map("enable_tracking")
   isScheduled          Boolean  @default(false) @map("is_scheduled")
   scheduledFor         DateTime? @map("scheduled_for")
+  providerId           String?   @map("provider_id")
+  remoteUid            String?   @map("remote_uid")
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
 

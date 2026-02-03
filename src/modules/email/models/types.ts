@@ -30,9 +30,6 @@ export interface Email {
   contactIds: string[];
   dealIds: string[];
   accountEntityIds: string[];
-  trackingPixelId?: string;
-  opens: number;
-  clicks: number;
   createdAt: Date;
   updatedAt: Date;
   // Gmail-specific fields
@@ -41,6 +38,7 @@ export interface Email {
   uid?: number;
   folder?: string;
   providerId?: string;
+  threadCount?: number;
 }
 
 export interface EmailContent {

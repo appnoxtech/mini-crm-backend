@@ -76,7 +76,6 @@ export class AuthService {
         return null;
       }
       const { passwordHash, ...safeUser } = user;
-      safeUser.profileImg = JSON.parse(safeUser.profileImg || '[]');
       return safeUser as unknown as AuthUser;
     } catch (error) {
       console.error('Authentication error:', error);
@@ -89,8 +88,7 @@ export class AuthService {
     if (!user) return null;
 
     return {
-      ...user,
-      profileImg: JSON.parse(user.profileImg || '[]')
+      ...user
     } as unknown as AuthUser;
   }
 
@@ -99,9 +97,8 @@ export class AuthService {
     if (!user) return null;
 
     return {
-      ...user,
-      profileImg: Array.isArray(user.profileImg) ? user.profileImg : JSON.parse((user.profileImg as any) || '[]')
-    };
+      ...user
+    } as unknown as AuthUser;
   }
 
   async changePassword(id: number, currentPassword: string, newPassword: string): Promise<boolean> {

@@ -48,6 +48,7 @@ export class UserModel {
 
     return {
       ...user,
+      profileImg: typeof user.profileImg === 'string' ? JSON.parse(user.profileImg || '[]') : (user.profileImg || []),
       createdAt: user.createdAt.toISOString(),
       updatedAt: user.updatedAt.toISOString(),
     } as unknown as User;
@@ -61,6 +62,7 @@ export class UserModel {
 
     return {
       ...user,
+      profileImg: typeof user.profileImg === 'string' ? JSON.parse(user.profileImg || '[]') : (user.profileImg || []),
       createdAt: user.createdAt.toISOString(),
       updatedAt: user.updatedAt.toISOString(),
     } as unknown as User;
@@ -90,7 +92,7 @@ export class UserModel {
       const { passwordHash, ...safeUser } = updatedUser;
       return {
         ...safeUser,
-        profileImg: safeUser.profileImg as any,
+        profileImg: typeof safeUser.profileImg === 'string' ? JSON.parse(safeUser.profileImg || '[]') : (safeUser.profileImg || []),
         createdAt: safeUser.createdAt.toISOString(),
         updatedAt: safeUser.updatedAt.toISOString(),
       } as unknown as AuthUser;
@@ -109,7 +111,7 @@ export class UserModel {
     const { passwordHash, ...profile } = user;
     return {
       ...profile,
-      profileImg: profile.profileImg as any,
+      profileImg: typeof profile.profileImg === 'string' ? JSON.parse(profile.profileImg || '[]') : (profile.profileImg || []),
       createdAt: profile.createdAt.toISOString(),
       updatedAt: profile.updatedAt.toISOString(),
     } as unknown as AuthUser;
@@ -159,7 +161,7 @@ export class UserModel {
       id: user.id,
       email: user.email,
       name: user.name,
-      profileImg: JSON.parse(user.profileImg || '[]'),
+      profileImg: typeof user.profileImg === 'string' ? JSON.parse(user.profileImg || '[]') : (user.profileImg || []),
       phone: user.phone ?? null,
       dateFormat: user.dateFormat ?? null,
       timezone: user.timezone ?? null,

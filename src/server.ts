@@ -7,6 +7,9 @@ import { startTokenRefreshJob } from './cron/tokenRefresh';
 import { startTrashCleanupJob } from './cron/trashCleanup';
 import os from 'os';
 
+// Import Draft module (need to import these specifically if not already)
+import { DraftModel, DraftService, DraftController, createDraftRoutes } from './modules/email';
+
 // Load environment variables
 dotenv.config();
 
@@ -56,9 +59,7 @@ import { MailSystemConfigService } from './modules/email/services/mailSystemConf
 import { QuotaValidationService } from './modules/email/services/quotaValidationService';
 import { EnhancedEmailComposer } from './modules/email/services/enhancedEmailComposer';
 import { EnhancedGmailService } from './modules/email/services/enhancedGmailService';
-import { EmailTrackingService } from './modules/email/services/emailTrackingService';
 import { ErrorHandlingService } from './modules/email/services/errorHandlingService';
-import { BulkEmailService } from './modules/email/services/bulkEmailService';
 
 // Import instant notification services
 import { imapIdleService } from './modules/email/services/imapIdleService';
@@ -133,6 +134,7 @@ const io = new SocketIOServer(server, {
 });
 const PORT = Number(process.env.PORT) || 4000;
 
+
 // Initialize models
 const userModel = new UserModel();
 const otpModel = new OtpModel();
@@ -149,6 +151,7 @@ const productModel = new ProductModel();
 const callModel = new CallModel();
 const labelModel = new LabelModel();
 const importModel = new ImportModel();
+const draftModel = new DraftModel();
 
 // Initialize calendar models
 const calendarEventModel = new CalendarEventModel();
@@ -175,6 +178,7 @@ const labelService = new LabelService(labelModel);
 const profileService = new ProfileService(userModel);
 const callService = new CallService(callModel);
 const importService = new ImportService();
+const draftService = new DraftService(draftModel, emailService);
 
 // Initialize calendar services
 const notificationSchedulerService = new NotificationSchedulerService(eventNotificationModel, eventShareModel);
@@ -186,17 +190,7 @@ notificationDispatcherService.setSocketIO(io);
 // Initialize enhanced email services
 const configService = new MailSystemConfigService();
 const quotaService = new QuotaValidationService();
-const composerService = new EnhancedEmailComposer();
-const gmailService = new EnhancedGmailService();
-const trackingService = new EmailTrackingService(undefined, notificationService);
 const errorService = new ErrorHandlingService();
-const bulkEmailService = new BulkEmailService(
-  composerService,
-  gmailService,
-  trackingService,
-  quotaService,
-  errorService
-);
 
 // Initialize Socket.IO
 notificationService.initialize(io);
@@ -213,7 +207,7 @@ gmailPushService.initialize(emailService, notificationService);
 // Initialize controllers
 const authController = new AuthController(authService, userModel);
 const leadController = new LeadController(leadService);
-const emailController = new EmailController(emailService, oauthService, emailQueueService, notificationService);
+const emailController = new EmailController(emailService, oauthService, emailQueueService, notificationService, quotaService, draftService);
 const summarizationController = new SummarizationController(emailModel);
 const pipelineController = new PipelineController(pipelineService, pipelineStageService);
 const dealController = new DealController(dealService);
@@ -225,6 +219,7 @@ const labelController = new LabelController(labelService);
 const profileController = new ProfileController(profileService);
 const importController = new ImportController(importService);
 const callController = new CallController(callService);
+const draftController = new DraftController(draftService);
 const webhookController = new WebhookController(callService);
 webhookController.setSocketIO(io);
 
@@ -254,6 +249,7 @@ app.use((req, res, next) => {
 app.use('/api/auth', createAuthRoutes(authController));
 app.use('/api/leads', createLeadRoutes(leadController));
 app.use('/api/emails', createEmailRoutes(emailController));
+app.use('/api/email/drafts', createDraftRoutes(draftController));
 app.use('/api/summarization', createSummarizationRoutes(summarizationController));
 app.use('/api/pipelines', createPipelineRoutes(pipelineController));
 app.use('/api/label', createLabelRoutes(labelController));
@@ -286,25 +282,10 @@ app.use('*', (req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-function getLocalIP(): string {
-  const interfaces = os.networkInterfaces();
-  for (const name in interfaces) {
-    const nets = interfaces[name];
-    if (!nets) continue;
-    for (const net of nets) {
-      if (net.family === 'IPv4' && !net.internal) {
-        return net.address;
-      }
-    }
-  }
-  return 'localhost';
-}
-
-const localIP = getLocalIP();
 
 // Start the server
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running on http://${localIP}:${PORT}`);
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
 
 // Start cron jobs

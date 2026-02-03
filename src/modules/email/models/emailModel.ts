@@ -46,9 +46,6 @@ export class EmailModel {
       contactIds: (email.contactIds as any) || [],
       dealIds: (email.dealIds as any) || [],
       accountEntityIds: (email.accountEntityIds as any) || [],
-      trackingPixelId: email.trackingPixelId || null,
-      opens: email.opens,
-      clicks: email.clicks,
       createdAt: email.createdAt,
       updatedAt: email.updatedAt,
       labelIds: (email.labelIds as any) || [],
@@ -459,17 +456,22 @@ export class EmailModel {
     } else if (folder === "sent") {
       rawWhere += ` AND e."isIncoming" = false AND (e."labelIds" IS NULL OR (NOT (e."labelIds"::text LIKE '%DRAFT%') AND NOT (e."labelIds"::text LIKE '%TRASH%')))`;
     } else if (folder === "spam") {
-      rawWhere += ` AND (e."labelIds"::text LIKE '%SPAM%' OR e."labelIds"::text LIKE '%JUNK%')`;
+      rawWhere += ` AND (e."labelIds"::text LIKE '%SPAM%' OR e."labelIds"::text LIKE '%JUNK%') AND NOT (e."labelIds"::text LIKE '%TRASH%')`;
     } else if (folder === "drafts" || folder === "drfts") {
-      rawWhere += ` AND e."labelIds"::text LIKE '%DRAFT%'`;
+      rawWhere += ` AND e."labelIds"::text LIKE '%DRAFT%' AND NOT (e."labelIds"::text LIKE '%TRASH%')`;
     } else if (folder === "trash") {
       rawWhere += ` AND e."labelIds"::text LIKE '%TRASH%'`;
     } else if (folder === "archive") {
-      rawWhere += ` AND (e."labelIds"::text LIKE '%ARCHIVE%' OR e."labelIds"::text LIKE '%ALL_MAIL%')`;
+      rawWhere += ` AND (e."labelIds"::text LIKE '%ARCHIVE%' OR e."labelIds"::text LIKE '%ALL_MAIL%') AND NOT (e."labelIds"::text LIKE '%TRASH%') AND NOT (e."labelIds"::text LIKE '%SPAM%')`;
     }
 
     if (unreadOnly) rawWhere += ` AND e."isRead" = false`;
+
+    // Only join email_contents if we need to search in body
+    const joinContent = search ? 'JOIN email_contents ec ON e."messageId" = ec."messageId"' : '';
+
     if (search) {
+      // If search is active, we need to check matches in body too
       rawWhere += ` AND (e."subject" ILIKE '%${search}%' OR e."from_address" ILIKE '%${search}%' OR ec."body" ILIKE '%${search}%')`;
     }
 
@@ -477,16 +479,19 @@ export class EmailModel {
       SELECT COUNT(*) as total 
       FROM emails e 
       JOIN email_accounts ea ON e."accountId" = ea."id"
-      ${search ? 'JOIN email_contents ec ON e."messageId" = ec."messageId"' : ''}
+      ${joinContent}
       WHERE ${rawWhere}
     `)) as { total: bigint }[];
     const total = (totalResults && totalResults.length > 0 && totalResults[0]) ? Number(totalResults[0].total) : 0;
 
+    // Optimized select: We DO NOT select body, htmlBody, attachments for the list view
+    // This significantly reduces payload size
     const rows = (await prisma.$queryRawUnsafe(`
-      SELECT e.*, ec."body", ec."htmlBody", ec."attachments"
+      SELECT e.*, 
+        (SELECT COUNT(*)::int FROM emails e2 WHERE e2."threadId" = e."threadId" AND e."threadId" IS NOT NULL) as "threadCount"
       FROM emails e 
       JOIN email_accounts ea ON e."accountId" = ea."id"
-      JOIN email_contents ec ON e."messageId" = ec."messageId"
+      ${joinContent}
       WHERE ${rawWhere}
       ORDER BY e."sentAt" DESC 
       LIMIT ${limit} OFFSET ${offset}
@@ -541,7 +546,7 @@ export class EmailModel {
 
   async markEmailAsRead(emailId: string, userId: string, isRead: boolean): Promise<boolean> {
     try {
-      await prisma.email.update({
+      const result = await prisma.email.updateMany({
         where: {
           id: emailId,
           account: {
@@ -553,8 +558,9 @@ export class EmailModel {
           updatedAt: new Date()
         }
       });
-      return true;
+      return result.count > 0;
     } catch (err) {
+      console.error(`Failed to mark email ${emailId} as read:`, err);
       return false;
     }
   }
@@ -567,16 +573,26 @@ export class EmailModel {
     if (!labels.includes('ARCHIVE')) {
       labels.push('ARCHIVE');
     }
-    labels = labels.filter((l) => l !== 'INBOX');
+    labels = labels.filter((l) => l !== 'INBOX' && l !== 'TRASH' && l !== 'SPAM' && l !== 'JUNK');
 
-    await prisma.email.update({
-      where: { id: emailId },
-      data: {
-        labelIds: labels as any,
-        updatedAt: new Date()
-      }
-    });
-    return true;
+    try {
+      const result = await prisma.email.updateMany({
+        where: {
+          id: emailId,
+          account: {
+            userId: parseInt(userId)
+          }
+        },
+        data: {
+          labelIds: labels as any,
+          updatedAt: new Date()
+        }
+      });
+      return result.count > 0;
+    } catch (err) {
+      console.error(`Failed to archive email ${emailId}:`, err);
+      return false;
+    }
   }
 
   async unarchiveEmail(emailId: string, userId: string): Promise<boolean> {
@@ -589,14 +605,24 @@ export class EmailModel {
       labels.push('INBOX');
     }
 
-    await prisma.email.update({
-      where: { id: emailId },
-      data: {
-        labelIds: labels as any,
-        updatedAt: new Date()
-      }
-    });
-    return true;
+    try {
+      const result = await prisma.email.updateMany({
+        where: {
+          id: emailId,
+          account: {
+            userId: parseInt(userId)
+          }
+        },
+        data: {
+          labelIds: labels as any,
+          updatedAt: new Date()
+        }
+      });
+      return result.count > 0;
+    } catch (err) {
+      console.error(`Failed to unarchive email ${emailId}:`, err);
+      return false;
+    }
   }
 
   async trashEmail(emailId: string, userId: string): Promise<boolean> {
@@ -604,19 +630,29 @@ export class EmailModel {
     if (!email) return false;
 
     let labels = (email.labelIds as string[]) || [];
-    labels = labels.filter((l) => l !== 'INBOX' && l !== 'ARCHIVE');
+    labels = labels.filter((l) => l !== 'INBOX' && l !== 'ARCHIVE' && l !== 'SPAM' && l !== 'JUNK');
     if (!labels.includes('TRASH')) {
       labels.push('TRASH');
     }
 
-    await prisma.email.update({
-      where: { id: emailId },
-      data: {
-        labelIds: labels as any,
-        updatedAt: new Date()
-      }
-    });
-    return true;
+    try {
+      const result = await prisma.email.updateMany({
+        where: {
+          id: emailId,
+          account: {
+            userId: parseInt(userId)
+          }
+        },
+        data: {
+          labelIds: labels as any,
+          updatedAt: new Date()
+        }
+      });
+      return result.count > 0;
+    } catch (err) {
+      console.error(`Failed to trash email ${emailId}:`, err);
+      return false;
+    }
   }
 
   async restoreFromTrash(emailId: string, userId: string): Promise<boolean> {
@@ -629,14 +665,24 @@ export class EmailModel {
       labels.push('INBOX');
     }
 
-    await prisma.email.update({
-      where: { id: emailId },
-      data: {
-        labelIds: labels as any,
-        updatedAt: new Date()
-      }
-    });
-    return true;
+    try {
+      const result = await prisma.email.updateMany({
+        where: {
+          id: emailId,
+          account: {
+            userId: parseInt(userId)
+          }
+        },
+        data: {
+          labelIds: labels as any,
+          updatedAt: new Date()
+        }
+      });
+      return result.count > 0;
+    } catch (err) {
+      console.error(`Failed to restore email ${emailId}:`, err);
+      return false;
+    }
   }
 
   async deleteEmailPermanently(emailId: string, userId: string): Promise<boolean> {
@@ -756,8 +802,6 @@ export class EmailModel {
     if (updates.contactIds !== undefined) data.contactIds = updates.contactIds as any;
     if (updates.dealIds !== undefined) data.dealIds = updates.dealIds as any;
     if (updates.accountEntityIds !== undefined) data.accountEntityIds = updates.accountEntityIds as any;
-    if (updates.opens !== undefined) data.opens = updates.opens;
-    if (updates.clicks !== undefined) data.clicks = updates.clicks;
     if (updates.labelIds !== undefined) data.labelIds = updates.labelIds as any;
     if (updates.folder !== undefined) data.folder = updates.folder;
     if (updates.uid !== undefined) data.uid = updates.uid;
@@ -837,25 +881,6 @@ export class EmailModel {
     return rows.map((r: any) => r.uid as number);
   }
 
-  async incrementOpens(trackingPixelId: string): Promise<void> {
-    await prisma.email.updateMany({
-      where: { trackingPixelId },
-      data: {
-        opens: { increment: 1 },
-        updatedAt: new Date()
-      }
-    });
-  }
-
-  async incrementClicks(trackingPixelId: string): Promise<void> {
-    await prisma.email.updateMany({
-      where: { trackingPixelId },
-      data: {
-        clicks: { increment: 1 },
-        updatedAt: new Date()
-      }
-    });
-  }
 
   async getRecentIncomingEmails(userId: string, limit: number = 5): Promise<Email[]> {
     const rows = await prisma.email.findMany({
@@ -902,15 +927,13 @@ export class EmailModel {
       contactIds: (row.contactIds as any) || [],
       dealIds: (row.dealIds as any) || [],
       accountEntityIds: (row.accountEntityIds as any) || [],
-      trackingPixelId: row.trackingPixelId || undefined,
-      opens: row.opens || 0,
-      clicks: row.clicks || 0,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       labelIds: (row.labelIds as any) || [],
       uid: row.uid || undefined,
       folder: row.folder || undefined,
       providerId: row.providerId || undefined,
+      threadCount: row.threadCount ? Number(row.threadCount) : undefined,
     };
   }
 }

@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import axios from "axios";
+import { DraftService } from "../services/draftService";
 import { EmailService } from "../services/emailService";
 import { OAuthService } from "../services/oauthService";
 import { EmailQueueService } from "../services/emailQueueService";
@@ -10,6 +11,7 @@ import { EmailModel } from "../models/emailModel";
 import { summarizeThreadWithVLLM } from "../../../shared/utils/summarizer";
 import { ResponseHandler } from "../../../shared/responses/responses";
 import { DealHistoryModel, DealHistory } from "../../pipelines/models/DealHistory";
+import { QuotaValidationService } from "../services/quotaValidationService";
 
 /**
  * Get SMTP/IMAP server defaults based on provider name
@@ -65,17 +67,23 @@ export class EmailController {
   private oauthService: OAuthService;
   private queueService: EmailQueueService | undefined;
   private notificationService: RealTimeNotificationService | undefined;
+  private quotaService: QuotaValidationService | undefined;
+  private draftService: DraftService | undefined;
 
   constructor(
     emailService: EmailService,
     oauthService: OAuthService,
     queueService?: EmailQueueService,
     notificationService?: RealTimeNotificationService,
+    quotaService?: QuotaValidationService,
+    draftService?: DraftService
   ) {
     this.emailService = emailService;
     this.oauthService = oauthService;
     this.queueService = queueService;
     this.notificationService = notificationService;
+    this.quotaService = quotaService;
+    this.draftService = draftService;
   }
 
   // Manual trigger for summarizing a thread
@@ -429,46 +437,6 @@ export class EmailController {
     }
   }
 
-  async handleEmailOpen(req: Request, res: Response): Promise<void> {
-    try {
-      const { trackingId } = req.params;
-
-      // TODO: Implement tracking logic
-
-
-      const pixel = Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
-        "base64"
-      );
-      res.writeHead(200, {
-        "Content-Type": "image/png",
-        "Content-Length": pixel.length,
-        "Cache-Control": "no-cache",
-      });
-
-      return ResponseHandler.success(res, pixel);
-
-    } catch (error: any) {
-      console.error("Error handling email open:", error);
-      return ResponseHandler.internalError(res, "Tracking failed");
-    }
-  }
-
-  async handleLinkClick(req: Request, res: Response): Promise<void> {
-    try {
-      const { trackingId } = req.params;
-      const { url } = req.query;
-
-      // TODO: Implement tracking logic
-
-
-      const originalUrl = (url as string) || "/";
-      res.redirect(originalUrl);
-    } catch (error: any) {
-      console.error("Error handling link click:", error);
-      return ResponseHandler.internalError(res, "Tracking failed");
-    }
-  }
 
   // OAuth Authorization Endpoints
   async oauthGmailAuthorize(req: Request, res: Response): Promise<void> {
@@ -1193,9 +1161,9 @@ export class EmailController {
             const needsSync = !account.lastSyncAt || (new Date().getTime() - new Date(account.lastSyncAt).getTime() > syncInterval);
 
             if (needsSync) {
-              console.log(`Triggering on-demand sync for account: ${account.email}`);
-              // We await here because the user expects "using IMAP" to update the view
-              await this.emailService.processIncomingEmails(account).catch(err =>
+              console.log(`Triggering background on-demand sync for account: ${account.email}`);
+              // Trigger sync in background to keep response fast
+              this.emailService.processIncomingEmails(account).catch(err =>
                 console.error(`On-demand sync failed for ${account.email}:`, err)
               );
             }
@@ -1224,7 +1192,7 @@ export class EmailController {
         }
       }
 
-      const emails = await this.emailService.getEmailsForUser(
+      let emailsResponse = await this.emailService.getEmailsForUser(
         req.user.id.toString(),
         {
           limit: limit ? parseInt(limit as string) : 50,
@@ -1236,7 +1204,52 @@ export class EmailController {
         }
       );
 
-      return ResponseHandler.success(res, emails, "Emails Fetched Successfully");
+      // If folder is drafts, merge internal CRM drafts
+      if (((folder as string) === 'drafts' || (folder as string) === 'drfts') && this.draftService) {
+        try {
+          const { drafts } = await this.draftService.listDrafts(req.user.id.toString(), {
+            accountId: effectiveAccountId
+          });
+
+          // Map internal drafts to the email format expected by the frontend
+          const internalDrafts = drafts.map(d => ({
+            id: d.id,
+            accountId: d.accountId,
+            userId: d.userId,
+            messageId: `draft-${d.id}`,
+            threadId: `draft-thread-${d.id}`,
+            from: '',
+            to: d.to,
+            cc: d.cc || [],
+            bcc: d.bcc || [],
+            subject: d.subject,
+            body: d.body,
+            htmlBody: d.htmlBody,
+            folder: 'DRAFT',
+            sentAt: d.updatedAt.toISOString(),
+            isRead: true,
+            hasAttachments: Array.isArray(d.attachments) && d.attachments.length > 0,
+            isInternalDraft: true // Flag to distinguish from server drafts
+          }));
+
+          // Merge and sort by date descending
+          const merged = [...emailsResponse.emails, ...internalDrafts]
+            .sort((a, b) => {
+              const dateA = new Date((a as any).sentAt || (a as any).createdAt).getTime();
+              const dateB = new Date((b as any).sentAt || (b as any).createdAt).getTime();
+              return dateB - dateA;
+            });
+
+          emailsResponse = {
+            emails: merged as any[],
+            total: emailsResponse.total + internalDrafts.length
+          };
+        } catch (draftError) {
+          console.error("Error fetching internal drafts:", draftError);
+        }
+      }
+
+      return ResponseHandler.success(res, emailsResponse, "Emails Fetched Successfully");
 
     } catch (error: any) {
       console.error("Error in getEmails:", error);
@@ -1556,4 +1569,128 @@ export class EmailController {
     }
   }
 
+  async batchArchive(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { emailIds } = req.body;
+      if (!emailIds || !Array.isArray(emailIds)) {
+        return ResponseHandler.error(res, "Invalid emailIds provided", 400);
+      }
+
+      const results = await Promise.all(
+        emailIds.map(id => this.emailService.archiveEmail(id, req.user!.id.toString()))
+      );
+
+      return ResponseHandler.success(res, { count: results.filter((r: boolean) => r).length }, "Emails Archived Successfully");
+    } catch (error) {
+      console.error("Error batch archiving emails:", error);
+      return ResponseHandler.internalError(res, "Failed to archive emails");
+    }
+  }
+
+  async batchTrash(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { emailIds } = req.body;
+      if (!emailIds || !Array.isArray(emailIds)) {
+        return ResponseHandler.error(res, "Invalid emailIds provided", 400);
+      }
+
+      const results = await Promise.all(
+        emailIds.map(id => this.emailService.trashEmail(id, req.user!.id.toString()))
+      );
+
+      return ResponseHandler.success(res, { count: results.filter((r: boolean) => r).length }, "Emails Moved to Trash Successfully");
+    } catch (error) {
+      console.error("Error batch trashing emails:", error);
+      return ResponseHandler.internalError(res, "Failed to move emails to trash");
+    }
+  }
+
+  async batchMarkAsRead(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { emailIds, isRead } = req.body;
+      if (!emailIds || !Array.isArray(emailIds)) {
+        return ResponseHandler.error(res, "Invalid emailIds provided", 400);
+      }
+
+      const results = await Promise.all(
+        emailIds.map(id => this.emailService.markEmailAsRead(id, req.user!.id.toString(), isRead))
+      );
+
+      return ResponseHandler.success(res, { count: results.filter((r: boolean) => r).length }, `Emails marked as ${isRead ? 'read' : 'unread'}`);
+    } catch (error) {
+      console.error("Error batch marking emails as read:", error);
+      return ResponseHandler.internalError(res, "Failed to update emails");
+    }
+  }
+
+  async batchRestore(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { emailIds } = req.body;
+      if (!emailIds || !Array.isArray(emailIds)) {
+        return ResponseHandler.error(res, "Invalid emailIds provided", 400);
+      }
+
+      const results = await Promise.all(
+        emailIds.map(id => this.emailService.restoreFromTrash(id, req.user!.id.toString()))
+      );
+
+      return ResponseHandler.success(res, { count: results.filter((r: boolean) => r).length }, "Emails Restored Successfully");
+    } catch (error) {
+      console.error("Error batch restoring emails:", error);
+      return ResponseHandler.internalError(res, "Failed to restore emails");
+    }
+  }
+
+  async batchDelete(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { emailIds } = req.body;
+      if (!emailIds || !Array.isArray(emailIds)) {
+        return ResponseHandler.error(res, "Invalid emailIds provided", 400);
+      }
+
+      const results = await Promise.all(
+        emailIds.map(id => this.emailService.deleteEmailPermanently(id, req.user!.id.toString()))
+      );
+
+      return ResponseHandler.success(res, { count: results.filter((r: boolean) => r).length }, "Emails Permanently Deleted Successfully");
+    } catch (error) {
+      console.error("Error batch deleting emails:", error);
+      return ResponseHandler.internalError(res, "Failed to delete emails");
+    }
+  }
+
+
+  /**
+   * Mark email as spam
+   */
+  async markAsSpam(req: Request, res: Response) {
+    try {
+      const { emailId } = req.params;
+      if (!emailId) return ResponseHandler.error(res, "Email ID is required");
+      const userId = (req as any).user.id.toString();
+
+      await this.emailService.markEmailAsSpam(userId, emailId);
+
+      return ResponseHandler.success(res, null, "Email marked as spam");
+    } catch (error: any) {
+      return ResponseHandler.error(res, error.message);
+    }
+  }
+
+  /**
+   * Unmark email as spam
+   */
+  async unmarkAsSpam(req: Request, res: Response) {
+    try {
+      const { emailId } = req.params;
+      if (!emailId) return ResponseHandler.error(res, "Email ID is required");
+      const userId = (req as any).user.id.toString();
+
+      await this.emailService.unmarkEmailAsSpam(userId, emailId);
+
+      return ResponseHandler.success(res, null, "Email unmarked from spam (moved to INBOX)");
+    } catch (error: any) {
+      return ResponseHandler.error(res, error.message);
+    }
+  }
 }

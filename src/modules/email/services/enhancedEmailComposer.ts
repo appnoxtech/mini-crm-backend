@@ -11,7 +11,6 @@ export interface EmailRequest {
   body_text: string;
   attachments?: AttachmentData[];
   template_variables?: Record<string, string>;
-  tracking?: TrackingOptions;
 }
 
 export interface AttachmentData {
@@ -19,12 +18,6 @@ export interface AttachmentData {
   content_type: string;
   data: string; // base64 encoded
   size: number;
-}
-
-export interface TrackingOptions {
-  open_tracking: boolean;
-  click_tracking: boolean;
-  campaign_id?: string;
 }
 
 export interface GmailMessage {
@@ -41,7 +34,6 @@ export interface MessageMetadata {
   size: number;
   recipients_count: number;
   has_attachments: boolean;
-  tracking_enabled: boolean;
 }
 
 export interface CompositionResult {
@@ -51,15 +43,9 @@ export interface CompositionResult {
 }
 
 export class EnhancedEmailComposer {
-  private trackingBaseUrl: string;
-
-  constructor(trackingBaseUrl: string = process.env.TRACKING_BASE_URL || 'http://localhost:3001') {
-    this.trackingBaseUrl = trackingBaseUrl;
-  }
+  constructor() { }
 
   async composeEmail(emailRequest: EmailRequest): Promise<CompositionResult> {
-
-
     // Step 1: Validation
     const validationErrors = this.validateEmailRequest(emailRequest);
     if (validationErrors.length > 0) {
@@ -79,30 +65,20 @@ export class EnhancedEmailComposer {
     const processedBodyHtml = emailRequest.body_html ?
       this.replaceTemplateVariables(emailRequest.body_html, emailRequest.template_variables) : undefined;
 
-    // Step 4: Apply personalization and tracking
-    const { htmlBody, textBody } = await this.applyPersonalizationAndTracking(
-      processedBodyHtml,
-      processedBodyText,
-      messageId,
-      emailRequest.tracking
-    );
-
-    // Step 5: Construct MIME message
+    // Step 4: Construct MIME message
     const mimeMessage = this.constructMimeMessage({
       ...emailRequest,
       subject: processedSubject,
-      body_text: textBody,
-      body_html: htmlBody,
+      body_text: processedBodyText,
+      body_html: processedBodyHtml,
       messageId
     });
 
-    // Step 6: Create Gmail message format
+    // Step 5: Create Gmail message format
     const gmailMessage = this.createGmailMessage(mimeMessage);
 
-    // Step 7: Generate metadata
+    // Step 6: Generate metadata
     const metadata = this.createMessageMetadata(messageId, emailRequest, gmailMessage.raw);
-
-
 
     return {
       gmail_message: gmailMessage,
@@ -171,59 +147,6 @@ export class EnhancedEmailComposer {
     }
 
     return result;
-  }
-
-  private async applyPersonalizationAndTracking(
-    htmlBody: string | undefined,
-    textBody: string,
-    messageId: string,
-    tracking?: TrackingOptions
-  ): Promise<{ htmlBody?: string; textBody: string }> {
-    let processedHtmlBody = htmlBody;
-    let processedTextBody = textBody;
-
-    if (tracking?.open_tracking && processedHtmlBody) {
-      // Inject tracking pixel
-      const trackingPixel = this.createTrackingPixel(messageId);
-      processedHtmlBody = this.injectTrackingPixel(processedHtmlBody, trackingPixel);
-    }
-
-    if (tracking?.click_tracking && processedHtmlBody) {
-      // Replace links with tracking URLs
-      processedHtmlBody = this.wrapLinksWithTracking(processedHtmlBody, messageId);
-    }
-
-    return {
-      htmlBody: processedHtmlBody,
-      textBody: processedTextBody
-    };
-  }
-
-  private createTrackingPixel(messageId: string): string {
-    const trackingUrl = `${this.trackingBaseUrl}/email/track/open/${messageId}`;
-    return `<img src="${trackingUrl}" width="1" height="1" style="display:none;" alt="" />`;
-  }
-
-  private injectTrackingPixel(htmlBody: string, trackingPixel: string): string {
-    // Try to inject before closing body tag, fallback to append
-    if (htmlBody.includes('</body>')) {
-      return htmlBody.replace('</body>', `${trackingPixel}</body>`);
-    } else {
-      return htmlBody + trackingPixel;
-    }
-  }
-
-  private wrapLinksWithTracking(htmlBody: string, messageId: string): string {
-    const linkRegex = /<a\s+[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi;
-
-    return htmlBody.replace(linkRegex, (match, url) => {
-      if (url.startsWith('mailto:') || url.startsWith('#') || url.includes(this.trackingBaseUrl)) {
-        return match; // Don't track mailto links, anchors, or existing tracking URLs
-      }
-
-      const trackingUrl = `${this.trackingBaseUrl}/email/track/click/${messageId}?url=${encodeURIComponent(url)}`;
-      return match.replace(url, trackingUrl);
-    });
   }
 
   private constructMimeMessage(request: EmailRequest & { messageId: string }): string {
@@ -360,14 +283,12 @@ export class EnhancedEmailComposer {
     const totalRecipients = (request.to?.length || 0) + (request.cc?.length || 0) + (request.bcc?.length || 0);
     const messageSize = Buffer.from(rawMessage, 'base64').length;
     const hasAttachments = Boolean(request.attachments && request.attachments.length > 0);
-    const trackingEnabled = request.tracking?.open_tracking || request.tracking?.click_tracking || false;
 
     return {
       message_id: messageId,
       size: messageSize,
       recipients_count: totalRecipients,
-      has_attachments: hasAttachments,
-      tracking_enabled: trackingEnabled
+      has_attachments: hasAttachments
     };
   }
 
@@ -376,8 +297,7 @@ export class EnhancedEmailComposer {
       message_id: '',
       size: 0,
       recipients_count: 0,
-      has_attachments: false,
-      tracking_enabled: false
+      has_attachments: false
     };
   }
 
