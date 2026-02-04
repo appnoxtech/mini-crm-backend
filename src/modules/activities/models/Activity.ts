@@ -169,8 +169,8 @@ export class ActivityModel {
         const params: any[] = [];
 
         if (query) {
-            sql += ' AND (title LIKE ? OR description LIKE ?)';
-            params.push(`%${query}%`, `%${query}%`);
+            sql += ' AND title LIKE ?';
+            params.push(`%${query}%`);
         }
 
         if (type) {
@@ -178,7 +178,18 @@ export class ActivityModel {
             params.push(type);
         }
 
-        sql += ' ORDER BY startAt DESC';
+        if (query) {
+            sql += ` ORDER BY 
+                CASE 
+                    WHEN title = ? THEN 1
+                    WHEN title LIKE ? THEN 2
+                    ELSE 3
+                END, 
+                startAt DESC`;
+            params.push(query, `${query}%`);
+        } else {
+            sql += ' ORDER BY startAt DESC';
+        }
 
         const stmt = this.db.prepare(sql);
         const results = stmt.all(...params) as any[];
