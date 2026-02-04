@@ -7,6 +7,8 @@ import { DealActivityModel } from "../../pipelines/models/DealActivity";
 import { HistoricalSyncService } from "./historicalSyncService";
 import nodemailer from 'nodemailer';
 import { DraftModel } from "../models/draftModel";
+import { EmailDraft } from "../models/draftTypes";
+import { v4 as uuidv4 } from 'uuid';
 
 export class EmailService {
   private emailModel: EmailModel;
@@ -79,6 +81,7 @@ export class EmailService {
       htmlBody?: string;
       attachments?: EmailAttachment[];
       dealId?: number;
+      enableTracking?: boolean;
     },
     options?: { skipSave?: boolean }
   ): Promise<string> {
@@ -103,17 +106,22 @@ export class EmailService {
       );
     }
 
-    // Send email via connector service
-    const messageId = await this.connectorService.sendEmail(account, emailData);
+    // Generate unique ID before sending to support tracking injection
+    const emailId = uuidv4();
+
+    // Send email via connector service (passing the pre-generated ID for tracking injection)
+    const messageId = await this.connectorService.sendEmail(account, {
+      ...emailData,
+      emailId
+    });
 
     if (options?.skipSave) {
       return messageId;
     }
 
-    // Create email record in database with composite ID to prevent conflicts
-    const uniqueEmailId = `${account.id}-${messageId}`;
+    // Create email record in database using the pre-generated ID
     const email: Email = {
-      id: uniqueEmailId,
+      id: emailId,
       messageId,
       accountId: account.id,
       from: account.email,
@@ -216,15 +224,14 @@ export class EmailService {
       }
     }
 
-    // Notify sender about email sent
-    if (this.notificationService) {
-      this.notificationService.notifyEmailSent(
-        account.userId,
-        messageId,
-        emailData.to,
-        emailData.subject
-      );
-    }
+    // Notify sender about email delivered
+    // if (this.notificationService) {
+    //   this.notificationService.notifyEmailDelivered(
+    //     account.userId,
+    //     messageId,
+    //     emailData.to[0]
+    //   );
+    // }
 
     return messageId;
   }
@@ -1001,7 +1008,20 @@ export class EmailService {
   async trashEmail(emailId: string, userId: string): Promise<boolean> {
     // 1. Update local DB immediately
     const success = await this.emailModel.trashEmail(emailId, userId);
+
     if (!success) {
+      if (this.draftModel) {
+        // Try finding it as a draft
+        const draft = await this.draftModel.trashDraft(emailId, userId);
+        if (draft) {
+          if (draft.remoteUid || draft.providerId) {
+            this.syncDraftTrashToProvider(draft, userId, true).catch(err =>
+              console.error(`Failed to sync draft trash status for ${emailId}:`, err)
+            );
+          }
+          return true;
+        }
+      }
       return false;
     }
 
@@ -1031,7 +1051,20 @@ export class EmailService {
   async restoreFromTrash(emailId: string, userId: string): Promise<boolean> {
     // 1. Update local DB immediately
     const success = await this.emailModel.restoreFromTrash(emailId, userId);
+
     if (!success) {
+      if (this.draftModel) {
+        // Try finding it as a draft
+        const draft = await this.draftModel.restoreDraftFromTrash(emailId, userId);
+        if (draft) {
+          if (draft.remoteUid || draft.providerId) {
+            this.syncDraftTrashToProvider(draft, userId, false).catch(err =>
+              console.error(`Failed to sync draft restore status for ${emailId}:`, err)
+            );
+          }
+          return true;
+        }
+      }
       return false;
     }
 
@@ -1048,12 +1081,13 @@ export class EmailService {
     }
 
     // 2. Sync to provider synchronously to ensure alignment
+    // 2. Sync to provider synchronously to ensure alignment
     try {
-      await this.syncTrashToProvider(account, email, false);
+      // Re-fetch email to get updated labels/folder from local restore logic
+      const updatedEmail = await this.emailModel.getEmailById(emailId, userId);
+      await this.syncTrashToProvider(account, updatedEmail || email, false);
     } catch (err) {
       console.error(`Failed to sync restore from trash for ${emailId} to provider:`, err);
-      // Continue since we already restored locally, or we could revert? 
-      // For now, we prefer local availability, but logging the error is crucial.
     }
 
     return true;
@@ -1063,35 +1097,96 @@ export class EmailService {
    * Delete all emails in trash permanently
    */
   async deleteAllTrash(userId: string): Promise<{ deleted: number; failed: number }> {
-    const trashEmails = await this.emailModel.getTrashEmails(userId);
-
     let deleted = 0;
     let failed = 0;
 
-    for (const email of trashEmails) {
-      try {
-        const success = await this.deleteEmailPermanently(email.id, userId);
-        if (success) {
-          deleted++;
-        } else {
-          failed++;
-        }
-      } catch (error) {
-        console.error(`Failed to delete trash email ${email.id}:`, error);
-        failed++;
-      }
+    // 1. Fetch all items first (Emails + Drafts)
+    const trashEmails = await this.emailModel.getTrashEmails(userId);
+    let trashDrafts: any[] = [];
+    if (this.draftModel) {
+      const { drafts } = await this.draftModel.getTrashedDrafts(userId, 5000, 0); // High limit to get all
+      trashDrafts = drafts;
     }
 
-    console.log(`[DeleteAllTrash] Completed. Deleted: ${deleted}, Failed: ${failed}`);
+    // 2. Optimistic Local Delete (Fast UI)
+    // We assume local delete succeeds mostly. If it fails, we catch below.
+    try {
+      // Bulk delete emails
+      if (trashEmails.length > 0) {
+        // Using a loop for now since we don't have a bulk delete method exposed on EmailModel that takes IDs easily
+        // Actually purging by IDs is safer.
+        // Let's assume we can loop delete locally very fast.
+        // Or better: use available methods.
+        // To ensure "Instant", we should run local deletes in parallel or batch.
+        // Since EmailModel doesn't have deleteMany exposed here, we'll loop parallel promises.
+        await Promise.all(trashEmails.map(e => this.emailModel.deleteEmailPermanently(e.id, userId)));
+        deleted += trashEmails.length;
+      }
+
+      // Bulk delete drafts
+      if (trashDrafts.length > 0) {
+        await this.draftModel.deleteAllTrashedDrafts(userId);
+        // Drafts are deleted locally by this call
+      }
+    } catch (e) {
+      console.error("Local bulk delete failed partially", e);
+      // Continue to sync what we have
+    }
+
+    // 3. Background Sync (Slow Server)
+    // We use the FETCHED objects to sync, because they don't exist in DB anymore!
+    Promise.all([
+      (async () => {
+        for (const email of trashEmails) {
+          try {
+            const account = await this.emailModel.getEmailAccountById(email.accountId);
+            if (account) {
+              await this.syncPermanentDeleteToProvider(account, email);
+            }
+          } catch (err) {
+            console.warn(`[Background] Failed to sync delete email ${email.id}`, err);
+            failed++;
+          }
+        }
+      })(),
+      (async () => {
+        for (const draft of trashDrafts) {
+          try {
+            // Pass the draft object to avoid re-fetching!
+            await this.deleteDraftFromServer(userId, draft.id, draft);
+          } catch (err) {
+            console.warn(`[Background] Failed to sync delete draft ${draft.id}`, err);
+            failed++;
+          }
+        }
+      })()
+    ]).then(() => {
+      console.log(`[DeleteAllTrash] Background sync completed.`);
+    });
+
+    console.log(`[DeleteAllTrash] Started background tasks. Local items cleared.`);
     return { deleted, failed };
   }
 
   /**
    * Permanently delete an email
-   * This will delete from local DB and sync deletion to provider
+   * Validates draft vs email, deletes local first (optimistic), then syncs
    */
   async deleteEmailPermanently(emailId: string, userId: string): Promise<boolean> {
-    // Get email first for provider sync
+    // 0. Check if it's a draft first
+    if (this.draftModel) {
+      const draft = await this.draftModel.getDraftById(emailId, userId);
+      if (draft) {
+        // Local delete first
+        await this.draftModel.deleteDraft(emailId, userId);
+
+        // Background sync
+        this.deleteDraftFromServer(userId, emailId, draft).catch(e => console.warn(e));
+        return true;
+      }
+    }
+
+    // Get email first to have data for sync
     const email = await this.emailModel.getEmailById(emailId, userId);
     if (!email) {
       return false;
@@ -1099,24 +1194,18 @@ export class EmailService {
 
     const account = await this.emailModel.getEmailAccountById(email.accountId);
 
-    // 1. Sync permanent deletion to provider first (to avoid "zombie" emails reappearing on next sync)
-    if (account) {
-      try {
-        await this.syncPermanentDeleteToProvider(account, email);
-      } catch (err) {
-        console.error(`Failed to sync permanent deletion for ${emailId} to provider:`, err);
-        // We continue to local delete even if sync fails?
-        // If we want "aligns everywhere", we should arguably FAIL here.
-        // But user might want to force delete local if server is unreachable.
-        // Let's log but proceed, or maybe throw?
-        // Given the prompt "aligns everywhere", ensuring server delete is key.
-        // But blocking local delete due to network might be annoying.
-        // Let's stick to "Best Effort Sync" but synchronous wait.
-      }
+    // 1. Delete from local DB IMMEDIATELY (Optimistic)
+    const success = await this.emailModel.deleteEmailPermanently(emailId, userId);
+
+    // 2. Sync permanent deletion to provider in BACKGROUND
+    if (account && success) {
+      this.syncPermanentDeleteToProvider(account, email).catch(err => {
+        console.error(`[Background] Failed to sync permanent deletion for ${emailId}:`, err);
+        // We can't revert the local delete easily. We accept slight desync risk for UI speed.
+        // Or we could flag it? For now, logging is standard for optimistic UI.
+      });
     }
 
-    // 2. Delete from local DB
-    const success = await this.emailModel.deleteEmailPermanently(emailId, userId);
     return success;
   }
 
@@ -1161,8 +1250,9 @@ export class EmailService {
             // Move to Trash folder via IMAP (pass messageId for robust finding if folder invalid)
             await this.connectorService.moveImapEmailToTrash(account, folder, uid, messageId);
           } else {
-            // Move back to INBOX from Trash (pass messageId to find correct UID)
-            await this.connectorService.moveImapEmailFromTrash(account, uid, messageId);
+            // Move back to original folder from Trash (pass messageId to find correct UID)
+            // If folder is undefined, default to INBOX. For Drafts, folder ('DRAFT') is passed.
+            await this.connectorService.moveImapEmailFromTrash(account, uid, messageId, folder || 'INBOX');
           }
           console.log(`[TrashSync] Successfully synced IMAP trash status for UID ${uid} in folder ${folder}`);
         } else {
@@ -1601,8 +1691,17 @@ export class EmailService {
               let restoredTo: string | null = null;
               let restoredUid: number | null = null;
 
-              // Check common folders where email might have been moved
-              const foldersToCheck = ['INBOX', 'Sent', 'INBOX.Sent', 'Sent Items'];
+              // Use actually existing folders from the list we fetched earlier
+              const foldersToCheck = new Set<string>();
+
+              // 1. Add explicitly known common names if they exist
+              const commonFolders = ['INBOX', 'Sent', 'INBOX.Sent', 'Sent Items'];
+              const hostingerFolders = ['INBOX.Sent Messages', 'INBOX.Drafts', 'INBOX.Trash', 'INBOX.Spam']; // Common for Hostinger
+              const allPaths = folders.map((f: any) => f.path);
+              for (const f of [...commonFolders, ...hostingerFolders]) {
+                if (allPaths.includes(f)) foldersToCheck.add(f);
+              }
+
               for (const checkFolder of foldersToCheck) {
                 try {
                   const result = await this.connectorService.searchImapEmailByMessageId(account, checkFolder, existing.messageId);
@@ -1776,6 +1875,27 @@ export class EmailService {
   }
 
   /**
+   * Sync a CRM draft's trash status to the email server
+   */
+  async syncDraftTrashToProvider(draft: EmailDraft, userId: string, moveToTrash: boolean): Promise<void> {
+    const account = await this.emailModel.getEmailAccountById(draft.accountId);
+    if (!account) return;
+
+    // We convert Draft to a partial Email object to reuse syncTrashToProvider logic
+    const mockEmail: any = {
+      id: draft.id,
+      accountId: draft.accountId,
+      messageId: draft.id, // Using draft ID as messageId for fallback search
+      providerId: draft.providerId || undefined,
+      uid: draft.remoteUid ? parseInt(draft.remoteUid) : undefined,
+      folder: 'DRAFT', // We know it's a draft
+      labelIds: ['DRAFT']
+    };
+
+    return this.syncTrashToProvider(account, mockEmail, moveToTrash);
+  }
+
+  /**
    * Mark an email as spam
    */
   async markEmailAsSpam(userId: string, emailId: string): Promise<void> {
@@ -1856,9 +1976,9 @@ export class EmailService {
   /**
    * Delete a draft from the email server
    */
-  async deleteDraftFromServer(userId: string, draftId: string): Promise<void> {
+  async deleteDraftFromServer(userId: string, draftId: string, draftObj?: any): Promise<void> {
     try {
-      const draft = await this.draftModel.getDraftById(draftId, userId);
+      const draft = draftObj || await this.draftModel.getDraftById(draftId, userId);
       if (!draft) return;
 
       const account = await this.emailModel.getEmailAccountById(draft.accountId);

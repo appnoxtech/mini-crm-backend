@@ -2,7 +2,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { Email } from '../models/types';
 
 export interface EmailNotification {
-  type: 'new_email' | 'email_sent' | 'sync_status' | 'error' | 'email_opened' | 'email_link_clicked' | 'email_delivered' | 'email_bounced' | 'email_status_changed';
+  type: 'new_email' | 'sync_status' | 'error' | 'email_opened' | 'email_link_clicked' | 'email_delivered' | 'email_bounced' | 'email_status_changed';
   data: any;
   timestamp: Date;
 }
@@ -24,13 +24,17 @@ export class RealTimeNotificationService {
     if (!this.io) return;
 
     this.io.on('connection', (socket) => {
-
+      console.log(`🔌 [SOCKET] New connection established - Socket ID: ${socket.id}`);
 
       // Handle user authentication
       socket.on('authenticate', (userId: any) => {
-        if (!userId) return;
+        if (!userId) {
+          console.warn(`⚠️ [SOCKET] Authentication attempted with empty userId`);
+          return;
+        }
 
         const stringUserId = String(userId);
+        console.log(`✅ [SOCKET] User authenticated - userId: ${stringUserId}, socketId: ${socket.id}`);
 
         // Add socket to user's socket set
         if (!this.userSockets.has(stringUserId)) {
@@ -40,6 +44,8 @@ export class RealTimeNotificationService {
 
         socket.join(`user_${stringUserId}`);
 
+        // Log current user connections
+        console.log(`📊 [SOCKET] Current user sockets:`, Array.from(this.userSockets.entries()).map(([uid, sockets]) => `${uid}:${sockets.size}`));
 
         // Send initial connection confirmation
         socket.emit('authenticated', { userId: stringUserId, timestamp: new Date() });
@@ -47,7 +53,7 @@ export class RealTimeNotificationService {
 
       // Handle disconnection
       socket.on('disconnect', () => {
-
+        console.log(`❌ [SOCKET] Socket disconnected - Socket ID: ${socket.id}`);
 
         // Remove socket from all users
         for (const [userId, socketIds] of this.userSockets.entries()) {
@@ -55,6 +61,7 @@ export class RealTimeNotificationService {
             socketIds.delete(socket.id);
             if (socketIds.size === 0) {
               this.userSockets.delete(userId);
+              console.log(`🗑️ [SOCKET] Removed user ${userId} (no more sockets)`);
             }
 
             break;
@@ -92,12 +99,12 @@ export class RealTimeNotificationService {
     const userSockets = this.userSockets.get(stringUserId);
     const socketCount = userSockets?.size || 0;
 
-
+    console.log(`📡 [SOCKET] Emitting ${notification.type} notification to user: ${stringUserId} (${socketCount} socket(s))`);
 
     this.io.to(`user_${stringUserId}`).emit('notification', notification);
 
     if (socketCount === 0) {
-
+      console.warn(`⚠️ [SOCKET] User ${stringUserId} has no active sockets`);
     }
   }
 
@@ -201,19 +208,6 @@ export class RealTimeNotificationService {
       : clean;
   }
 
-  notifyEmailSent(userId: string, messageId: string, to: string[], subject: string): void {
-    this.notifyUser(userId, {
-      type: 'email_sent',
-      data: {
-        messageId,
-        to,
-        subject,
-        sentAt: new Date()
-      },
-      timestamp: new Date()
-    });
-  }
-
   notifySyncStatus(userId: string, accountId: string, status: 'starting' | 'completed' | 'failed', details?: any): void {
     this.notifyUser(userId, {
       type: 'sync_status',
@@ -240,6 +234,7 @@ export class RealTimeNotificationService {
   }
 
   notifyEmailOpened(userId: string, messageId: string, recipientEmail?: string, openCount?: number): void {
+    console.log(`📬 [NOTIFY] Email opened - userId: ${userId}, messageId: ${messageId}, recipient: ${recipientEmail}, count: ${openCount}`);
     this.notifyUser(userId, {
       type: 'email_opened',
       data: {

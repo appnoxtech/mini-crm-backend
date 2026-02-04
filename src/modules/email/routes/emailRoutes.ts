@@ -1,11 +1,19 @@
 import { Router } from 'express';
 import { EmailController } from '../controllers/emailController';
+import { EmailTrackingController } from '../controllers/emailTrackingController';
 import { authMiddleware } from '../../../shared/middleware/auth';
 
-export function createEmailRoutes(emailController: EmailController): Router {
+export function createEmailRoutes(
+  emailController: EmailController,
+  trackingController: EmailTrackingController
+): Router {
   const router = Router();
 
   router.get('/proxy-image', (req, res) => emailController.proxyImage(req, res));
+
+  // Tracking endpoints (no auth required)
+  router.get('/track/open/:emailId', (req, res) => trackingController.trackOpen(req, res));
+  router.get('/track/click/:emailId', (req, res) => trackingController.trackClick(req, res));
 
   // OAuth authorization endpoints (no auth required)
   router.get('/oauth/gmail/authorize', (req, res) => emailController.oauthGmailAuthorize(req, res));

@@ -16,7 +16,7 @@ export class GroqApiService {
 
     constructor() {
         this.client = new Groq({
-            apiKey: API_KEY,
+            apiKey: process.env.GROQ_API_KEY || "",
         });
     }
 

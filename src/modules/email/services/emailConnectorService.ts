@@ -668,7 +668,21 @@ export class EmailConnectorService {
     body: string;
     htmlBody?: string;
     attachments?: EmailAttachment[];
+    enableTracking?: boolean;
+    emailId?: string;
   }): Promise<string> {
+    // Inject tracking if enabled - convert to HTML if needed
+    if (emailData.enableTracking && emailData.emailId) {
+      // If no htmlBody is provided, create one from the text body
+      if (!emailData.htmlBody && emailData.body) {
+        emailData.htmlBody = `<div style="font-family: Arial, sans-serif;"><div>${emailData.body.replace(/\n/g, '<br />')}</div></div>`;
+      }
+
+      // Now inject tracking into the HTML body
+      if (emailData.htmlBody) {
+        emailData.htmlBody = this.injectTracking(emailData.htmlBody, emailData.emailId);
+      }
+    }
     // Validate required fields
     if (!emailData.to || emailData.to.length === 0) {
       throw new Error('At least one recipient is required');
@@ -1314,8 +1328,37 @@ export class EmailConnectorService {
       if (opt.set && opt.set.length > 0) {
         await client.messageFlagsSet(`${uid}`, opt.set, { uid: true });
       }
-    } catch (error) {
-      console.error(`Failed to set IMAP flags for UID ${uid}:`, error);
+    } catch (error: any) {
+      // If folder open failed, try resolving it if it looks like a label
+      if (error.message?.includes('NONEXISTENT') || error.message?.includes('does not exist')) {
+        try {
+          const mailboxes = await client.list();
+          let resolvedPath: string | null = null;
+
+          if (folder === 'DRAFT') {
+            resolvedPath = mailboxes.find((m: any) => m.specialUse === '\\Drafts' || m.path.toLowerCase().includes('draft'))?.path || null;
+          } else if (folder === 'SENT') {
+            resolvedPath = mailboxes.find((m: any) => m.specialUse === '\\Sent' || m.path.toLowerCase().includes('sent'))?.path || null;
+          } else if (folder === 'TRASH') {
+            resolvedPath = mailboxes.find((m: any) => m.specialUse === '\\Trash' || m.path.toLowerCase().includes('trash'))?.path || null;
+          } else if (folder === 'SPAM') {
+            resolvedPath = mailboxes.find((m: any) => m.specialUse === '\\Junk' || m.path.toLowerCase().includes('spam') || m.path.toLowerCase().includes('junk'))?.path || null;
+          }
+
+          if (resolvedPath && resolvedPath !== folder) {
+            console.log(`[IMAP] Resolved label ${folder} to path ${resolvedPath} for flag update`);
+            await client.mailboxOpen(resolvedPath);
+            // Retry operations
+            if (opt.add && opt.add.length > 0) await client.messageFlagsAdd(`${uid}`, opt.add, { uid: true });
+            if (opt.remove && opt.remove.length > 0) await client.messageFlagsRemove(`${uid}`, opt.remove, { uid: true });
+            if (opt.set && opt.set.length > 0) await client.messageFlagsSet(`${uid}`, opt.set, { uid: true });
+            return;
+          }
+        } catch (resolveErr) {
+          console.error(`[IMAP] Failed to resolve folder label ${folder}:`, resolveErr);
+        }
+      }
+      console.error(`Failed to set IMAP flags for UID ${uid} in ${folder}:`, error);
       throw error;
     } finally {
       await client.logout();
@@ -1507,10 +1550,10 @@ export class EmailConnectorService {
   async moveImapEmailToTrash(account: EmailAccount, sourceFolder: string, uid: number, messageId?: string): Promise<void> {
     const client = await this.connectIMAP(account);
     try {
-      // Try to identify the real Trash folder first
       let trashFolder = 'Trash';
+      let folders: any[] = [];
       try {
-        const folders = await client.list();
+        folders = await client.list();
         for (const folder of folders) {
           const lowerName = folder.path.toLowerCase();
           if (lowerName.includes('trash') || lowerName.includes('deleted') ||
@@ -1523,22 +1566,46 @@ export class EmailConnectorService {
         console.warn('Could not list folders, using default Trash folder');
       }
 
+      let realSourceFolder = sourceFolder;
       let sourceOpened = false;
+
+      // 2. Try to open source folder
       try {
-        await client.mailboxOpen(sourceFolder);
+        await client.mailboxOpen(realSourceFolder);
         sourceOpened = true;
       } catch (err: any) {
-        console.warn(`[IMAP] Could not open source folder ${sourceFolder}: ${err.message}`);
+        // If it's a label (e.g. DRAFT), try to resolve it from the list we fetched
+        const label = sourceFolder.toUpperCase();
+        let resolved = folders.find((f: any) => {
+          if (label === 'DRAFT') return f.specialUse === '\\Drafts' || f.path.toLowerCase().includes('draft');
+          if (label === 'SENT') return f.specialUse === '\\Sent' || f.path.toLowerCase().includes('sent');
+          if (label === 'TRASH') return f.specialUse === '\\Trash' || f.path.toLowerCase().includes('trash');
+          if (label === 'SPAM') return f.specialUse === '\\Junk' || f.path.toLowerCase().includes('spam') || f.path.toLowerCase().includes('junk');
+          return false;
+        });
+
+        if (resolved) {
+          try {
+            realSourceFolder = resolved.path;
+            await client.mailboxOpen(realSourceFolder);
+            sourceOpened = true;
+            console.log(`[IMAP] Resolved source label ${sourceFolder} to path ${realSourceFolder}`);
+          } catch (retryErr) {
+            console.warn(`[IMAP] Failed to open resolved folder ${realSourceFolder}`);
+          }
+        } else {
+          console.warn(`[IMAP] Could not open source folder ${sourceFolder}: ${err.message}`);
+        }
       }
 
       if (sourceOpened) {
-        // Normal path: Move usage UID
+        // Normal path: Move using UID
         try {
           await client.messageMove(`${uid}`, trashFolder, { uid: true });
-          console.log(`[IMAP] Moved UID ${uid} from ${sourceFolder} to ${trashFolder}`);
+          console.log(`[IMAP] Moved UID ${uid} from ${realSourceFolder} to ${trashFolder}`);
           return;
         } catch (moveErr) {
-          console.warn(`[IMAP] Failed to move UID ${uid} from ${sourceFolder}:`, moveErr);
+          console.warn(`[IMAP] Failed to move UID ${uid} from ${realSourceFolder}:`, moveErr);
           // Fallthrough to recovery if messageId is present
         }
       }
@@ -1548,11 +1615,26 @@ export class EmailConnectorService {
         console.log(`[IMAP] Attempting to find message ${messageId} in other folders...`);
         const cleanMessageId = messageId.replace(/[<>]/g, '');
 
-        // List of folders to check (include Hostinger specific INBOX. prefixes)
-        const commonFolders = ['INBOX', 'Sent', 'Archive', 'Junk', 'Spam', 'INBOX.Trash', 'INBOX.Spam', 'INBOX.Junk', 'INBOX.Sent', 'INBOX.Archive'];
-        // Note: We already listed folders above, could reuse that list but simplified here for perf
+        // Generate list of folders to check, prioritizing common ones
+        const commonFolders = ['INBOX', 'Drafts', 'Sent', 'Archive', 'Junk', 'Spam', 'Trash', 'Sent Items', 'Deleted Items'];
+        const hostingerFolders = ['INBOX.Drafts', 'INBOX.Sent', 'INBOX.Archive', 'INBOX.Spam', 'INBOX.Junk', 'INBOX.Trash'];
 
-        for (const checkFolder of commonFolders) {
+        // Use actually existing folders from the list we fetched earlier
+        const foldersToCheck = new Set<string>();
+
+        // 1. Add explicitly known common names if they exist
+        const allPaths = folders.map((f: any) => f.path);
+        for (const f of [...commonFolders, ...hostingerFolders]) {
+          if (allPaths.includes(f)) foldersToCheck.add(f);
+        }
+
+        // 2. Add all existing folders as fallback
+        for (const p of allPaths) foldersToCheck.add(p);
+
+        // 3. Remove the target trash folder
+        foldersToCheck.delete(trashFolder);
+
+        for (const checkFolder of foldersToCheck) {
           try {
             if (checkFolder === trashFolder) continue;
 
@@ -1589,14 +1671,32 @@ export class EmailConnectorService {
  * Move IMAP email from Trash back to Inbox
  * Searches by Message-ID since UIDs change after moving between folders
  */
-  async moveImapEmailFromTrash(account: EmailAccount, uid: number, messageId?: string): Promise<void> {
+  async moveImapEmailFromTrash(account: EmailAccount, uid: number, messageId?: string, targetFolder: string = 'INBOX'): Promise<void> {
     const client = await this.connectIMAP(account);
     try {
+      // Resolve target folder if it's a label
+      let realTargetFolder = targetFolder;
+      const folders = await client.list();
+
+      if (['INBOX', 'TRASH', 'DRAFT', 'SENT', 'SPAM'].includes(targetFolder.toUpperCase())) {
+        const label = targetFolder.toUpperCase();
+        const resolved = folders.find(f => {
+          if (label === 'DRAFT') return f.specialUse === '\\Drafts' || f.path.toLowerCase().includes('draft');
+          if (label === 'SENT') return f.specialUse === '\\Sent' || f.path.toLowerCase().includes('sent');
+          if (label === 'TRASH') return f.specialUse === '\\Trash' || f.path.toLowerCase().includes('trash');
+          if (label === 'SPAM') return f.specialUse === '\\Junk' || f.path.toLowerCase().includes('spam') || f.path.toLowerCase().includes('junk');
+          return f.path.toUpperCase() === 'INBOX'; // INBOX is usually just INBOX
+        });
+        if (resolved) {
+          realTargetFolder = resolved.path;
+        }
+      }
+
       // Common trash folder names
       const potentialTrashNames = ['Trash', 'INBOX.Trash', 'Deleted', 'Deleted Items', 'Deleted Messages', '[Gmail]/Trash'];
 
       // Get actual folders from server
-      const existingFolders = await client.list();
+      const existingFolders = folders; // reused from above
       const validTrashFolders: string[] = [];
 
       // 1. Add any folder with \Trash special use
@@ -1644,8 +1744,8 @@ export class EmailConnectorService {
               const foundUid = searchResults[0];
               console.log(`[IMAP] Found message in ${folder} with UID ${foundUid}`);
 
-              await client.messageMove(`${foundUid}`, 'INBOX', { uid: true });
-              console.log(`[IMAP] Moved UID ${foundUid} from ${folder} to INBOX`);
+              await client.messageMove(`${foundUid}`, realTargetFolder, { uid: true });
+              console.log(`[IMAP] Moved UID ${foundUid} from ${folder} to ${realTargetFolder}`);
               restored = true;
               break;
             }
@@ -1719,10 +1819,41 @@ export class EmailConnectorService {
         }
       }
 
+      let realFolder = folder;
       let deleted = false;
 
-      // If we have a Message-ID, search for it in Trash folders first
-      if (messageId) {
+      // Try with original folder/UID first
+      try {
+        await client.mailboxOpen(realFolder);
+        await client.messageFlagsAdd(`${uid}`, ['\\Deleted'], { uid: true });
+        await client.messageDelete(`${uid}`, { uid: true });
+        console.log(`[IMAP] Permanently deleted UID ${uid} from ${realFolder}`);
+        deleted = true;
+      } catch (err: any) {
+        // Try resolving label if it failed
+        const label = folder.toUpperCase();
+        const resolved = existingFolders.find((f: any) => {
+          if (label === 'DRAFT') return f.specialUse === '\\Drafts' || f.path.toLowerCase().includes('draft');
+          if (label === 'SENT') return f.specialUse === '\\Sent' || f.path.toLowerCase().includes('sent');
+          if (label === 'TRASH') return f.specialUse === '\\Trash' || f.path.toLowerCase().includes('trash');
+          if (label === 'SPAM') return f.specialUse === '\\Junk' || f.path.toLowerCase().includes('spam') || f.path.toLowerCase().includes('junk');
+          return false;
+        });
+
+        if (resolved) {
+          try {
+            realFolder = resolved.path;
+            await client.mailboxOpen(realFolder);
+            await client.messageFlagsAdd(`${uid}`, ['\\Deleted'], { uid: true });
+            await client.messageDelete(`${uid}`, { uid: true });
+            console.log(`[IMAP] Resolved label ${folder} and deleted UID ${uid} from ${realFolder}`);
+            deleted = true;
+          } catch (retryErr) { /* ignore */ }
+        }
+      }
+
+      // If still not deleted and we have a Message-ID, search for it in Trash folders
+      if (!deleted && messageId) {
         // Clean Message-ID (remove < > if present)
         const cleanMessageId = messageId.replace(/[<>]/g, '');
 
@@ -1981,7 +2112,7 @@ export class EmailConnectorService {
     const client = await this.connectIMAP(account);
     try {
       const folders = await client.list();
-      const spamFolder = folders.find(f =>
+      const spamFolder = folders.find((f: any) =>
         f.specialUse === '\\Junk' ||
         f.path.toLowerCase().includes('spam') ||
         f.path.toLowerCase().includes('junk')
@@ -1996,5 +2127,32 @@ export class EmailConnectorService {
     } finally {
       await client.logout();
     }
+  }
+
+  private injectTracking(html: string, emailId: string): string {
+    const baseUrl = process.env.TRACKING_BASE_URL || 'http://localhost:4000';
+
+    // 1. Inject pixel
+    const pixelUrl = `${baseUrl}/api/emails/track/open/${emailId}`;
+    console.log(`📸 [TRACKING] Injecting pixel URL: ${pixelUrl}`);
+
+    const pixelTag = `<img src="${pixelUrl}" width="1" height="1" style="display:none !important;" alt="" />`;
+    let processedHtml = html.includes('</body>')
+      ? html.replace('</body>', `${pixelTag}</body>`)
+      : html + pixelTag;
+
+    // 2. Wrap links
+    const linkRegex = /<a\s+(?:[^>]*?\s+)?href=(["'])([^"']*)\1/gi;
+    processedHtml = processedHtml.replace(linkRegex, (match, quote, url) => {
+      if (url.startsWith('mailto:') || url.startsWith('#') || url.includes(baseUrl)) {
+        return match;
+      }
+      const encodedUrl = Buffer.from(url).toString('base64');
+      const trackingUrl = `${baseUrl}/api/emails/track/click/${emailId}?url=${encodedUrl}`;
+      console.log(`🔗 [TRACKING] Wrapping link: ${url} -> ${trackingUrl}`);
+      return match.replace(url, trackingUrl);
+    });
+
+    return processedHtml;
   }
 }

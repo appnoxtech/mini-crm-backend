@@ -544,6 +544,15 @@ export class EmailModel {
     return this.mapRowToEmail(row);
   }
 
+  async findEmailById(id: string): Promise<Email | null> {
+    const row = await prisma.email.findUnique({
+      where: { id },
+      include: { content: true }
+    });
+    if (!row) return null;
+    return this.mapRowToEmail(row);
+  }
+
   async markEmailAsRead(emailId: string, userId: string, isRead: boolean): Promise<boolean> {
     try {
       const result = await prisma.email.updateMany({
@@ -661,8 +670,17 @@ export class EmailModel {
 
     let labels = (email.labelIds as string[]) || [];
     labels = labels.filter((l) => l !== 'TRASH');
-    if (!labels.includes('INBOX')) {
-      labels.push('INBOX');
+
+    // Determine target folder based on email properties
+    let targetFolder = 'INBOX';
+    if (labels.includes('SENT') || !email.isIncoming) {
+      targetFolder = 'SENT';
+      if (!labels.includes('SENT')) labels.push('SENT');
+    } else if (labels.includes('DRAFT')) {
+      targetFolder = 'DRAFT';
+      // Draft label already preserved if present
+    } else {
+      if (!labels.includes('INBOX')) labels.push('INBOX');
     }
 
     try {
@@ -675,6 +693,7 @@ export class EmailModel {
         },
         data: {
           labelIds: labels as any,
+          folder: targetFolder,
           updatedAt: new Date()
         }
       });
@@ -934,6 +953,48 @@ export class EmailModel {
       folder: row.folder || undefined,
       providerId: row.providerId || undefined,
       threadCount: row.threadCount ? Number(row.threadCount) : undefined,
+      opens: row.opens || 0,
+      clicks: row.clicks || 0,
+      lastOpenedAt: row.lastOpenedAt || undefined,
+      lastClickedAt: row.lastClickedAt || undefined,
     };
+  }
+
+  async logTrackingEvent(data: {
+    emailId: string;
+    type: 'open' | 'click';
+    ipAddress?: string;
+    userAgent?: string;
+    metadata?: any;
+  }): Promise<void> {
+    await (prisma as any).emailTrackingEvent.create({
+      data: {
+        emailId: data.emailId,
+        type: data.type,
+        ipAddress: data.ipAddress,
+        userAgent: data.userAgent,
+        metadata: data.metadata ? (data.metadata as any) : (Prisma as any).JsonNull,
+      }
+    });
+  }
+
+  async incrementOpens(emailId: string): Promise<void> {
+    await (prisma as any).email.update({
+      where: { id: emailId },
+      data: {
+        opens: { increment: 1 },
+        lastOpenedAt: new Date()
+      }
+    });
+  }
+
+  async incrementClicks(emailId: string): Promise<void> {
+    await (prisma as any).email.update({
+      where: { id: emailId },
+      data: {
+        clicks: { increment: 1 },
+        lastClickedAt: new Date()
+      }
+    });
   }
 }

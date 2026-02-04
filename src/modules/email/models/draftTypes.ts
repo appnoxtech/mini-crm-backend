@@ -8,6 +8,7 @@ export interface EmailDraft {
     id: string;
     accountId: string;
     userId: string;
+    from?: string;
 
     // Email content
     to: string[];
@@ -39,6 +40,7 @@ export interface EmailDraft {
     scheduledFor?: Date;
     providerId?: string; // For Gmail/Outlook
     remoteUid?: string;  // For IMAP
+    isTrashed?: boolean; // Whether this draft is in trash
 }
 
 /**
@@ -46,6 +48,7 @@ export interface EmailDraft {
  */
 export interface CreateDraftInput {
     accountId: string;
+    from?: string;
     to: string[];
     cc?: string[];
     bcc?: string[];
@@ -67,6 +70,7 @@ export interface CreateDraftInput {
  * Input type for updating an existing draft
  */
 export interface UpdateDraftInput {
+    from?: string;
     to?: string[];
     cc?: string[];
     bcc?: string[];
@@ -90,4 +94,5 @@ export interface ListDraftsOptions {
     search?: string;
     accountId?: string;
     scheduledOnly?: boolean;
+    includeTrashed?: boolean;  // Include trashed drafts in results
 }

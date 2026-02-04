@@ -110,14 +110,36 @@ model Email {
   folder          String?
   providerId      String?
   snippet         String?
+  
+  // Tracking fields
+  opens           Int      @default(0)
+  clicks          Int      @default(0)
+  lastOpenedAt    DateTime?
+  lastClickedAt   DateTime?
 
   account         EmailAccount @relation(fields: [accountId], references: [id])
   content         EmailContent @relation(fields: [messageId], references: [messageId])
+  trackingEvents  EmailTrackingEvent[]
   // Note: threadId is intentionally NOT a foreign key - thread summaries are created asynchronously
 
   @@unique([messageId, accountId])
   @@index([accountId, sentAt(sort: Desc)])
   @@map("emails")
+}
+
+model EmailTrackingEvent {
+  id        String   @id @default(uuid())
+  emailId   String
+  type      String   // 'open' or 'click'
+  ipAddress String?
+  userAgent String?
+  metadata  Json?    // For clicks, store the URL
+  createdAt DateTime @default(now())
+
+  email     Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@index([emailId])
+  @@map("email_tracking_events")
 }
 
 model EmailContent {
@@ -155,6 +177,7 @@ model EmailDraft {
   id                   String   @id @default(uuid())
   accountId            String
   userId               Int
+  from                 String?
   toRecipients         Json     @map("to_recipients")
   ccRecipients         Json?    @map("cc_recipients")
   bccRecipients        Json?    @map("bcc_recipients")
@@ -172,6 +195,7 @@ model EmailDraft {
   scheduledFor         DateTime? @map("scheduled_for")
   providerId           String?   @map("provider_id")
   remoteUid            String?   @map("remote_uid")
+  isTrashed            Boolean  @default(false) @map("is_trashed")
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
 
@@ -181,6 +205,8 @@ model EmailDraft {
   @@index([accountId])
   @@index([createdAt(sort: Desc)])
   @@index([isScheduled, scheduledFor])
+  @@index([isTrashed])
+  @@index([userId, isTrashed])
   @@map("email_drafts")
 }
 

@@ -165,6 +165,92 @@ export class DraftService {
     }
 
     /**
+     * Trash a draft (soft delete)
+     */
+    async trashDraft(draftId: string, userId: string): Promise<EmailDraft | null> {
+        const draft = await this.draftModel.trashDraft(draftId, userId);
+        if (draft && (draft.remoteUid || draft.providerId)) {
+            this.emailService.syncDraftTrashToProvider(draft, userId, true).catch(err => {
+                console.error(`Failed to sync draft ${draftId} trash status to server:`, err);
+            });
+        }
+        return draft;
+    }
+
+    /**
+     * Trash multiple drafts (batch operation)
+     */
+    async trashDraftsBatch(draftIds: string[], userId: string): Promise<{ trashed: number; failed: number }> {
+        // Get the drafts first to know which ones need server sync
+        const drafts = await Promise.all(draftIds.map(id => this.draftModel.getDraftById(id, userId)));
+
+        const result = await this.draftModel.trashDraftsBatch(draftIds, userId);
+
+        // Sync each successfully trashed draft that has a remote presence
+        for (const draft of drafts) {
+            if (draft && (draft.remoteUid || draft.providerId)) {
+                this.emailService.syncDraftTrashToProvider(draft, userId, true).catch(err => {
+                    console.error(`Failed to sync batch draft ${draft.id} trash status to server:`, err);
+                });
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Restore a draft from trash
+     */
+    async restoreDraftFromTrash(draftId: string, userId: string): Promise<EmailDraft | null> {
+        const draft = await this.draftModel.restoreDraftFromTrash(draftId, userId);
+        if (draft && (draft.remoteUid || draft.providerId)) {
+            this.emailService.syncDraftTrashToProvider(draft, userId, false).catch(err => {
+                console.error(`Failed to sync draft ${draftId} restore status to server:`, err);
+            });
+        }
+        return draft;
+    }
+
+    /**
+     * Get all trashed drafts for a user
+     */
+    async getTrashedDrafts(userId: string, limit = 50, offset = 0): Promise<{ drafts: EmailDraft[]; total: number }> {
+        return this.draftModel.getTrashedDrafts(userId, limit, offset);
+    }
+
+    /**
+     * Permanently delete a trashed draft
+     */
+    async deleteTrashedDraft(draftId: string, userId: string): Promise<boolean> {
+        // Delete from server first
+        await this.emailService.deleteDraftFromServer(userId, draftId).catch(err => {
+            console.warn(`Failed to delete trashed draft ${draftId} from server:`, err);
+        });
+
+        return this.draftModel.deleteTrashedDraft(draftId, userId);
+    }
+
+    /**
+     * Permanently delete all trashed drafts
+     */
+    async deleteAllTrashedDrafts(userId: string): Promise<{ deleted: number }> {
+        // Get all trashed drafts to delete from server
+        // Using a high limit to get most of them; for thousands, pagination would be better but this covers most cases
+        const { drafts } = await this.draftModel.getTrashedDrafts(userId, 1000, 0);
+
+        // Delete from server
+        for (const draft of drafts) {
+            if (draft.remoteUid || draft.providerId) {
+                await this.emailService.deleteDraftFromServer(userId, draft.id).catch(err => {
+                    console.warn(`Failed to delete trashed draft ${draft.id} from server during empty trash:`, err);
+                });
+            }
+        }
+
+        return this.draftModel.deleteAllTrashedDrafts(userId);
+    }
+
+    /**
      * Send a draft
      * Business rule: Convert draft to email and send it
      */
@@ -190,7 +276,12 @@ export class DraftService {
                 }
             );
 
-            // Delete the draft after successful send
+            // Delete the draft from server (cleanup)
+            await this.emailService.deleteDraftFromServer(userId, draftId).catch(err => {
+                console.warn(`Failed to delete sent draft ${draftId} from server:`, err);
+            });
+
+            // Delete the draft from local DB after successful send
             await this.draftModel.deleteDraft(draftId, userId);
 
             return { success: true, emailId: messageId };

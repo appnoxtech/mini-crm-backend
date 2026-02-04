@@ -11,6 +11,8 @@ export interface EmailRequest {
   body_text: string;
   attachments?: AttachmentData[];
   template_variables?: Record<string, string>;
+  enableTracking?: boolean;
+  emailId?: string; // The ID of the email in our DB for tracking
 }
 
 export interface AttachmentData {
@@ -60,10 +62,18 @@ export class EnhancedEmailComposer {
     const messageId = this.generateMessageId(emailRequest.from);
 
     // Step 3: Process template variables
-    const processedSubject = this.replaceTemplateVariables(emailRequest.subject, emailRequest.template_variables);
-    const processedBodyText = this.replaceTemplateVariables(emailRequest.body_text, emailRequest.template_variables);
-    const processedBodyHtml = emailRequest.body_html ?
+    let processedSubject = this.replaceTemplateVariables(emailRequest.subject, emailRequest.template_variables);
+    let processedBodyText = this.replaceTemplateVariables(emailRequest.body_text, emailRequest.template_variables);
+    let processedBodyHtml = emailRequest.body_html ?
       this.replaceTemplateVariables(emailRequest.body_html, emailRequest.template_variables) : undefined;
+
+    // Step 3.5: Tracking
+    if (emailRequest.enableTracking && emailRequest.emailId) {
+      if (processedBodyHtml) {
+        processedBodyHtml = this.injectTrackingPixel(processedBodyHtml, emailRequest.emailId);
+        processedBodyHtml = this.wrapLinksForTracking(processedBodyHtml, emailRequest.emailId);
+      }
+    }
 
     // Step 4: Construct MIME message
     const mimeMessage = this.constructMimeMessage({
@@ -147,6 +157,33 @@ export class EnhancedEmailComposer {
     }
 
     return result;
+  }
+
+  private injectTrackingPixel(html: string, emailId: string): string {
+    const baseUrl = process.env.TRACKING_BASE_URL || 'http://localhost:4000';
+    const pixelUrl = `${baseUrl}/api/emails/track/open/${emailId}`;
+    const pixelTag = `<img src="${pixelUrl}" width="1" height="1" style="display:none !important;" alt="" />`;
+
+    if (html.includes('</body>')) {
+      return html.replace('</body>', `${pixelTag}</body>`);
+    }
+    return html + pixelTag;
+  }
+
+  private wrapLinksForTracking(html: string, emailId: string): string {
+    const baseUrl = process.env.TRACKING_BASE_URL || 'http://localhost:4000';
+    const linkRegex = /<a\s+(?:[^>]*?\s+)?href="([^"]*)"/gi;
+
+    return html.replace(linkRegex, (match, url) => {
+      // Don't track mailto or internal links
+      if (url.startsWith('mailto:') || url.startsWith('#')) {
+        return match;
+      }
+
+      const encodedUrl = Buffer.from(url).toString('base64');
+      const trackingUrl = `${baseUrl}/api/emails/track/click/${emailId}?url=${encodedUrl}`;
+      return match.replace(url, trackingUrl);
+    });
   }
 
   private constructMimeMessage(request: EmailRequest & { messageId: string }): string {

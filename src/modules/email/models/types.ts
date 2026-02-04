@@ -39,6 +39,10 @@ export interface Email {
   folder?: string;
   providerId?: string;
   threadCount?: number;
+  opens?: number;
+  clicks?: number;
+  lastOpenedAt?: Date;
+  lastClickedAt?: Date;
 }
 
 export interface EmailContent {

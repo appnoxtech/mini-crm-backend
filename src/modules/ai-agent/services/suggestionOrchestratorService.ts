@@ -40,17 +40,9 @@ export class SuggestionOrchestratorService {
         const isRefinementOnly = !dealId && !personId && !email && !threadId && !messageId && request.customPrompt && request.customPrompt.trim().length > 0;
 
         if (!isRefinementOnly) {
-            if (!dealId && !personId && !threadId && !messageId) {
-                if (email) {
-                    const existing = await this.personModel.findByEmail(email);
-                    if (existing) {
-                        personId = existing.id;
-                    }
-                }
-
-                if (!personId) {
-                    throw new Error("Either Deal ID, Person ID, Thread ID, Message ID, or a valid Contact Email is required for context.");
-                }
+            if (!isRefinementOnly) {
+                // Logic simplified: If email is provided, we will attempt to resolving it later or use it as-is.
+                // We don't need to throw here if PersonID isn't found immediately, as we have fallback logic below.
             }
         }
 
@@ -172,7 +164,15 @@ export class SuggestionOrchestratorService {
 
             profile = await contextExtractionService.extractClientProfile(emails, contextObject, profile);
             if (profile) {
-                await this.clientProfileModel.upsertProfile(profile);
+                // Ensure profile has at least one valid ID before upserting
+                if (!profile.dealId && !profile.personId && !profile.organizationId) {
+                    if (dealId) profile.dealId = dealId;
+                    if (personId) profile.personId = personId;
+                }
+
+                if (profile.dealId || profile.personId || profile.organizationId) {
+                    await this.clientProfileModel.upsertProfile(profile);
+                }
             } else {
                 profile = {
                     id: '',

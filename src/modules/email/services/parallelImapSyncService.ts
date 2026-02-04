@@ -69,6 +69,7 @@ export class ParallelImapSyncService {
     private async identifyFolders(client: ImapFlow): Promise<FolderConfig[]> {
         const mailboxes = await client.list();
         const folders: FolderConfig[] = [];
+        const seenPaths = new Set<string>();
 
         // Priority mapping: higher numbers = higher priority
         const priorityMap: Record<string, number> = {
@@ -80,58 +81,43 @@ export class ParallelImapSyncService {
             ARCHIVE: 1,
         };
 
-        // INBOX
-        folders.push({ path: 'INBOX', label: 'INBOX', priority: priorityMap.INBOX || 10 });
+        // Helper to add folder
+        const addFolder = (path: string, label: string, priority: number) => {
+            if (!seenPaths.has(path)) {
+                folders.push({ path, label, priority });
+                seenPaths.add(path);
+            }
+        };
 
-        // Sent folder
-        const sentBox = mailboxes.find((box: any) =>
-            box.specialUse === '\\Sent' ||
-            box.name === 'Sent' ||
-            box.name === 'Sent Items' ||
-            box.name === 'Sent Mail'
-        );
-        if (sentBox) {
-            folders.push({ path: sentBox.path, label: 'SENT', priority: priorityMap.SENT || 8 });
-        }
+        for (const box of mailboxes) {
+            const path = box.path;
+            const name = box.name;
+            const specialUse = (box as any).specialUse;
 
-        // Drafts folder
-        const draftBox = mailboxes.find((box: any) =>
-            box.specialUse === '\\Drafts' ||
-            box.name.toLowerCase().includes('draft')
-        );
-        if (draftBox) {
-            folders.push({ path: draftBox.path, label: 'DRAFT', priority: priorityMap.DRAFT || 5 });
-        }
+            let label = name; // Default to folder name
+            let priority = 0;
 
-        // Spam/Junk folder
-        const spamBox = mailboxes.find((box: any) =>
-            box.specialUse === '\\Junk' ||
-            box.name.toLowerCase().includes('spam') ||
-            box.name.toLowerCase().includes('junk')
-        );
-        if (spamBox) {
-            folders.push({ path: spamBox.path, label: 'SPAM', priority: priorityMap.SPAM || 3 });
-        }
+            if (path.toUpperCase() === 'INBOX') {
+                label = 'INBOX';
+                priority = priorityMap.INBOX ?? 10;
+            } else if (specialUse === '\\Sent' || name === 'Sent' || name === 'Sent Items' || name === 'Sent Mail' || path === 'INBOX.Sent Messages') {
+                label = 'SENT';
+                priority = priorityMap.SENT ?? 8;
+            } else if (specialUse === '\\Drafts' || name.toLowerCase().includes('draft') || path === 'INBOX.Drafts') {
+                label = 'DRAFT';
+                priority = priorityMap.DRAFT ?? 5;
+            } else if (specialUse === '\\Junk' || name.toLowerCase().includes('spam') || name.toLowerCase().includes('junk') || path === 'INBOX.Spam') {
+                label = 'SPAM';
+                priority = priorityMap.SPAM ?? 3;
+            } else if (specialUse === '\\Trash' || name.toLowerCase().includes('trash') || name.toLowerCase().includes('delete') || path === 'INBOX.Trash') {
+                label = 'TRASH';
+                priority = priorityMap.TRASH ?? 2;
+            } else if (specialUse === '\\Archive' || name.toLowerCase().includes('archive')) {
+                label = 'ARCHIVE';
+                priority = priorityMap.ARCHIVE ?? 1;
+            }
 
-        // Trash folder
-        const trashBox = mailboxes.find((box: any) =>
-            box.specialUse === '\\Trash' ||
-            box.name.toLowerCase().includes('trash') ||
-            box.name.toLowerCase().includes('delete')
-        );
-        if (trashBox) {
-            folders.push({ path: trashBox.path, label: 'TRASH', priority: priorityMap.TRASH || 2 });
-        }
-
-        // Archive folder
-        const archiveBox = mailboxes.find((box: any) =>
-            box.specialUse === '\\Archive' ||
-            box.name.toLowerCase() === 'archive' ||
-            box.name.toLowerCase() === 'archived' ||
-            box.name.toLowerCase() === 'archives'
-        );
-        if (archiveBox) {
-            folders.push({ path: archiveBox.path, label: 'ARCHIVE', priority: priorityMap.ARCHIVE || 1 });
+            addFolder(path, label, priority);
         }
 
         // Sort by priority (highest first)
@@ -156,8 +142,6 @@ export class ParallelImapSyncService {
             const mailboxStatus = client.mailbox;
             const totalMessages = (mailboxStatus && typeof mailboxStatus !== 'boolean') ? (mailboxStatus.exists || 0) : 0;
 
-
-
             if (totalMessages === 0) {
                 return messages;
             }
@@ -181,10 +165,9 @@ export class ParallelImapSyncService {
                 }
             }
 
-
         } catch (err: any) {
-            console.error(`❌ Error fetching from ${folder.label}:`, err.message);
-            throw err;
+            console.error(`❌ Error fetching from ${folder.path}:`, err.message);
+            // Don't throw, just return empty for this folder so others proceed
         }
 
         return messages;
@@ -258,8 +241,6 @@ export class ParallelImapSyncService {
             foldersToSync,
         } = options;
 
-
-
         const allMessages: any[] = [];
         const allErrors: string[] = [];
 
@@ -272,9 +253,7 @@ export class ParallelImapSyncService {
             // Filter folders if specific ones are requested
             const foldersToProcess = foldersToSync
                 ? allFolders.filter(f => foldersToSync.includes(f.label))
-                : allFolders;
-
-
+                : allFolders; // Default to ALL folders
 
             // Step 2: Prepare search criteria
             const searchCriteria: any = lastSyncTime
@@ -290,11 +269,8 @@ export class ParallelImapSyncService {
                 );
             }
 
-
-
             // Step 4: Process batches in parallel
             const batchPromises = folderBatches.map((batch, index) => {
-
                 return this.processFolderBatch(account, batch, searchCriteria, batchSize);
             });
 
@@ -307,7 +283,6 @@ export class ParallelImapSyncService {
             }
 
             const duration = Date.now() - startTime;
-
 
             return {
                 messages: allMessages,
@@ -329,15 +304,15 @@ export class ParallelImapSyncService {
     }
 
     /**
-     * Quick sync for high-priority folders only (INBOX and SENT)
-     * This is useful for frequent syncs where you only need recent emails
+     * Quick sync for high-priority folders + delta for others
+     * Now syncs ALL folders to ensure alignment, but relies on 'since' for efficiency
      */
     async quickSync(account: EmailAccount, lastSyncTime?: Date): Promise<SyncResult> {
         return this.syncEmails(account, {
             maxConnections: 20,
             batchSize: 5,
             lastSyncTime,
-            foldersToSync: ['INBOX', 'SENT', 'TRASH', 'DRAFT', 'SPAM'],
+            // Removed foldersToSync restriction to ensure ALL folders are aligned
         });
     }
 

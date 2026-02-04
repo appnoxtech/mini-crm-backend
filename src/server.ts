@@ -97,6 +97,8 @@ import { createEmailWebhookRoutes } from './modules/email/routes/emailWebhookRou
 import { SummarizationController } from './modules/email/controllers/summarizationController';
 import { startSummarizationScheduler } from './modules/email/services/summarizationSchedulerService';
 
+import { EmailTrackingController } from './modules/email/controllers/emailTrackingController';
+
 // Import data import module
 import { ImportModel, ImportService, ImportController, createImportRoutes } from './modules/import';
 
@@ -208,6 +210,7 @@ gmailPushService.initialize(emailService, notificationService);
 const authController = new AuthController(authService, userModel);
 const leadController = new LeadController(leadService);
 const emailController = new EmailController(emailService, oauthService, emailQueueService, notificationService, quotaService, draftService);
+const trackingController = new EmailTrackingController(emailModel, notificationService);
 const summarizationController = new SummarizationController(emailModel);
 const pipelineController = new PipelineController(pipelineService, pipelineStageService);
 const dealController = new DealController(dealService);
@@ -248,7 +251,7 @@ app.use((req, res, next) => {
 // Routes
 app.use('/api/auth', createAuthRoutes(authController));
 app.use('/api/leads', createLeadRoutes(leadController));
-app.use('/api/emails', createEmailRoutes(emailController));
+app.use('/api/emails', createEmailRoutes(emailController, trackingController));
 app.use('/api/email/drafts', createDraftRoutes(draftController));
 app.use('/api/summarization', createSummarizationRoutes(summarizationController));
 app.use('/api/pipelines', createPipelineRoutes(pipelineController));

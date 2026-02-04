@@ -21,6 +21,7 @@ export class DraftModel {
             data: {
                 accountId: input.accountId,
                 userId: parseInt(userId),
+                from: input.from || null,
                 toRecipients: (input.to as any) || [],
                 ccRecipients: (input.cc as any) || null,
                 bccRecipients: (input.bcc as any) || null,
@@ -72,11 +73,17 @@ export class DraftModel {
             search,
             accountId,
             scheduledOnly = false,
+            includeTrashed = false,
         } = options;
 
         const where: any = {
             userId: parseInt(userId)
         };
+
+        // Exclude trashed drafts by default
+        if (!includeTrashed) {
+            where.isTrashed = false;
+        }
 
         if (accountId) {
             where.accountId = accountId;
@@ -119,6 +126,7 @@ export class DraftModel {
     ): Promise<EmailDraft | null> {
         const data: any = {};
 
+        if (updates.from !== undefined) data.from = updates.from || null;
         if (updates.to !== undefined) data.toRecipients = updates.to as any;
         if (updates.cc !== undefined) data.ccRecipients = (updates.cc as any) || null;
         if (updates.bcc !== undefined) data.bccRecipients = (updates.bcc as any) || null;
@@ -166,6 +174,138 @@ export class DraftModel {
     }
 
     /**
+     * Trash a draft (soft delete)
+     */
+    async trashDraft(draftId: string, userId: string): Promise<EmailDraft | null> {
+        try {
+            const row = await prisma.emailDraft.update({
+                where: {
+                    id: draftId,
+                    userId: parseInt(userId)
+                },
+                data: {
+                    isTrashed: true
+                }
+            });
+            return this.mapRowToDraft(row);
+        } catch (err) {
+            return null;
+        }
+    }
+
+    /**
+     * Trash multiple drafts (batch operation)
+     */
+    async trashDraftsBatch(draftIds: string[], userId: string): Promise<{ trashed: number; failed: number }> {
+        try {
+            const result = await prisma.emailDraft.updateMany({
+                where: {
+                    id: {
+                        in: draftIds
+                    },
+                    userId: parseInt(userId)
+                },
+                data: {
+                    isTrashed: true
+                }
+            });
+
+            return {
+                trashed: result.count,
+                failed: draftIds.length - result.count
+            };
+        } catch (err) {
+            return {
+                trashed: 0,
+                failed: draftIds.length
+            };
+        }
+    }
+
+    /**
+     * Restore a draft from trash
+     */
+    async restoreDraftFromTrash(draftId: string, userId: string): Promise<EmailDraft | null> {
+        try {
+            const row = await prisma.emailDraft.update({
+                where: {
+                    id: draftId,
+                    userId: parseInt(userId)
+                },
+                data: {
+                    isTrashed: false
+                }
+            });
+            return this.mapRowToDraft(row);
+        } catch (err) {
+            return null;
+        }
+    }
+
+    /**
+     * Get all trashed drafts for a user
+     */
+    async getTrashedDrafts(userId: string, limit = 50, offset = 0): Promise<{ drafts: EmailDraft[]; total: number }> {
+        const [drafts, total] = await Promise.all([
+            prisma.emailDraft.findMany({
+                where: {
+                    userId: parseInt(userId),
+                    isTrashed: true
+                },
+                orderBy: { updatedAt: 'desc' },
+                take: limit,
+                skip: offset
+            }),
+            prisma.emailDraft.count({
+                where: {
+                    userId: parseInt(userId),
+                    isTrashed: true
+                }
+            })
+        ]);
+
+        return {
+            drafts: drafts.map((row: any) => this.mapRowToDraft(row)),
+            total
+        };
+    }
+
+    /**
+     * Permanently delete trashed drafts
+     */
+    async deleteTrashedDraft(draftId: string, userId: string): Promise<boolean> {
+        try {
+            await prisma.emailDraft.delete({
+                where: {
+                    id: draftId,
+                    userId: parseInt(userId),
+                    isTrashed: true
+                }
+            });
+            return true;
+        } catch (err) {
+            return false;
+        }
+    }
+
+    /**
+     * Permanently delete all trashed drafts for a user
+     */
+    async deleteAllTrashedDrafts(userId: string): Promise<{ deleted: number }> {
+        try {
+            const result = await prisma.emailDraft.deleteMany({
+                where: {
+                    userId: parseInt(userId),
+                    isTrashed: true
+                }
+            });
+            return { deleted: result.count };
+        } catch (err) {
+            return { deleted: 0 };
+        }
+    }
+
+    /**
      * Get scheduled drafts that are ready to send
      */
     async getScheduledDraftsReadyToSend(): Promise<EmailDraft[]> {
@@ -191,6 +331,7 @@ export class DraftModel {
         return {
             id: row.id,
             accountId: row.accountId,
+            from: row.from || undefined,
             userId: row.userId.toString(),
             to: (row.toRecipients as string[]) || [],
             cc: (row.ccRecipients as string[]) || undefined,
@@ -209,6 +350,7 @@ export class DraftModel {
             scheduledFor: row.scheduledFor || undefined,
             providerId: row.providerId || undefined,
             remoteUid: row.remoteUid || undefined,
+            isTrashed: row.isTrashed || false,
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,
         };

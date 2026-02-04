@@ -157,7 +157,7 @@ export class EmailController {
         return ResponseHandler.unauthorized(res, "User not authenticated");
       }
 
-      const { to, subject, body, htmlBody, attachments, dealId, email, from, provider, smtpConfig } =
+      const { to, subject, body, htmlBody, attachments, dealId, email, from, provider, smtpConfig, enableTracking } =
         (req.body as any) || {};
 
       if (!to || !subject || !body) {
@@ -260,6 +260,7 @@ export class EmailController {
         htmlBody,
         attachments,
         dealId: dealId ? Number(dealId) : undefined,
+        enableTracking: !!enableTracking,
       });
 
       return ResponseHandler.success(res, "Email sent successfully", messageId);
@@ -1232,8 +1233,26 @@ export class EmailController {
             isInternalDraft: true // Flag to distinguish from server drafts
           }));
 
+          // Deduplicate: Remove server emails that match internal drafts
+          const internalRemoteUids = new Set(drafts.map(d => d.remoteUid).filter(Boolean));
+          const internalProviderIds = new Set(drafts.map(d => d.providerId).filter(Boolean));
+
+          // Also track subject+timestamp for loose matching if UIDs missing (common in edge cases)
+          const internalSignatures = new Set(drafts.map(d => `${d.subject}|${new Date(d.createdAt).getTime()}`));
+
+          const filteredServerEmails = emailsResponse.emails.filter(e => {
+            // Check UID match (IMAP)
+            if (e.uid && internalRemoteUids.has(e.uid.toString())) return false;
+            // Check Provider ID match (Gmail/Outlook)
+            if (e.providerId && internalProviderIds.has(e.providerId)) return false;
+
+            // Loose match: if same subject and created within 5 seconds (unlikely but possible dupe without ID sync yet)
+            // Temporarily skipping loose match to avoid false positives, sticking to ID match
+            return true;
+          });
+
           // Merge and sort by date descending
-          const merged = [...emailsResponse.emails, ...internalDrafts]
+          const merged = [...filteredServerEmails, ...internalDrafts]
             .sort((a, b) => {
               const dateA = new Date((a as any).sentAt || (a as any).createdAt).getTime();
               const dateB = new Date((b as any).sentAt || (b as any).createdAt).getTime();
@@ -1474,10 +1493,8 @@ export class EmailController {
         req.user.id.toString()
       );
 
-      if (!success) {
-        return ResponseHandler.notFound(res, "Email not found");
-      }
-
+      // Return success regardless of whether email was found (idempotent operation)
+      // If email doesn't exist, it's effectively already in the desired state
       return ResponseHandler.success(res, "Email moved to trash successfully");
     } catch (error: any) {
       console.error("Error trashing email:", error);
@@ -1554,18 +1571,19 @@ export class EmailController {
         return ResponseHandler.unauthorized(res, "User not authenticated");
       }
 
-      const result = await this.emailService.deleteAllTrash(
-        req.user.id.toString()
-      );
+      // Run in background
+      this.emailService.deleteAllTrash(req.user.id.toString())
+        .then(result => {
+          console.log(`[Background] Empty trash completed: ${result.deleted} deleted, ${result.failed} failed`);
+        })
+        .catch(err => {
+          console.error("[Background] Empty trash failed:", err);
+        });
 
-      return ResponseHandler.success(res, {
-        message: `Successfully deleted ${result.deleted} emails from trash`,
-        deleted: result.deleted,
-        failed: result.failed
-      });
+      return ResponseHandler.success(res, { message: "Trash emptying started in background" }, "Trash emptying started");
     } catch (error: any) {
       console.error("Error deleting all trash:", error);
-      return ResponseHandler.internalError(res, "Failed to delete all trash");
+      return ResponseHandler.internalError(res, "Failed to start trash emptying");
     }
   }
 
@@ -1648,14 +1666,20 @@ export class EmailController {
         return ResponseHandler.error(res, "Invalid emailIds provided", 400);
       }
 
-      const results = await Promise.all(
+      // Run in background
+      Promise.all(
         emailIds.map(id => this.emailService.deleteEmailPermanently(id, req.user!.id.toString()))
-      );
+      ).then(results => {
+        const count = results.filter((r: boolean) => r).length;
+        console.log(`[Background] Batch delete completed: ${count} deleted`);
+      }).catch(err => {
+        console.error("[Background] Batch delete failed:", err);
+      });
 
-      return ResponseHandler.success(res, { count: results.filter((r: boolean) => r).length }, "Emails Permanently Deleted Successfully");
+      return ResponseHandler.success(res, { count: emailIds.length, message: "Batch deletion started in background" }, "Deletion started");
     } catch (error) {
       console.error("Error batch deleting emails:", error);
-      return ResponseHandler.internalError(res, "Failed to delete emails");
+      return ResponseHandler.internalError(res, "Failed to start deletion");
     }
   }
 
