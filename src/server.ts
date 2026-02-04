@@ -112,9 +112,9 @@ import { SuggestionOrchestratorService } from './modules/ai-agent/services/sugge
 import { SuggestionController } from './modules/ai-agent/controllers/suggestionController';
 import { AIConfigController } from './modules/ai-agent/controllers/aiConfigController';
 import { createSuggestionRoutes } from './modules/ai-agent/routes/suggestionRoutes';
-import { PricingModel } from './modules/ai-agent/models/PricingModel';
-import { BrandGuidelinesModel } from './modules/ai-agent/models/BrandGuidelinesModel';
-import { KnowledgeBaseModel } from './modules/ai-agent/models/KnowledgeBaseModel';
+
+
+
 
 // Import calendar module
 import { CalendarEventModel } from './modules/calendar/models/CalendarEvent';
@@ -288,12 +288,16 @@ webhookController.setSocketIO(io);
 // Initialize AI agent module
 const suggestionOrchestrator = new SuggestionOrchestratorService();
 const suggestionController = new SuggestionController(suggestionOrchestrator);
-const aiConfigController = new AIConfigController(new PricingModel(), new BrandGuidelinesModel(), new KnowledgeBaseModel());
+const aiConfigController = new AIConfigController();
 
 // Initialize calendar controllers
 const calendarController = new CalendarController(calendarEventService);
 const reminderCalendarController = new ReminderController(reminderCalendarService);
 const notificationCalendarController = new NotificationController(eventNotificationModel);
+
+// Initialize Structured Knowledge Base controller
+import { initStructuredKBController } from './modules/ai-agent/controllers/structuredKBController';
+initStructuredKBController(db);
 
 // Middleware
 app.use(express.json({ limit: '50mb' }));

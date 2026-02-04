@@ -24,7 +24,7 @@ export class QualityAssuranceService {
       ${body}
 
       TASKS:
-      1. Verify factual accuracy (especially pricing if mentioned).
+      1. Verify factual accuracy (ensure it aligns with the provided context, especially pricing if mentioned).
       2. Check for personalization level (does it mention specific client needs?).
       3. Check tone and brand consistency.
       4. Detect generic or robotic phrasing.

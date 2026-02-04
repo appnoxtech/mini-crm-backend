@@ -2,35 +2,50 @@ import { EmailModel } from "../../email/models/emailModel";
 import { DealModel } from "../../pipelines/models/Deal";
 import { PersonModel } from "../../management/persons/models/Person";
 import { SuggestionModel } from "../models/SuggestionModel";
-import { PricingModel } from "../models/PricingModel";
-import { BrandGuidelinesModel } from "../models/BrandGuidelinesModel";
+
+
 import { ClientProfileModel } from "../models/ClientProfileModel";
-import { KnowledgeBaseModel } from "../models/KnowledgeBaseModel";
+
+import { StructuredKBModel } from "../models/StructuredKBModel";
+import { StructuredKBService } from "./structuredKBService";
 import { contextExtractionService } from "./contextExtractionService";
 import { inferenceService } from "./inferenceService";
 import { contentGenerationService } from "./contentGenerationService";
 import { qualityAssuranceService } from "./qualityAssuranceService";
-import { EmailSuggestion, SuggestionRequest } from "../types";
+import { intentMappingService } from "./intentMappingService";
+import { EmailSuggestion, SuggestionRequest, PricingTier } from "../types";
 
 export class SuggestionOrchestratorService {
     private emailModel: EmailModel;
     private dealModel: DealModel;
     private personModel: PersonModel;
     private suggestionModel: SuggestionModel;
-    private pricingModel: PricingModel;
-    private brandGuidelinesModel: BrandGuidelinesModel;
-    private clientProfileModel: ClientProfileModel;
-    private knowledgeBaseModel: KnowledgeBaseModel;
 
-    constructor(_db?: any) {
-        this.emailModel = new EmailModel();
-        this.dealModel = new DealModel();
-        this.personModel = new PersonModel();
-        this.suggestionModel = new SuggestionModel();
-        this.pricingModel = new PricingModel();
-        this.brandGuidelinesModel = new BrandGuidelinesModel();
-        this.clientProfileModel = new ClientProfileModel();
-        this.knowledgeBaseModel = new KnowledgeBaseModel();
+
+    private clientProfileModel: ClientProfileModel;
+
+    private structuredKBModel: StructuredKBModel;
+    private structuredKBService: StructuredKBService;
+
+    constructor(db: Database.Database) {
+        this.emailModel = new EmailModel(db);
+        this.dealModel = new DealModel(db);
+        this.personModel = new PersonModel(db);
+        this.suggestionModel = new SuggestionModel(db);
+
+
+        this.clientProfileModel = new ClientProfileModel(db);
+
+        this.structuredKBModel = new StructuredKBModel(db);
+        this.structuredKBService = new StructuredKBService(this.structuredKBModel);
+
+        // Initialize models
+        this.suggestionModel.initialize();
+
+
+        this.clientProfileModel.initialize();
+
+        this.structuredKBModel.initialize();
     }
 
     async generateSuggestion(request: SuggestionRequest): Promise<any> {
@@ -118,7 +133,7 @@ export class SuggestionOrchestratorService {
 
         let profile: any;
         let inference: any;
-        let tiers: any[];
+        let tiers: PricingTier[] = [];
         let guidelines: any;
 
         if (isRefinementOnly) {
@@ -140,9 +155,21 @@ export class SuggestionOrchestratorService {
                 requiredContent: ['Follow user instructions'],
                 confidence: 1.0
             };
-
-            tiers = await this.pricingModel.getAllTiers();
-            guidelines = await this.brandGuidelinesModel.getGuidelines();
+            // Load tiers for refinement too, so plan matching works
+            const kb = this.structuredKBModel.getKB();
+            tiers = (kb?.category_9_pricing?.tiers || []).map(t => ({
+                id: t.id,
+                name: t.name,
+                basePrice: t.basePrice,
+                currency: t.currency,
+                features: t.features,
+                contractTerms: t.billingCycle,
+                discountRules: [],
+                isActive: true,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            }));
+            guidelines = {};
 
             if (request.customPrompt && tiers.length > 0) {
                 let searchText = request.customPrompt.toLowerCase();
@@ -154,7 +181,35 @@ export class SuggestionOrchestratorService {
 
                 const exactMatch = tiers.find(tier => searchText.includes(tier.name.toLowerCase()));
                 if (exactMatch) {
-                    tiers = [exactMatch];
+                    // If multiple exact matches, pick the longest tier name (most specific)
+                    const exactMatches = tiers.filter(tier =>
+                        searchText.includes(tier.name.toLowerCase())
+                    ).sort((a, b) => b.name.length - a.name.length);
+
+                    console.log(`[Refinement] Exact match: Plan "${exactMatches[0]!.name}" detected`);
+                    tiers = [exactMatches[0]!];
+                } else {
+                    // Fallback: word-based scoring
+                    const scoredTiers = tiers.map(tier => {
+                        const tierWords = tier.name.toLowerCase().split(/\s+/);
+                        const matchCount = tierWords.filter((word: string) =>
+                            promptWords.some((pw: string) => pw === word)
+                        ).length;
+                        const score = tierWords.length > 0 ? matchCount / tierWords.length : 0;
+                        return { tier, matchCount, score };
+                    });
+
+                    const bestMatch = scoredTiers
+                        .filter(s => s.matchCount > 0)
+                        .sort((a, b) => {
+                            if (b.score !== a.score) return b.score - a.score;
+                            return b.matchCount - a.matchCount;
+                        })[0];
+
+                    if (bestMatch && bestMatch.score >= 0.5) {
+                        console.log(`[Refinement] Word match: Plan "${bestMatch!.tier.name}" (${Math.round(bestMatch!.score * 100)}% match)`);
+                        tiers = [bestMatch!.tier];
+                    }
                 }
             }
         } else {
@@ -193,18 +248,73 @@ export class SuggestionOrchestratorService {
             const recentActivity = emails.slice(-5).map(e => ({ type: 'email', date: e.sentAt, subject: e.subject }));
             inference = await inferenceService.inferNextEmailNeed(profile, recentActivity);
 
-            tiers = await this.pricingModel.getAllTiers();
-            guidelines = await this.brandGuidelinesModel.getGuidelines();
+
+
+            // 5. Get pricing & guidelines
+            // UPDATED: Fetch pricing from Structured KB (Category 9) instead of PricingModel
+            const kb = this.structuredKBModel.getKB();
+            const kbPricing = kb?.category_9_pricing;
+
+            // Map KB tiers to the old PricingTier format expected by contentGenerationService
+            tiers = (kbPricing?.tiers || []).map(t => ({
+                id: t.id,
+                name: t.name,
+                basePrice: t.basePrice,
+                currency: t.currency,
+                features: t.features,
+                contractTerms: t.billingCycle,
+                discountRules: [], // Default empty
+                isActive: true,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            }));
+
+            // Fallback to defaults if KB is empty (optional, or just leave empty)
+            if (tiers.length === 0) {
+                console.log("⚠️ No pricing tiers found in Knowledge Base. Please configure Pricing in AI Settings.");
+            }
+
+            guidelines = {};
 
             if (request.customPrompt && tiers.length > 0) {
                 const promptLower = request.customPrompt.toLowerCase();
                 const exactMatch = tiers.find(tier => promptLower.includes(tier.name.toLowerCase()));
                 if (exactMatch) {
-                    tiers = [exactMatch];
+                    // If multiple exact matches, pick the longest tier name (most specific)
+                    const exactMatches = tiers.filter(tier =>
+                        promptLower.includes(tier.name.toLowerCase())
+                    ).sort((a, b) => b.name.length - a.name.length);
+
+                    console.log(`Exact match: Plan "${exactMatches[0]!.name}" detected`);
+                    tiers = [exactMatches[0]!];
+                } else {
+                    // Fallback: word-based scoring with exact word matches
+                    const scoredTiers = tiers.map(tier => {
+                        const tierWords = tier.name.toLowerCase().split(/\s+/);
+                        const matchCount = tierWords.filter((word: string) =>
+                            promptWords.some((pw: string) => pw === word)
+                        ).length;
+                        const score = tierWords.length > 0 ? matchCount / tierWords.length : 0;
+                        return { tier, matchCount, score };
+                    });
+
+                    const bestMatch = scoredTiers
+                        .filter(s => s.matchCount > 0)
+                        .sort((a, b) => {
+                            if (b.score !== a.score) return b.score - a.score;
+                            return b.matchCount - a.matchCount;
+                        })[0];
+
+                    if (bestMatch && bestMatch.score >= 0.5) {
+                        console.log(`Word match: Plan "${bestMatch.tier.name}" (${Math.round(bestMatch.score * 100)}% match)`);
+                        tiers = [bestMatch.tier];
+                    }
                 }
             }
         }
 
+
+        // 6. Build generation context with email content
         const lastEmail = emails.length > 0 ? emails[emails.length - 1] : null;
         let knowledgeBaseContext: string[] = [];
         const searchTerms = [
@@ -215,9 +325,56 @@ export class SuggestionOrchestratorService {
             lastEmail?.body || lastEmail?.htmlBody?.replace(/<[^>]*>/g, '')
         ].filter(Boolean);
 
-        if (searchTerms.length > 0) {
-            const kbItems = await this.knowledgeBaseModel.findRelevantContext(searchTerms);
-            knowledgeBaseContext = kbItems.map(item => item.content);
+        if (searchTerms) {
+            // Legacy KB search removed. Replaced by Intent-based Structured KB extraction below.
+            knowledgeBaseContext = [];
+        }
+
+        // Build structured KB context using INTENT-BASED extraction
+        let structuredKBContext = '';
+        try {
+            // Get the email content to analyze for intents
+            const emailToAnalyze = request.lastEmailContent || lastEmail?.body || lastEmail?.htmlBody?.replace(/<[^>]*>/g, '') || '';
+            const subjectToAnalyze = request.lastEmailSubject || lastEmail?.subject || '';
+
+            // Detect intents from the email
+            const detectedIntents = intentMappingService.detectIntents(emailToAnalyze, subjectToAnalyze);
+
+            if (detectedIntents.length > 0) {
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                console.log('🎯 DETECTED EMAIL INTENTS:');
+                for (const intent of detectedIntents.slice(0, 3)) {
+                    console.log(`   - ${intent.intent} (${Math.round(intent.confidence * 100)}% confidence)`);
+                    if (intent.matchedKeywords.length > 0) {
+                        console.log(`     Keywords: ${intent.matchedKeywords.join(', ')}`);
+                    }
+                }
+            }
+
+            // Get required categories and fields based on intents
+            const requiredCategories = intentMappingService.getRequiredCategories(detectedIntents);
+            const requiredFields = intentMappingService.getRequiredFields(detectedIntents);
+
+            console.log(`📂 Required KB Categories: [${requiredCategories.join(', ')}]`);
+            console.log(`📝 Required Fields: ${requiredFields.slice(0, 8).join(', ')}${requiredFields.length > 8 ? '...' : ''}`);
+
+            // Build intent-based context (selective, not full KB)
+            structuredKBContext = this.structuredKBService.buildIntentBasedContext(
+                requiredCategories,
+                requiredFields
+            );
+
+            if (structuredKBContext) {
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                console.log('📚 INTENT-BASED KB CONTEXT (Selective):');
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                console.log(structuredKBContext);
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            } else {
+                console.log('⚠️ KB context is empty - please populate your Knowledge Base in AI Settings.');
+            }
+        } catch (err) {
+            console.warn('❌ Failed to load structured KB context:', err);
         }
 
         const generationContext = {
@@ -232,7 +389,8 @@ export class SuggestionOrchestratorService {
                 body: (e.body || e.htmlBody?.replace(/<[^>]*>/g, '') || '').substring(0, 500),
                 date: new Date(e.sentAt).toLocaleString()
             })),
-            knowledgeBaseContext
+            knowledgeBaseContext,
+            structuredKBContext
         };
 
         const draft = await contentGenerationService.generateEmail(profile, inference, tiers, guidelines, generationContext);

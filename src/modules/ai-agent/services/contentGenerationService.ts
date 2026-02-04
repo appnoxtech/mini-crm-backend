@@ -10,6 +10,8 @@ export interface GenerationContext {
     userName?: string;
     conversationHistory?: Array<{ from: string; subject: string; body: string; date: string }>;
     knowledgeBaseContext?: string[];
+    // New: Structured KB context
+    structuredKBContext?: string;
 }
 
 export class ContentGenerationService {
@@ -20,6 +22,8 @@ export class ContentGenerationService {
         guidelines: BrandGuidelines,
         context?: GenerationContext
     ): Promise<{ subject: string; body: string }> {
+
+
 
         // Find relevant pricing if needed
         const relevantTier = this.selectRelevantTier(profile, pricingTiers);
@@ -81,6 +85,7 @@ CRITICAL INSTRUCTIONS FOR NEW OUTREACH:
 4. If a specific company or project is mentioned, acknowledge and reference it.
 5. Be concise, professional, and action-oriented.
 6. End with a clear call-to-action (e.g., schedule a call, request a meeting).
+6. End with a clear call-to-action (e.g., schedule a call, request a meeting).
 7. Use the pricing/plan information if it's relevant to the outreach.`
             : `
 CRITICAL INSTRUCTIONS:
@@ -123,13 +128,12 @@ RELEVANT COMPANY KNOWLEDGE (Use these facts if applicable):
 ${context.knowledgeBaseContext.map(k => `- ${k}`).join('\n')}
 ` : ''}
 
-${relevantTier ? `
-PRICING CONTEXT (MUST USE THIS IF PRICING IS MENTIONED):
-- Plan/Tier Name: ${relevantTier.name}
-- Price: ${relevantTier.basePrice} ${relevantTier.currency}
-- Features: ${relevantTier.features.join(', ')}
-IMPORTANT: If the email mentions pricing or a plan, you MUST use the price "${relevantTier.basePrice} ${relevantTier.currency}" from this tier. Replace any outdated pricing in the draft with this correct pricing.
+${context?.structuredKBContext ? `
+STRUCTURED KNOWLEDGE BASE CONTEXT:
+${context.structuredKBContext}
 ` : ''}
+
+
 
 ${modeInstructions}
 8. CALCULATION INSTRUCTIONS: If the user asks for a project quote or pricing, and you have component costs in the 'RELEVANT COMPANY KNOWLEDGE' section:
@@ -137,6 +141,7 @@ ${modeInstructions}
    - Break down the cost: List each component and its price found in the knowledge base.
    - Show the final total clearly (e.g., "Total Estimated Cost: $X").
    - Do NOT say "it depends" or "let's get on a call" if you have the necessary pricing data to give an estimate. Use the provided facts.
+
 
 EMAIL STRUCTURE (VERY IMPORTANT - FOLLOW THIS EXACTLY):
 The email body MUST be formatted as a professional email with the following structure:
@@ -186,6 +191,8 @@ Respond ONLY with a JSON object containing:
             schema
         );
     }
+
+
 
     private selectRelevantTier(profile: ClientProfile, tiers: PricingTier[]): PricingTier | null {
         if (tiers.length === 0) return null;
