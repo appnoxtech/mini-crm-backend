@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { AuthController } from '../controllers/authController';
 import { authMiddleware } from '../../../shared/middleware/auth';
-import { registerSchema, loginSchema, changePasswordSchema } from '../validation/authValidation';
+import { registerSchema, loginSchema, changePasswordSchema, forgotPasswordSchema, verifyOtpSchema, resetPasswordSchema } from '../validation/authValidation';
 import validate from '../../../shared/validate';
 
 
@@ -24,9 +24,9 @@ export function createAuthRoutes(authController: AuthController): Router {
   // role routes
   router.put('/change-account-role', authMiddleware, (req: any, res: any) => authController.changeAccountRole(req, res));
 
-  router.post('/forgot-password', (req: any, res: any) => authController.forgotPassword(req, res));
-  router.post('/verify-otp', (req: any, res: any) => authController.verifyOtp(req, res));
-  router.post('/reset-password', (req: any, res: any) => authController.resetPassword(req, res));
+  router.post('/forgot-password', validate(forgotPasswordSchema), (req: any, res: any) => authController.forgotPassword(req, res));
+  router.post('/verify-otp', validate(verifyOtpSchema), (req: any, res: any) => authController.verifyOtp(req, res));
+  router.post('/reset-password', validate(resetPasswordSchema), (req: any, res: any) => authController.resetPassword(req, res));
 
   return router;
 }
