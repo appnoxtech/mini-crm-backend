@@ -14,6 +14,8 @@ export interface ClientProfile {
     lastUpdated: Date;
 }
 
+
+
 export interface DiscountRule {
     id: string;
     tierId: string;
@@ -60,7 +62,7 @@ export interface EmailSuggestion {
     subjectLine: string;
     body: string;
     htmlBody?: string;
-    emailType: 'pricing_proposal' | 'check_in' | 'objection_handling' | 'renewal' | 're_engagement' | 'follow_up' | 'proactive_outreach';
+    emailType: 'pricing_proposal' | 'check_in' | 'objection_handling' | 'renewal' | 're_engagement' | 'follow_up' | 'proactive_outreach' | 'refinement';
     confidenceScore: number;
     reasoning: string;
     qualityScore: number;
