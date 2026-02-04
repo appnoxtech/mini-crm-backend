@@ -43,6 +43,14 @@ export interface Email {
   clicks?: number;
   lastOpenedAt?: Date;
   lastClickedAt?: Date;
+  trackingEvents?: {
+    id: string;
+    type: 'open' | 'click';
+    ipAddress?: string;
+    userAgent?: string;
+    metadata?: any;
+    createdAt: Date;
+  }[];
 }
 
 export interface EmailContent {

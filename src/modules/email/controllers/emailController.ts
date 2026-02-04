@@ -157,7 +157,7 @@ export class EmailController {
         return ResponseHandler.unauthorized(res, "User not authenticated");
       }
 
-      const { to, subject, body, htmlBody, attachments, dealId, email, from, provider, smtpConfig, enableTracking } =
+      const { to, cc, bcc, subject, body, htmlBody, attachments, dealId, email, from, provider, smtpConfig, enableTracking } =
         (req.body as any) || {};
 
       if (!to || !subject || !body) {
@@ -255,6 +255,8 @@ export class EmailController {
 
       const messageId = await this.emailService.sendEmail(emailAccount, {
         to: Array.isArray(to) ? to : [to],
+        cc: Array.isArray(cc) ? cc : (cc ? [cc] : undefined),
+        bcc: Array.isArray(bcc) ? bcc : (bcc ? [bcc] : undefined),
         subject,
         body,
         htmlBody,

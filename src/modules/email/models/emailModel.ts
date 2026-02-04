@@ -536,7 +536,12 @@ export class EmailModel {
         }
       },
       include: {
-        content: true
+        content: true,
+        trackingEvents: {
+          orderBy: {
+            createdAt: 'desc'
+          }
+        }
       }
     });
 
@@ -957,6 +962,7 @@ export class EmailModel {
       clicks: row.clicks || 0,
       lastOpenedAt: row.lastOpenedAt || undefined,
       lastClickedAt: row.lastClickedAt || undefined,
+      trackingEvents: row.trackingEvents || undefined,
     };
   }
 
