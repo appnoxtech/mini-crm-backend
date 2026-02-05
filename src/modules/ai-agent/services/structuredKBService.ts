@@ -33,16 +33,16 @@ export class StructuredKBService {
     // BASIC CRUD OPERATIONS
     // ==========================================
 
-    getFullKB(kbId: string = 'default'): StructuredKnowledgeBase | null {
-        return this.model.getKB(kbId);
+    async getFullKB(kbId: string = 'default'): Promise<StructuredKnowledgeBase | null> {
+        return await this.model.getKB(kbId);
     }
 
-    updateCategory(categoryNumber: number, data: any, kbId: string = 'default'): boolean {
-        return this.model.updateCategory(categoryNumber, data, kbId);
+    async updateCategory(categoryNumber: number, data: any, kbId: string = 'default'): Promise<boolean> {
+        return await this.model.updateCategory(categoryNumber, data, kbId);
     }
 
-    getCompletionStatus(kbId: string = 'default') {
-        return this.model.getCompletionStatus(kbId);
+    async getCompletionStatus(kbId: string = 'default') {
+        return await this.model.getCompletionStatus(kbId);
     }
 
     // ==========================================
@@ -53,11 +53,11 @@ export class StructuredKBService {
      * Extract all relevant KB context for email generation
      * Used in Step 3 (Content Generation) of the AI pipeline
      */
-    getContextForGeneration(
+    async getContextForGeneration(
         profile: ClientProfile,
         inference: InferenceResult,
         kbId: string = 'default'
-    ): {
+    ): Promise<{
         companyProfile: CompanyProfile | null;
         matchedSegment: CustomerSegment | null;
         relevantCaseStudies: CaseStudy[];
@@ -68,8 +68,8 @@ export class StructuredKBService {
         salesPlaybook: SalesProcess['sales_playbook'] | null;
         supportInfo: Operations['support_and_slas'] | null;
         implementationDetails: Operations['implementation'] | null;
-    } {
-        const kb = this.model.getKB(kbId);
+    }> {
+        const kb = await this.model.getKB(kbId);
         if (!kb) {
             return {
                 companyProfile: null,
@@ -321,12 +321,12 @@ export class StructuredKBService {
     /**
      * Build enriched context string for LLM prompt
      */
-    buildPromptContext(
+    async buildPromptContext(
         profile: ClientProfile,
         inference: InferenceResult,
         kbId: string = 'default'
-    ): string {
-        const context = this.getContextForGeneration(profile, inference, kbId);
+    ): Promise<string> {
+        const context = await this.getContextForGeneration(profile, inference, kbId);
         const parts: string[] = [];
 
         // Company Profile
@@ -476,12 +476,12 @@ export class StructuredKBService {
      * Build KB context filtered by detected email intents
      * More efficient than buildPromptContext - only includes relevant sections
      */
-    buildIntentBasedContext(
+    async buildIntentBasedContext(
         requiredCategories: number[],
         requiredFields: string[],
         kbId: string = 'default'
-    ): string {
-        const kb = this.model.getKB(kbId);
+    ): Promise<string> {
+        const kb = await this.model.getKB(kbId);
         if (!kb) return '';
 
         const parts: string[] = [];

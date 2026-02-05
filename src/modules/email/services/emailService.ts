@@ -1857,4 +1857,69 @@ export class EmailService {
       console.warn('Failed to delete draft from provider:', error);
     }
   }
+
+  async syncDraftTrashToProvider(draft: EmailDraft, userId: string, moveToTrash: boolean): Promise<void> {
+    const account = await this.emailModel.getEmailAccountById(draft.accountId);
+    if (!account || account.userId !== userId) return;
+
+    const emailForSync: any = {
+      id: draft.id,
+      messageId: draft.id, // For drafts we might use ID if messageId missing
+      providerId: draft.providerId || draft.providerDraftId,
+      uid: draft.remoteUid ? parseInt(draft.remoteUid) : undefined,
+      folder: 'DRAFTS'
+    };
+
+    return this.syncTrashToProvider(account, emailForSync, moveToTrash);
+  }
+
+  async deleteDraftFromServer(userId: string, draftId: string, draftObj?: EmailDraft): Promise<void> {
+    const draft = draftObj || await this.draftModel.getDraftById(draftId, userId);
+    if (!draft || !draft.providerDraftId) return;
+
+    return this.deleteDraftProvider(userId, draft.accountId, draft.providerDraftId);
+  }
+
+  async triggerEmailSync(userId: string, accountId: string): Promise<{ success: boolean; message: string }> {
+    const account = await this.emailModel.getEmailAccountById(accountId);
+    if (!account || account.userId !== userId) {
+      throw new Error("Account not found");
+    }
+
+    // Run in background
+    this.processIncomingEmails(account).catch(err => {
+      console.error(`Background sync failed for ${accountId}:`, err);
+    });
+
+    return { success: true, message: "Sync started in background" };
+  }
+
+  async triggerArchiveSync(userId: string): Promise<{ success: boolean; message: string }> {
+    // Run in background
+    this.syncArchivedEmails(userId).catch(err => {
+      console.error(`Background archive sync failed for user ${userId}:`, err);
+    });
+
+    return { success: true, message: "Archive sync started in background" };
+  }
+
+  async getQueueStatus(): Promise<any> {
+    return { status: 'operating', items: 0 }; // Placeholder
+  }
+
+  async getNotificationStats(): Promise<any> {
+    return { delivered: 0, pending: 0 }; // Placeholder
+  }
+
+  async markEmailAsSpam(emailId: string, userId: string): Promise<boolean> {
+    // Implement spam logic if needed, for now just a placeholder
+    console.log(`Marking email ${emailId} as spam for user ${userId}`);
+    return true;
+  }
+
+  async unmarkEmailAsSpam(emailId: string, userId: string): Promise<boolean> {
+    // Implement unspam logic if needed, for now just a placeholder
+    console.log(`Unmarking email ${emailId} from spam for user ${userId}`);
+    return true;
+  }
 }

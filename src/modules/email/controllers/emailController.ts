@@ -61,18 +61,15 @@ function getProviderDefaults(provider: string): {
     },
   };
 }
-
-import { DraftService } from "../services/draftService";
 import { ListDraftsOptions } from "../models/draftTypes";
 
 export class EmailController {
   private emailService: EmailService;
-  private draftService: DraftService; // Add DraftService property
+  private draftService: DraftService;
   private oauthService: OAuthService;
   private queueService: EmailQueueService | undefined;
   private notificationService: RealTimeNotificationService | undefined;
   private quotaService: QuotaValidationService | undefined;
-  private draftService: DraftService | undefined;
 
   constructor(
     emailService: EmailService,
@@ -80,8 +77,7 @@ export class EmailController {
     oauthService: OAuthService,
     queueService?: EmailQueueService,
     notificationService?: RealTimeNotificationService,
-    quotaService?: QuotaValidationService,
-    draftService?: DraftService
+    quotaService?: QuotaValidationService
   ) {
     this.emailService = emailService;
     this.draftService = draftService; // Assign DraftService
@@ -89,7 +85,6 @@ export class EmailController {
     this.queueService = queueService;
     this.notificationService = notificationService;
     this.quotaService = quotaService;
-    this.draftService = draftService;
   }
 
   // Manual trigger for summarizing a thread
@@ -1240,7 +1235,7 @@ export class EmailController {
         return ResponseHandler.success(res, { emails: mappedDrafts, total: draftResult.total }, "Drafts Fetched Successfully");
       }
 
-      const emails = await this.emailService.getEmailsForUser(
+      const emailsResponse = await this.emailService.getEmailsForUser(
         req.user.id.toString(),
         {
           limit: limit ? parseInt(limit as string) : 50,
@@ -1251,69 +1246,6 @@ export class EmailController {
           accountId: effectiveAccountId,
         }
       );
-
-      // If folder is drafts, merge internal CRM drafts
-      if (((folder as string) === 'drafts' || (folder as string) === 'drfts') && this.draftService) {
-        try {
-          const { drafts } = await this.draftService.listDrafts(req.user.id.toString(), {
-            accountId: effectiveAccountId
-          });
-
-          // Map internal drafts to the email format expected by the frontend
-          const internalDrafts = drafts.map(d => ({
-            id: d.id,
-            accountId: d.accountId,
-            userId: d.userId,
-            messageId: `draft-${d.id}`,
-            threadId: `draft-thread-${d.id}`,
-            from: '',
-            to: d.to,
-            cc: d.cc || [],
-            bcc: d.bcc || [],
-            subject: d.subject,
-            body: d.body,
-            htmlBody: d.htmlBody,
-            folder: 'DRAFT',
-            sentAt: d.updatedAt.toISOString(),
-            isRead: true,
-            hasAttachments: Array.isArray(d.attachments) && d.attachments.length > 0,
-            isInternalDraft: true // Flag to distinguish from server drafts
-          }));
-
-          // Deduplicate: Remove server emails that match internal drafts
-          const internalRemoteUids = new Set(drafts.map(d => d.remoteUid).filter(Boolean));
-          const internalProviderIds = new Set(drafts.map(d => d.providerId).filter(Boolean));
-
-          // Also track subject+timestamp for loose matching if UIDs missing (common in edge cases)
-          const internalSignatures = new Set(drafts.map(d => `${d.subject}|${new Date(d.createdAt).getTime()}`));
-
-          const filteredServerEmails = emailsResponse.emails.filter(e => {
-            // Check UID match (IMAP)
-            if (e.uid && internalRemoteUids.has(e.uid.toString())) return false;
-            // Check Provider ID match (Gmail/Outlook)
-            if (e.providerId && internalProviderIds.has(e.providerId)) return false;
-
-            // Loose match: if same subject and created within 5 seconds (unlikely but possible dupe without ID sync yet)
-            // Temporarily skipping loose match to avoid false positives, sticking to ID match
-            return true;
-          });
-
-          // Merge and sort by date descending
-          const merged = [...filteredServerEmails, ...internalDrafts]
-            .sort((a, b) => {
-              const dateA = new Date((a as any).sentAt || (a as any).createdAt).getTime();
-              const dateB = new Date((b as any).sentAt || (b as any).createdAt).getTime();
-              return dateB - dateA;
-            });
-
-          emailsResponse = {
-            emails: merged as any[],
-            total: emailsResponse.total + internalDrafts.length
-          };
-        } catch (draftError) {
-          console.error("Error fetching internal drafts:", draftError);
-        }
-      }
 
       return ResponseHandler.success(res, emailsResponse, "Emails Fetched Successfully");
 

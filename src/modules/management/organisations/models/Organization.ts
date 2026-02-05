@@ -81,11 +81,9 @@ export interface UpdateOrganizationData {
 }
 
 export class OrganizationModel {
-    constructor(_db?: any) { }
+    constructor() { }
 
-    initialize(): void {
-        // No-op with Prisma
-    }
+    initialize(): void { }
 
     async create(data: CreateOrganizationData): Promise<Organization> {
         const org = await prisma.organization.create({

@@ -35,11 +35,9 @@ export interface Deal extends BaseEntity {
 }
 
 export class DealModel {
-    constructor(_db?: any) { }
+    constructor() { }
 
-    initialize(): void {
-        // No-op with Prisma
-    }
+    initialize(): void { }
 
     async create(data: Omit<Deal, 'id' | 'createdAt' | 'updatedAt' | 'isRotten'>): Promise<Deal> {
         const deal = await prisma.deal.create({

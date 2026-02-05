@@ -41,6 +41,7 @@ model User {
   dealHistories   DealHistory[]
   labels          Label[]
   activities      DealActivity[]
+  generalActivities Activity[]
   imports         Import[]
   calendarEvents  CalendarEvent[]
 
@@ -859,4 +860,57 @@ model EmailSuggestion {
   createdAt       DateTime  @default(now())
 
   @@map("email_suggestions")
+}
+
+model Activity {
+  id              String   @id @default(uuid())
+  title           String
+  description     String?
+  type            String   @default("meeting")
+  startAt         DateTime
+  endAt           DateTime
+  priority        String   @default("medium")
+  status          String   @default("busy")
+  isDone          Boolean  @default(false)
+  location        String?
+  videoCallLink   String?
+  createdBy       Int
+  assignedUserIds Json?    // Array of user IDs
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [createdBy], references: [id])
+
+  @@map("activities")
+}
+
+model StructuredKnowledgeBase {
+  id                         String   @id @default("default")
+  category_1_company_profile   Json?
+  category_2_products_services Json?
+  category_3_sales_process     Json?
+  category_4_customers_markets Json?
+  category_5_common_scenarios  Json?
+  category_6_communication     Json?
+  category_7_operations        Json?
+  category_8_resources         Json?
+  category_9_pricing           Json?
+  version                    Int      @default(1)
+  completion_percent         Float    @default(0)
+  updated_at                 DateTime @default(now()) @updatedAt
+
+  @@map("structured_knowledge_base")
+}
+
+model StructuredKBVersion {
+  id               String   @id @default(uuid())
+  kbId             String   @map("kb_id")
+  version          Int
+  fullKBSnapshot   Json     @map("full_kb_snapshot")
+  changedSections  Json     @map("changed_sections")
+  changedBy        String?  @map("changed_by")
+  changeTimestamp  DateTime @default(now()) @map("change_timestamp")
+
+  @@unique([kbId, version])
+  @@map("structured_kb_versions")
 }

@@ -1,11 +1,9 @@
 import { prisma } from '../../../shared/prisma';
 
 export class OtpModel {
-    constructor(_db?: any) { }
+    constructor() { }
 
-    initialize(): void {
-        // No-op with Prisma
-    }
+    initialize(): void { }
 
     async saveOtp(email: string, otp: string, expiresAt: Date): Promise<void> {
         const emailLower = email.toLowerCase();

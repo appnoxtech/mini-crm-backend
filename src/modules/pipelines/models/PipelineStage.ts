@@ -19,11 +19,9 @@ export type searchResult = {
 }
 
 export class PipelineStageModel {
-    constructor(_db?: any) { }
+    constructor() { }
 
-    initialize(): void {
-        // No-op with Prisma
-    }
+    initialize(): void { }
 
     async create(data: Omit<PipelineStage, 'id' | 'createdAt' | 'updatedAt'>): Promise<PipelineStage> {
         const stage = await prisma.pipelineStage.create({

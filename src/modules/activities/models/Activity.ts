@@ -1,4 +1,5 @@
-import Database from 'better-sqlite3';
+import { PrismaClient } from '@prisma/client';
+import { prisma as prismaInstance } from '../../../shared/prisma';
 import { BaseEntity } from '../../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -22,239 +23,154 @@ export interface Activity extends Omit<BaseEntity, 'id'> {
 }
 
 export class ActivityModel {
-    private db: Database.Database;
+    private prisma: PrismaClient;
 
-    constructor(db: Database.Database) {
-        this.db = db;
+    constructor(prisma: PrismaClient = prismaInstance) {
+        this.prisma = prisma;
     }
 
-    initialize() {
-        this.db.exec(`
-        CREATE TABLE IF NOT EXISTS activities (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            description TEXT,
-            type TEXT CHECK(type IN ('call','meeting','task','deadline','email','lunch')) DEFAULT 'meeting',
-            startAt TEXT NOT NULL,
-            endAt TEXT NOT NULL,
-            priority TEXT CHECK(priority IN ('low','medium','high')) DEFAULT 'medium',
-            status TEXT CHECK(status IN ('busy','free')) DEFAULT 'busy',
-            isDone INTEGER NOT NULL DEFAULT 0,
-            location TEXT,
-            videoCallLink TEXT,
-            createdBy INTEGER NOT NULL,
-            assignedUserIds TEXT, -- JSON array of user IDs
-            createdAt TEXT NOT NULL,
-            updatedAt TEXT NOT NULL,
-            FOREIGN KEY (createdBy) REFERENCES users(id)
-        );
-        
-        CREATE INDEX IF NOT EXISTS idx_activities_startAt ON activities(startAt);
-        CREATE INDEX IF NOT EXISTS idx_activities_endAt ON activities(endAt);
-        CREATE INDEX IF NOT EXISTS idx_activities_createdBy ON activities(createdBy);
-        `);
-
-        // Migration: Add type column if it doesn't exist
-        try {
-            this.db.prepare('SELECT type FROM activities LIMIT 1').get();
-        } catch (error) {
-            console.log('Migrating activities table: adding type column');
-            this.db.exec(`ALTER TABLE activities ADD COLUMN type TEXT CHECK(type IN ('call','meeting','task','deadline','email','lunch')) DEFAULT 'meeting'`);
-        }
+    async initialize() {
+        // No longer needed for Prisma, but kept for compatibility during transition
+        console.log('ActivityModel initialized with Prisma');
     }
 
-    create(data: Omit<Activity, 'id' | 'createdAt' | 'updatedAt'>): Activity {
-        const now = new Date().toISOString();
-        const id = uuidv4();
+    async create(data: Omit<Activity, 'id' | 'createdAt' | 'updatedAt'>): Promise<Activity> {
+        const activity = await this.prisma.activity.create({
+            data: {
+                id: uuidv4(),
+                title: data.title,
+                description: data.description,
+                type: data.type,
+                startAt: new Date(data.startAt),
+                endAt: new Date(data.endAt),
+                priority: data.priority,
+                status: data.status,
+                isDone: data.isDone,
+                location: data.location,
+                videoCallLink: data.videoCallLink,
+                createdBy: data.createdBy,
+                assignedUserIds: data.assignedUserIds as any,
+            }
+        });
 
-        const stmt = this.db.prepare(`
-        INSERT INTO activities (
-            id, title, description, type, startAt, endAt, 
-            priority, status, isDone, location, videoCallLink, 
-            createdBy, assignedUserIds, createdAt, updatedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-
-        stmt.run(
-            id,
-            data.title,
-            data.description || null,
-            data.type || 'meeting',
-            data.startAt,
-            data.endAt,
-            data.priority || 'medium',
-            data.status || 'busy',
-            data.isDone ? 1 : 0,
-            data.location || null,
-            data.videoCallLink || null,
-            data.createdBy,
-            JSON.stringify(data.assignedUserIds || []),
-            now,
-            now
-        );
-
-        return this.findById(id)!;
+        return this.formatActivity(activity);
     }
 
-    findById(id: string): Activity | undefined {
-        const stmt = this.db.prepare('SELECT * FROM activities WHERE id = ?');
-        const result = stmt.get(id) as any;
-        if (!result) return undefined;
+    async findById(id: string): Promise<Activity | undefined> {
+        const activity = await this.prisma.activity.findUnique({
+            where: { id }
+        });
+        if (!activity) return undefined;
 
-        return this.formatActivity(result);
+        return this.formatActivity(activity);
     }
 
-    findAll(filters: {
+    async findAll(filters: {
         fromDate?: string;
         toDate?: string;
         status?: 'done' | 'pending' | 'all';
         userId?: number;
         limit?: number;
         offset?: number;
-    }): { activities: Activity[], total: number } {
-        let query = 'SELECT * FROM activities WHERE 1=1';
-        const params: any[] = [];
+    }): Promise<{ activities: Activity[], total: number }> {
+        const where: any = {};
 
         if (filters.fromDate) {
-            query += ' AND startAt >= ?';
-            params.push(filters.fromDate);
+            where.startAt = { gte: new Date(filters.fromDate) };
         }
 
         if (filters.toDate) {
-            query += ' AND startAt <= ?';
-            params.push(filters.toDate);
+            where.startAt = { ...where.startAt, lte: new Date(filters.toDate) };
         }
 
         if (filters.status === 'done') {
-            query += ' AND isDone = 1';
+            where.isDone = true;
         } else if (filters.status === 'pending') {
-            query += ' AND isDone = 0';
+            where.isDone = false;
         }
 
-        // Logic for user permissions (created by OR assigned to)
-        if (filters.userId) {
-            // We'll rely on memory filtering for complex JSON array check to be safe with SQLite 
-            // but we can filter by createdBy in SQL to reduce result set size
-        }
+        const activities = await this.prisma.activity.findMany({
+            where,
+            orderBy: { startAt: 'asc' },
+            skip: filters.offset,
+            take: filters.limit,
+        });
 
-        query += ' ORDER BY startAt ASC';
-
-        const stmt = this.db.prepare(query);
-        const results = stmt.all(...params) as any[];
-
-        let activities = results.map(r => this.formatActivity(r));
+        let result = activities.map(a => this.formatActivity(a));
 
         if (filters.userId) {
-            activities = activities.filter(a =>
-                a.createdBy === filters.userId || a.assignedUserIds.includes(filters.userId!)
+            result = result.filter(a =>
+                a.createdBy === filters.userId || (a.assignedUserIds as number[]).includes(filters.userId!)
             );
         }
 
-        const total = activities.length;
+        const total = await this.prisma.activity.count({ where });
 
-        // Apply pagination in memory if filtering was done in memory (safest)
-        // Or if we didn't filter in memory, we could have used SQL LIMIT/OFFSET
-        // For now, let's just slice the array since we need to filter for assignedUserIds anyway
-        if (filters.limit) {
-            const start = filters.offset || 0;
-            const end = start + filters.limit;
-            activities = activities.slice(start, end);
-        }
-
-        return { activities, total };
+        return { activities: result, total };
     }
 
-    search(userId: number, query?: string, type?: string): Activity[] {
-        let sql = 'SELECT * FROM activities WHERE 1=1';
-        const params: any[] = [];
-
-        if (query) {
-            sql += ' AND (title LIKE ? OR description LIKE ?)';
-            params.push(`%${query}%`, `%${query}%`);
-        }
+    async search(userId: number, query?: string, type?: string): Promise<Activity[]> {
+        const where: any = {
+            OR: [
+                { title: { contains: query, mode: 'insensitive' } },
+                { description: { contains: query, mode: 'insensitive' } }
+            ]
+        };
 
         if (type) {
-            sql += ' AND type = ?';
-            params.push(type);
+            where.type = type;
         }
 
-        sql += ' ORDER BY startAt DESC';
+        const activities = await this.prisma.activity.findMany({
+            where,
+            orderBy: { startAt: 'desc' },
+        });
 
-        const stmt = this.db.prepare(sql);
-        const results = stmt.all(...params) as any[];
-
-        // Filter permissions in memory
-        return results
-            .map(r => this.formatActivity(r))
-            .filter(a => a.createdBy === userId || a.assignedUserIds.includes(userId));
+        return activities
+            .map(a => this.formatActivity(a))
+            .filter(a => a.createdBy === userId || (a.assignedUserIds as number[]).includes(userId));
     }
 
-    update(id: string, data: Partial<Omit<Activity, 'id' | 'createdAt' | 'updatedAt'>>): Activity | null {
-        const activity = this.findById(id);
-        if (!activity) return null;
+    async update(id: string, data: Partial<Omit<Activity, 'id' | 'createdAt' | 'updatedAt'>>): Promise<Activity | null> {
+        const updateData: any = { ...data };
 
-        const now = new Date().toISOString();
-        const updates: string[] = [];
-        const values: any[] = [];
+        if (data.startAt) updateData.startAt = new Date(data.startAt);
+        if (data.endAt) updateData.endAt = new Date(data.endAt);
+        if (data.assignedUserIds) updateData.assignedUserIds = data.assignedUserIds as any;
 
-        Object.entries(data).forEach(([key, value]) => {
-            if (key === 'assignedUserIds') {
-                updates.push(`${key} = ?`);
-                values.push(JSON.stringify(value));
-            } else if (key === 'isDone') {
-                updates.push(`${key} = ?`);
-                values.push(value ? 1 : 0);
-            } else {
-                updates.push(`${key} = ?`);
-                values.push(value === undefined ? null : value);
+        const activity = await this.prisma.activity.update({
+            where: { id },
+            data: updateData
+        });
+
+        return this.formatActivity(activity);
+    }
+
+    async delete(id: string): Promise<boolean> {
+        try {
+            await this.prisma.activity.delete({
+                where: { id }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    async findOverlapping(startAt: string, endAt: string, userIds: number[]): Promise<Activity[]> {
+        const activities = await this.prisma.activity.findMany({
+            where: {
+                status: 'busy',
+                isDone: false,
+                startAt: { lt: new Date(endAt) },
+                endAt: { gt: new Date(startAt) }
             }
         });
 
-        if (updates.length === 0) return activity;
+        const formatted = activities.map(a => this.formatActivity(a));
 
-        updates.push('updatedAt = ?');
-        values.push(now);
-        values.push(id);
-
-        const stmt = this.db.prepare(`
-        UPDATE activities 
-        SET ${updates.join(', ')}
-        WHERE id = ?
-        `);
-
-        stmt.run(...values);
-
-        return this.findById(id) || null;
-    }
-
-    delete(id: string): boolean {
-        const stmt = this.db.prepare('DELETE FROM activities WHERE id = ?');
-        const result = stmt.run(id);
-        return result.changes > 0;
-    }
-
-    // Availability check helpers
-    findOverlapping(startAt: string, endAt: string, userIds: number[]): Activity[] {
-        // Find busy status activities that overlap with the given time range
-        // Coverage: 
-        // (ActivityStart < RequestEnd) AND (ActivityEnd > RequestStart)
-
-        const query = `
-            SELECT * FROM activities 
-            WHERE status = 'busy' 
-            AND isDone = 0
-            AND startAt < ? 
-            AND endAt > ?
-        `;
-
-        const stmt = this.db.prepare(query);
-        const potentialConflicts = stmt.all(endAt, startAt) as any[];
-
-        const activities = potentialConflicts.map(r => this.formatActivity(r));
-
-        // Filter for relevant users
-        return activities.filter(activity => {
-            const usersInvolved = [activity.createdBy, ...activity.assignedUserIds];
+        return formatted.filter(activity => {
+            const usersInvolved = [activity.createdBy, ...(activity.assignedUserIds as number[])];
             return userIds.some(uid => usersInvolved.includes(uid));
         });
     }
@@ -262,8 +178,11 @@ export class ActivityModel {
     private formatActivity(result: any): Activity {
         return {
             ...result,
-            isDone: Boolean(result.isDone),
-            assignedUserIds: result.assignedUserIds ? JSON.parse(result.assignedUserIds) : []
+            startAt: result.startAt.toISOString(),
+            endAt: result.endAt.toISOString(),
+            createdAt: result.createdAt.toISOString(),
+            updatedAt: result.updatedAt.toISOString(),
+            assignedUserIds: result.assignedUserIds || []
         };
     }
 }

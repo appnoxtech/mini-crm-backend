@@ -13,11 +13,9 @@ export interface CalendarEvent extends BaseEntity {
 }
 
 export class CalendarEventModel {
-    constructor(_db?: any) { }
+    constructor() { }
 
-    initialize(): void {
-        // No-op with Prisma
-    }
+    initialize(): void { }
 
     private mapPrismaToCalendarEvent(event: any): CalendarEvent {
         return {
@@ -78,15 +76,13 @@ export class CalendarEventModel {
         if (filters.startDate) {
             let start = filters.startDate;
             if (start.length === 10) start += 'T00:00:00.000Z';
-            query += ` AND startTime >= ?`;
-            params.push(start);
+            where.startTime = { ...where.startTime, gte: new Date(start) };
         }
 
         if (filters.endDate) {
             let end = filters.endDate;
             if (end.length === 10) end += 'T23:59:59.999Z';
-            query += ` AND startTime <= ?`;
-            params.push(end);
+            where.startTime = { ...where.startTime, lte: new Date(end) };
         }
 
         const [events, total] = await Promise.all([
@@ -122,15 +118,13 @@ export class CalendarEventModel {
         if (filters.startDate) {
             let start = filters.startDate;
             if (start.length === 10) start += 'T00:00:00.000Z';
-            query += ` AND e.startTime >= ?`;
-            params.push(start);
+            where.startTime = { ...where.startTime, gte: new Date(start) };
         }
 
         if (filters.endDate) {
             let end = filters.endDate;
             if (end.length === 10) end += 'T23:59:59.999Z';
-            query += ` AND e.startTime <= ?`;
-            params.push(end);
+            where.startTime = { ...where.startTime, lte: new Date(end) };
         }
 
         const [events, total] = await Promise.all([

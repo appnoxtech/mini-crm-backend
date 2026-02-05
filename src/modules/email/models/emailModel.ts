@@ -3,11 +3,9 @@ import { prisma } from "../../../shared/prisma";
 import { Prisma } from "@prisma/client";
 
 export class EmailModel {
-  constructor(_db?: any) { }
+  constructor() { }
 
-  initialize(): void {
-    // No-op with Prisma
-  }
+  initialize(): void { }
 
   async createEmail(email: Email): Promise<Email> {
     // 1. Save or update unique content
@@ -458,7 +456,7 @@ export class EmailModel {
     } else if (folder === "spam") {
       rawWhere += ` AND (e."labelIds"::text LIKE '%SPAM%' OR e."labelIds"::text LIKE '%JUNK%') AND NOT (e."labelIds"::text LIKE '%TRASH%')`;
     } else if (folder === "drafts" || folder === "drfts") {
-      whereClause += ` AND (e.folder = 'DRAFT' OR e.labelIds LIKE '%DRAFT%')`;
+      rawWhere += ` AND (e.folder = 'DRAFT' OR e."labelIds"::text LIKE '%DRAFT%')`;
 
     } else if (folder === "trash") {
       rawWhere += ` AND e."labelIds"::text LIKE '%TRASH%'`;

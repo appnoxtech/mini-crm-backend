@@ -6,9 +6,7 @@ import { corsMiddleware } from './shared/middleware/auth';
 import { startTokenRefreshJob } from './cron/tokenRefresh'; import { startEmailSyncJob } from './cron/emailSync';
 import { startTrashCleanupJob } from './cron/trashCleanup';
 import os from 'os';
-
-// Import Draft module (need to import these specifically if not already)
-import { DraftModel, DraftService, DraftController, createDraftRoutes } from './modules/email';
+import { initStructuredKBController } from './modules/ai-agent/controllers/structuredKBController';
 
 // Load environment variables
 dotenv.config();
@@ -111,6 +109,9 @@ import { ImportModel, ImportService, ImportController, createImportRoutes } from
 import { SuggestionOrchestratorService } from './modules/ai-agent/services/suggestionOrchestratorService';
 import { SuggestionController } from './modules/ai-agent/controllers/suggestionController';
 import { AIConfigController } from './modules/ai-agent/controllers/aiConfigController';
+import { PricingModel } from './modules/ai-agent/models/PricingModel';
+import { BrandGuidelinesModel } from './modules/ai-agent/models/BrandGuidelinesModel';
+import { KnowledgeBaseModel } from './modules/ai-agent/models/KnowledgeBaseModel';
 import { createSuggestionRoutes } from './modules/ai-agent/routes/suggestionRoutes';
 
 
@@ -151,71 +152,33 @@ const PORT = Number(process.env.PORT) || 4000;
 
 
 // Initialize models
-const userModel = new UserModel(db);
-const otpModel = new OtpModel(db);
-const leadModel = new LeadModel(db);
-const emailModel = new EmailModel(db);
-const draftModel = new DraftModel(db);
-const pipelineModel = new PipelineModel(db);
-const pipelineStageModel = new PipelineStageModel(db);
-const dealModel = new DealModel(db);
-const dealHistoryModel = new DealHistoryModel(db);
-const dealActivityModel = new DealActivityModel(db);
-const organisationModel = new OrganizationModel(db);
-const personModel = new PersonModel(db);
-const productModel = new ProductModel(db);
-const callModel = new CallModel(db);
-const labelModel = new LabelModel(db);
+const userModel = new UserModel();
+const otpModel = new OtpModel();
+const leadModel = new LeadModel();
+const emailModel = new EmailModel();
+const draftModel = new DraftModel();
+const pipelineModel = new PipelineModel();
+const pipelineStageModel = new PipelineStageModel();
+const dealModel = new DealModel();
+const dealHistoryModel = new DealHistoryModel();
+const dealActivityModel = new DealActivityModel();
+const organisationModel = new OrganizationModel();
+const personModel = new PersonModel();
+const productModel = new ProductModel();
+const callModel = new CallModel();
+const labelModel = new LabelModel();
 
 // Initialize calendar models
-const calendarEventModel = new CalendarEventModel(db);
-const eventReminderModel = new EventReminderModel(db);
-const eventShareModel = new EventShareModel(db);
-const eventNotificationModel = new EventNotificationModel(db);
-
-
-
-// db.exec(`DROP TABLE IF EXISTS deals`);
-// db.exec(`DROP TABLE IF EXISTS emails`);
-// db.exec(`DROP TABLE IF EXISTS email_accounts`);
-
-// Initialize database tables
-userModel.initialize();
-otpModel.initialize();
-leadModel.initialize();
-emailModel.initialize();
-draftModel.initialize();
-emailModel.initializeHistoricalSyncSchema(); // Initialize UID tracking for historical sync
-pipelineModel.initialize();
-pipelineStageModel.initialize();
-dealModel.initialize();
-dealHistoryModel.initialize();
-dealActivityModel.initialize();
-organisationModel.initialize();
-personModel.initialize();
-labelModel.initialize();
-productModel.initialize();
-callModel.initialize();
-
-// Initialize calendar tables
-calendarEventModel.initialize();
-eventReminderModel.initialize();
-eventShareModel.initialize();
-eventNotificationModel.initialize();
-
-// Initialize calendar tables
-calendarEventModel.initialize();
-eventReminderModel.initialize();
-eventShareModel.initialize();
-eventNotificationModel.initialize();
+const calendarEventModel = new CalendarEventModel();
+const eventReminderModel = new EventReminderModel();
+const eventShareModel = new EventShareModel();
+const eventNotificationModel = new EventNotificationModel();
 
 // Initialize Activity Scheduler model
-const schedulerActivityModel = new SchedulerActivityModel(db);
-schedulerActivityModel.initialize();
+const schedulerActivityModel = new SchedulerActivityModel();
 
 // Initialize import model
-const importModel = new ImportModel(db);
-importModel.initialize();
+const importModel = new ImportModel();
 
 
 
@@ -239,7 +202,6 @@ const labelService = new LabelService(labelModel);
 const profileService = new ProfileService(userModel);
 const callService = new CallService(callModel);
 const importService = new ImportService();
-const draftService = new DraftService(draftModel, emailService);
 
 // Initialize calendar services
 const notificationSchedulerService = new NotificationSchedulerService(eventNotificationModel, eventShareModel);
@@ -268,9 +230,9 @@ gmailPushService.initialize(emailService, notificationService);
 // Initialize controllers
 const authController = new AuthController(authService, userModel);
 const leadController = new LeadController(leadService);
-const emailController = new EmailController(emailService, draftService, oauthService, emailQueueService, notificationService);
-const draftController = new DraftController(draftService);
-const summarizationController = new SummarizationController(emailModel, DB_PATH);
+const emailController = new EmailController(emailService, draftService, oauthService, emailQueueService, notificationService, quotaService);
+const trackingController = new EmailTrackingController(emailModel, notificationService);
+const summarizationController = new SummarizationController(emailModel);
 const pipelineController = new PipelineController(pipelineService, pipelineStageService);
 const dealController = new DealController(dealService);
 const productController = new ProductController(productService);
@@ -288,7 +250,10 @@ webhookController.setSocketIO(io);
 // Initialize AI agent module
 const suggestionOrchestrator = new SuggestionOrchestratorService();
 const suggestionController = new SuggestionController(suggestionOrchestrator);
-const aiConfigController = new AIConfigController();
+const pricingModel = new PricingModel();
+const guidelinesModel = new BrandGuidelinesModel();
+const knowledgeBaseModel = new KnowledgeBaseModel();
+const aiConfigController = new AIConfigController(pricingModel, guidelinesModel, knowledgeBaseModel);
 
 // Initialize calendar controllers
 const calendarController = new CalendarController(calendarEventService);
@@ -296,8 +261,7 @@ const reminderCalendarController = new ReminderController(reminderCalendarServic
 const notificationCalendarController = new NotificationController(eventNotificationModel);
 
 // Initialize Structured Knowledge Base controller
-import { initStructuredKBController } from './modules/ai-agent/controllers/structuredKBController';
-initStructuredKBController(db);
+initStructuredKBController();
 
 // Middleware
 app.use(express.json({ limit: '50mb' }));
@@ -315,7 +279,7 @@ app.use((req, res, next) => {
 // Routes
 app.use('/api/auth', createAuthRoutes(authController));
 app.use('/api/leads', createLeadRoutes(leadController));
-app.use('/api/emails', createEmailRoutes(emailController));
+app.use('/api/emails', createEmailRoutes(emailController, trackingController));
 app.use('/api/email/drafts', createDraftRoutes(draftController));
 app.use('/api/summarization', createSummarizationRoutes(summarizationController));
 app.use('/api/pipelines', createPipelineRoutes(pipelineController));

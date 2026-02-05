@@ -17,10 +17,8 @@ type LoginUserResponse = {
 };
 
 export class UserModel {
-  // We no longer need the db instance in constructor as we use the global prisma client
-  constructor(_db?: any) { }
+  constructor() { }
 
-  // initialize() is no longer needed with Prisma as we use migrations
   initialize(): void { }
 
   async createUser(email: string, name: string, passwordHash: string, role: string): Promise<User> {
@@ -54,21 +52,31 @@ export class UserModel {
     } as unknown as User;
   }
 
-  findByEmail(email: string): User | undefined {
-    const stmt = this.db.prepare('SELECT * FROM users WHERE email = ?');
-    return stmt.get(email.toLowerCase()) as User | undefined;
+  async findById(id: number): Promise<User | undefined> {
+    const user = await prisma.user.findUnique({
+      where: { id }
+    });
+    if (!user) return undefined;
+
+    return {
+      ...user,
+      profileImg: typeof user.profileImg === 'string' ? JSON.parse(user.profileImg || '[]') : (user.profileImg || []),
+      createdAt: user.createdAt.toISOString(),
+      updatedAt: user.updatedAt.toISOString(),
+    } as unknown as User;
   }
 
-  findById(id: number): User | undefined {
-    const stmt = this.db.prepare('SELECT * FROM users WHERE id = ?');
-    return stmt.get(id) as User | undefined;
-  }
-
-  findByIds(ids: number[]): User[] {
+  async findByIds(ids: number[]): Promise<User[]> {
     if (ids.length === 0) return [];
-    const placeholders = ids.map(() => '?').join(',');
-    const stmt = this.db.prepare(`SELECT * FROM users WHERE id IN (${placeholders})`);
-    return stmt.all(...ids) as User[];
+    const users = await prisma.user.findMany({
+      where: { id: { in: ids } }
+    });
+    return users.map((user: any) => ({
+      ...user,
+      profileImg: typeof user.profileImg === 'string' ? JSON.parse(user.profileImg || '[]') : (user.profileImg || []),
+      createdAt: user.createdAt.toISOString(),
+      updatedAt: user.updatedAt.toISOString(),
+    } as unknown as User));
   }
 
   async updateUser(id: number, updates: Partial<User>): Promise<AuthUser | null> {

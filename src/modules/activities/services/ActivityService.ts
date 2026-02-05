@@ -10,12 +10,12 @@ export class ActivityService {
         this.userModel = userModel;
     }
 
-    private enrichActivities(activities: Activity[]): any[] {
+    private async enrichActivities(activities: Activity[]): Promise<any[]> {
         // Collect all unique assignedUserIds
         const allUserIds = new Set<number>();
         activities.forEach(a => {
             if (a.assignedUserIds) {
-                a.assignedUserIds.forEach(uid => allUserIds.add(uid));
+                (a.assignedUserIds as number[]).forEach(uid => allUserIds.add(uid));
             }
         });
 
@@ -24,7 +24,7 @@ export class ActivityService {
         }
 
         // Fetch user details
-        const users = this.userModel.findByIds(Array.from(allUserIds));
+        const users = await this.userModel.findByIds(Array.from(allUserIds));
         const userMap = new Map<number, { id: number; name: string; email: string }>();
         users.forEach(u => {
             userMap.set(u.id, { id: u.id, name: u.name, email: u.email });
@@ -35,12 +35,12 @@ export class ActivityService {
             const { assignedUserIds, ...activityWithoutIds } = a;
             return {
                 ...activityWithoutIds,
-                assignedUsers: a.assignedUserIds.map(uid => userMap.get(uid)).filter(Boolean)
+                assignedUsers: (a.assignedUserIds as number[]).map(uid => userMap.get(uid)).filter(Boolean)
             };
         });
     }
 
-    createActivity(userId: number, data: {
+    async createActivity(userId: number, data: {
         title: string;
         description?: string;
         type?: 'call' | 'meeting' | 'task' | 'deadline' | 'email' | 'lunch';
@@ -63,14 +63,14 @@ export class ActivityService {
         // Availability Check (only if status is busy)
         if (data.status === 'busy' || data.status === undefined) {
             const userIdsToCheck = [userId, ...(data.assignedUserIds || [])];
-            const conflicts = this.model.findOverlapping(data.startAt, data.endAt, userIdsToCheck);
+            const conflicts = await this.model.findOverlapping(data.startAt, data.endAt, userIdsToCheck);
             if (conflicts.length > 0) {
                 const conflictingIds = conflicts.map(c => c.id).join(', ');
                 throw new Error(`Time slot overlap with activities: ${conflictingIds}`);
             }
         }
 
-        const activity = this.model.create({
+        const activity = await this.model.create({
             ...data,
             type: data.type || 'meeting',
             createdBy: userId,
@@ -80,37 +80,37 @@ export class ActivityService {
             status: data.status || 'busy'
         });
 
-        return this.enrichActivities([activity])[0];
+        const enriched = await this.enrichActivities([activity]);
+        return enriched[0];
     }
 
-    getActivities(userId: number, filters: {
+    async getActivities(userId: number, filters: {
         fromDate?: string;
         toDate?: string;
         status?: 'done' | 'pending' | 'all';
         limit?: number;
         offset?: number;
     }) {
-        const result = this.model.findAll({ ...filters, userId });
+        const result = await this.model.findAll({ ...filters, userId });
         return {
             ...result,
-            activities: this.enrichActivities(result.activities)
+            activities: await this.enrichActivities(result.activities)
         };
     }
 
-    searchActivities(userId: number, query?: string, type?: string) {
-        const activities = this.model.search(userId, query, type);
-        return this.enrichActivities(activities);
+    async searchActivities(userId: number, query?: string, type?: string) {
+        const activities = await this.model.search(userId, query, type);
+        return await this.enrichActivities(activities);
     }
 
-    updateActivity(activityId: string, userId: number, updates: Partial<Activity>) {
-        const activity = this.model.findById(activityId);
+    async updateActivity(activityId: string, userId: number, updates: Partial<Activity>) {
+        const activity = await this.model.findById(activityId);
         if (!activity) {
             throw new Error('Activity not found');
         }
 
         // Permissions check: Only creator or assigned users can update
-        // (Or just creator? Spec says "Only allow users to modify their own activities or assigned ones")
-        const isAuthorized = activity.createdBy === userId || activity.assignedUserIds.includes(userId);
+        const isAuthorized = activity.createdBy === userId || (activity.assignedUserIds as number[]).includes(userId);
         if (!isAuthorized) {
             throw new Error('Unauthorized to update this activity');
         }
@@ -122,14 +122,12 @@ export class ActivityService {
             if (new Date(newEnd) <= new Date(newStart)) {
                 throw new Error('End time must be after start time');
             }
-            // NOTE: Should ideally check availability again if times changed to a busy slot, 
-            // but ignoring for partial updates for simplicity unless critical.
-            // Let's add basic availability check if moving a busy event.
+
             if ((updates.status === 'busy' || activity.status === 'busy') &&
                 (updates.startAt || updates.endAt)) {
-                const userIdsToCheck = [activity.createdBy, ...activity.assignedUserIds];
+                const userIdsToCheck = [activity.createdBy, ...(activity.assignedUserIds as number[])];
                 // Exclude current activity from self-overlap
-                const conflicts = this.model.findOverlapping(newStart, newEnd, userIdsToCheck);
+                const conflicts = await this.model.findOverlapping(newStart, newEnd, userIdsToCheck);
                 const validConflicts = conflicts.filter(c => c.id !== activityId);
 
                 if (validConflicts.length > 0) {
@@ -138,12 +136,16 @@ export class ActivityService {
             }
         }
 
-        const updated = this.model.update(activityId, updates);
-        return updated ? this.enrichActivities([updated])[0] : null;
+        const updated = await this.model.update(activityId, updates);
+        if (updated) {
+            const enriched = await this.enrichActivities([updated]);
+            return enriched[0];
+        }
+        return null;
     }
 
-    deleteActivity(activityId: string, userId: number) {
-        const activity = this.model.findById(activityId);
+    async deleteActivity(activityId: string, userId: number) {
+        const activity = await this.model.findById(activityId);
         if (!activity) {
             throw new Error('Activity not found');
         }
@@ -152,22 +154,22 @@ export class ActivityService {
             throw new Error('Only the creator can delete the activity');
         }
 
-        return this.model.delete(activityId);
+        return await this.model.delete(activityId);
     }
 
-    markAsDone(activityId: string, userId: number) {
-        return this.updateActivity(activityId, userId, { isDone: true });
+    async markAsDone(activityId: string, userId: number) {
+        return await this.updateActivity(activityId, userId, { isDone: true });
     }
 
-    checkAvailability(startAt: string, endAt: string, userIds: number[]) {
-        const conflicts = this.model.findOverlapping(startAt, endAt, userIds);
+    async checkAvailability(startAt: string, endAt: string, userIds: number[]) {
+        const conflicts = await this.model.findOverlapping(startAt, endAt, userIds);
         return {
             available: conflicts.length === 0,
             conflictingActivityIds: conflicts.map(c => c.id)
         };
     }
 
-    getCalendarView(userId: number, date: string) {
+    async getCalendarView(userId: number, date: string) {
         // Get whole day (or generic range)
         const startOfDay = new Date(date);
         startOfDay.setUTCHours(0, 0, 0, 0);
@@ -175,7 +177,7 @@ export class ActivityService {
         const endOfDay = new Date(date);
         endOfDay.setUTCHours(23, 59, 59, 999);
 
-        const { activities } = this.model.findAll({
+        const { activities } = await this.model.findAll({
             userId,
             fromDate: startOfDay.toISOString(),
             toDate: endOfDay.toISOString()
@@ -185,7 +187,7 @@ export class ActivityService {
         const grouped: Record<number, Activity[]> = {};
         for (let i = 0; i < 24; i++) grouped[i] = [];
 
-        const enrichedActivities = this.enrichActivities(activities);
+        const enrichedActivities = await this.enrichActivities(activities);
 
         enrichedActivities.forEach(activity => {
             const hour = new Date(activity.startAt).getUTCHours();

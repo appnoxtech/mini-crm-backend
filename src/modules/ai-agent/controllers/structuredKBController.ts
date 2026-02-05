@@ -1,14 +1,13 @@
 import { Request, Response } from "express";
 import { StructuredKBModel } from "../models/StructuredKBModel";
 import { StructuredKBService } from "../services/structuredKBService";
-import Database from "better-sqlite3";
 
 let structuredKBModel: StructuredKBModel | null = null;
 let structuredKBService: StructuredKBService | null = null;
 
-export const initStructuredKBController = (db: Database.Database) => {
-    structuredKBModel = new StructuredKBModel(db);
-    structuredKBModel.initialize();
+export const initStructuredKBController = async () => {
+    structuredKBModel = new StructuredKBModel();
+    await structuredKBModel.initialize();
     structuredKBService = new StructuredKBService(structuredKBModel);
 };
 
@@ -22,7 +21,7 @@ export const getStructuredKB = async (req: Request, res: Response) => {
             return res.status(500).json({ error: "Structured KB service not initialized" });
         }
 
-        const kb = structuredKBService.getFullKB();
+        const kb = await structuredKBService.getFullKB();
         if (!kb) {
             return res.status(404).json({ error: "Knowledge base not found" });
         }
@@ -36,7 +35,7 @@ export const getStructuredKB = async (req: Request, res: Response) => {
 
 /**
  * PATCH /ai/kb/:category
- * Update a specific category (1-8)
+ * Update a specific category (1-9)
  */
 export const updateKBCategory = async (req: Request, res: Response) => {
     try {
@@ -54,13 +53,13 @@ export const updateKBCategory = async (req: Request, res: Response) => {
             return res.status(400).json({ error: "No data provided for update" });
         }
 
-        const success = structuredKBService.updateCategory(categoryNumber, data);
+        const success = await structuredKBService.updateCategory(categoryNumber, data);
         if (!success) {
             return res.status(500).json({ error: "Failed to update category" });
         }
 
         // Return updated KB
-        const updatedKB = structuredKBService.getFullKB();
+        const updatedKB = await structuredKBService.getFullKB();
         res.json({
             success: true,
             message: `Category ${categoryNumber} updated successfully`,
@@ -82,7 +81,7 @@ export const getKBCompletion = async (req: Request, res: Response) => {
             return res.status(500).json({ error: "Structured KB service not initialized" });
         }
 
-        const status = structuredKBService.getCompletionStatus();
+        const status = await structuredKBService.getCompletionStatus();
         res.json(status);
     } catch (error) {
         console.error("Error fetching KB completion:", error);
@@ -105,7 +104,7 @@ export const getKBCategory = async (req: Request, res: Response) => {
             return res.status(400).json({ error: "Invalid category number. Must be 1-9." });
         }
 
-        const kb = structuredKBService.getFullKB();
+        const kb = await structuredKBService.getFullKB();
         if (!kb) {
             return res.status(404).json({ error: "Knowledge base not found" });
         }

@@ -41,6 +41,9 @@ export interface EmailDraft {
 
     // Provider sync
     providerDraftId?: string;
+    providerId?: string; // Compatibility
+    remoteUid?: string; // Compatibility
+    enableTracking?: boolean; // Compatibility
 }
 
 /**

@@ -22,11 +22,9 @@ type searchResult = {
 }
 
 export class PipelineModel {
-    constructor(_db?: any) { }
+    constructor() { }
 
-    initialize(): void {
-        // No-op with Prisma
-    }
+    initialize(): void { }
 
     async create(data: Omit<Pipeline, 'id' | 'createdAt' | 'updatedAt' | 'ownerIds'> & { ownerIds: number[] }): Promise<Pipeline> {
         // If this is set as default, unset other defaults for these users

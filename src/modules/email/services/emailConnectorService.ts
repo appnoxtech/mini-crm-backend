@@ -1478,14 +1478,131 @@ export class EmailConnectorService {
    * Delete a draft from the provider
    */
   async deleteDraft(account: EmailAccount, providerDraftId: string): Promise<void> {
-    if (!providerDraftId) return;
+    const provider = account.provider;
+    try {
+      if (provider === 'gmail') {
+        await this.connectGmail(account);
+        await this.gmailClient.users.drafts.delete({
+          userId: 'me',
+          id: providerDraftId
+        });
+      } else if (provider === 'outlook') {
+        await this.connectOutlook(account);
+        await this.outlookClient.api(`/me/messages/${providerDraftId}`).delete();
+      } else if (provider === 'imap' || provider === 'custom') {
+        const client = await this.connectIMAP(account);
+        try {
+          await client.mailboxOpen('Drafts');
+          await client.messageDelete(providerDraftId);
+        } finally {
+          await client.logout();
+        }
+      }
+    } catch (error) {
+      console.warn(`Failed to delete draft from ${provider}:`, error);
+    }
+  }
 
-    if (account.provider === 'gmail') {
-      return this.deleteGmailDraft(account, providerDraftId);
-    } else if (account.provider === 'outlook') {
-      return this.deleteOutlookDraft(account, providerDraftId);
-    } else if (account.provider === 'imap' || account.provider === 'custom') {
-      return this.deleteIMAPDraft(account, providerDraftId);
+  // --- Spam and Trash Sync Methods ---
+
+  async trashGmailEmail(account: EmailAccount, gmailId: string): Promise<void> {
+    await this.connectGmail(account);
+    await this.gmailClient.users.messages.trash({ userId: 'me', id: gmailId });
+  }
+
+  async untrashGmailEmail(account: EmailAccount, gmailId: string): Promise<void> {
+    await this.connectGmail(account);
+    await this.gmailClient.users.messages.untrash({ userId: 'me', id: gmailId });
+  }
+
+  async trashOutlookEmail(account: EmailAccount, outlookId: string): Promise<void> {
+    await this.connectOutlook(account);
+    await this.outlookClient.api(`/me/messages/${outlookId}/move`).post({ destinationId: 'deleteditems' });
+  }
+
+  async untrashOutlookEmail(account: EmailAccount, outlookId: string): Promise<void> {
+    await this.connectOutlook(account);
+    await this.outlookClient.api(`/me/messages/${outlookId}/move`).post({ destinationId: 'inbox' });
+  }
+
+  async moveImapEmailToTrash(account: EmailAccount, folder: string, uid: number, messageId?: string): Promise<void> {
+    const client = await this.connectIMAP(account);
+    try {
+      await client.mailboxOpen(folder);
+      // IMAP move to trash usually means moving to the Trash folder
+      const mailboxes = await client.list();
+      const trashBox = mailboxes.find((box: any) => (box.specialUse === '\\Trash' || box.name.toLowerCase().includes('trash')));
+      if (trashBox) {
+        await client.messageMove(uid, trashBox.path);
+      } else {
+        await client.messageDelete(uid);
+      }
+    } finally {
+      await client.logout();
+    }
+  }
+
+  async moveImapEmailFromTrash(account: EmailAccount, uid: number, messageId: string, targetFolder: string): Promise<void> {
+    const client = await this.connectIMAP(account);
+    try {
+      // Find where the message is (actually we usually know it's in Trash)
+      const mailboxes = await client.list();
+      const trashBox = mailboxes.find((box: any) => (box.specialUse === '\\Trash' || box.name.toLowerCase().includes('trash')));
+      if (trashBox) {
+        await client.mailboxOpen(trashBox.path);
+        const searchResult = await client.search({ header: { 'Message-ID': messageId } });
+        if (Array.isArray(searchResult) && searchResult.length > 0) {
+          await client.messageMove(searchResult[0] as number, targetFolder);
+        }
+      }
+    } finally {
+      await client.logout();
+    }
+  }
+
+  async deleteGmailEmailPermanently(account: EmailAccount, gmailId: string): Promise<void> {
+    await this.connectGmail(account);
+    await this.gmailClient.users.messages.delete({ userId: 'me', id: gmailId });
+  }
+
+  async deleteOutlookEmailPermanently(account: EmailAccount, outlookId: string): Promise<void> {
+    await this.connectOutlook(account);
+    await this.outlookClient.api(`/me/messages/${outlookId}`).delete();
+  }
+
+  async deleteImapEmailPermanently(account: EmailAccount, folder: string, uid: number, messageId?: string): Promise<void> {
+    const client = await this.connectIMAP(account);
+    try {
+      await client.mailboxOpen(folder);
+      await client.messageDelete(uid);
+      await client.mailboxClose(); // Expunge happens on close usually
+    } finally {
+      await client.logout();
+    }
+  }
+
+  async searchImapEmailByMessageId(account: EmailAccount, folder: string, messageId: string): Promise<{ uid: number } | null> {
+    const client = await this.connectIMAP(account);
+    try {
+      await client.mailboxOpen(folder);
+      const searchResult = await client.search({ header: { 'Message-ID': messageId } });
+      if (Array.isArray(searchResult) && searchResult.length > 0) {
+        return { uid: searchResult[0] as number };
+      }
+      return null;
+    } finally {
+      await client.logout();
+    }
+  }
+
+  injectTracking(htmlBody: string, emailId: string): string {
+    const trackingUrl = `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/emails/track/open/${emailId}`;
+    const trackingPixel = `<img src="${trackingUrl}" width="1" height="1" style="display:none;" />`;
+
+    if (htmlBody.includes('</body>')) {
+      return htmlBody.replace('</body>', `${trackingPixel}</body>`);
+    } else {
+      return htmlBody + trackingPixel;
     }
   }
 

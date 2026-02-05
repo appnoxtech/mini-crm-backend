@@ -46,11 +46,9 @@ export interface UpdatePersonData {
 }
 
 export class PersonModel {
-    constructor(_db?: any) { }
+    constructor() { }
 
-    initialize(): void {
-        // No-op with Prisma
-    }
+    initialize(): void { }
 
     async findExistingEmail(emails: string[], excludePersonId?: number): Promise<{ email: string; personId: number } | null> {
         const result = await prisma.personEmail.findFirst({

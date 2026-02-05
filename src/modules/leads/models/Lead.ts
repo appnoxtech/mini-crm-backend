@@ -21,11 +21,9 @@ export interface LeadHistory {
 }
 
 export class LeadModel {
-  constructor(_db?: any) { }
+  constructor() { }
 
-  initialize(): void {
-    // No-op with Prisma
-  }
+  initialize(): void { }
 
   async createLead(leadData: Omit<Lead, 'id' | 'createdAt' | 'updatedAt'>): Promise<Lead> {
     const lead = await prisma.lead.create({

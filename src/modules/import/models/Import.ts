@@ -2,11 +2,9 @@ import { prisma } from '../../../shared/prisma';
 import { ImportJob, ImportStatus, ImportEntityType, ImportFileFormat, DuplicateHandling, FieldMapping, ImportError } from '../types';
 
 export class ImportModel {
-    constructor(_db?: any) { }
+    constructor() { }
 
-    initialize(): void {
-        // No-op with Prisma
-    }
+    initialize(): void { }
 
     private rowToImportJob(row: any): ImportJob {
         return {

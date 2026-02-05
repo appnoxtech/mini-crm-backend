@@ -28,7 +28,7 @@ export class ImportService {
     private fileParser: FileParserService;
     private processors: Map<ImportEntityType, any>;
 
-    constructor(_db?: any) {
+    constructor() {
         this.importModel = new ImportModel();
         this.fileParser = new FileParserService();
 

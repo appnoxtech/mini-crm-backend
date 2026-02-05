@@ -6,135 +6,52 @@ import {
     ListDraftsOptions,
 } from './draftTypes';
 import { Prisma } from '@prisma/client';
+import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Draft Model - Handles all database operations for email drafts using Prisma
  */
 export class DraftModel {
-    private db: Database.Database;
-
-    constructor(db: Database.Database) {
-        this.db = db;
-    }
+    constructor() { }
 
     /**
-     * Initialize drafts table
-     * Design: Store drafts separately from emails for clear separation of concerns
+     * Initialize drafts table - No-op with Prisma
      */
-    initialize(): void {
-        this.db.exec(`
-      CREATE TABLE IF NOT EXISTS email_drafts (
-        id TEXT PRIMARY KEY,
-        account_id TEXT NOT NULL,
-        user_id INTEGER NOT NULL,
-        
-        -- Provider Sync
-        provider_draft_id TEXT,
-        
-        -- Recipients (stored as JSON arrays)
-        to_recipients TEXT NOT NULL,
-        cc_recipients TEXT,
-        bcc_recipients TEXT,
-        
-        -- Content
-        subject TEXT NOT NULL,
-        body TEXT NOT NULL,
-        html_body TEXT,
-        
-        -- Attachments (stored as JSON)
-        attachments TEXT,
-        
-        -- Email threading
-        reply_to_message_id TEXT,
-        forward_from_message_id TEXT,
-        thread_id TEXT,
-        
-        -- CRM associations (stored as JSON arrays)
-        contact_ids TEXT,
-        deal_ids TEXT,
-        account_entity_ids TEXT,
-        
-        -- Tracking
-        enable_tracking INTEGER DEFAULT 0,
-        
-        -- Scheduling
-        is_scheduled INTEGER DEFAULT 0,
-        scheduled_for TEXT,
-        
-        -- Timestamps
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        
-        FOREIGN KEY (account_id) REFERENCES email_accounts(id) ON DELETE CASCADE,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      );
-
-      -- Indexes for efficient querying
-      CREATE INDEX IF NOT EXISTS idx_email_drafts_user ON email_drafts(user_id);
-      CREATE INDEX IF NOT EXISTS idx_email_drafts_account ON email_drafts(account_id);
-      CREATE INDEX IF NOT EXISTS idx_email_drafts_created ON email_drafts(created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_email_drafts_scheduled ON email_drafts(is_scheduled, scheduled_for);
-    `);
-    }
+    initialize(): void { }
 
     /**
      * Create a new draft
      */
     async createDraft(userId: string, input: CreateDraftInput): Promise<EmailDraft> {
         const id = uuidv4();
-        const now = new Date().toISOString();
 
-        const stmt = this.db.prepare(`
-      INSERT INTO email_drafts (
-        id, account_id, user_id, provider_draft_id,
-        to_recipients, cc_recipients, bcc_recipients,
-        subject, body, html_body,
-        attachments,
-        reply_to_message_id, forward_from_message_id, thread_id,
-        contact_ids, deal_ids, account_entity_ids,
-        enable_tracking,
-        is_scheduled, scheduled_for,
-        created_at, updated_at
-      ) VALUES (
-        ?, ?, ?, ?,
-        ?, ?, ?,
-        ?, ?, ?,
-        ?,
-        ?, ?, ?,
-        ?, ?, ?,
-        ?,
-        ?, ?,
-        ?, ?
-      )
-    `);
-
-        stmt.run(
+        const draftData: any = {
             id,
-            input.accountId,
-            userId,
-            input.providerDraftId || null,
-            JSON.stringify(input.to),
-            input.cc ? JSON.stringify(input.cc) : null,
-            input.bcc ? JSON.stringify(input.bcc) : null,
-            input.subject,
-            input.body,
-            input.htmlBody || null,
-            input.attachments ? JSON.stringify(input.attachments) : null,
-            input.replyToMessageId || null,
-            input.forwardFromMessageId || null,
-            input.threadId || null,
-            input.contactIds ? JSON.stringify(input.contactIds) : null,
-            input.dealIds ? JSON.stringify(input.dealIds) : null,
-            input.accountEntityIds ? JSON.stringify(input.accountEntityIds) : null,
-            input.enableTracking ? 1 : 0,
-            input.isScheduled ? 1 : 0,
-            input.scheduledFor ? input.scheduledFor.toISOString() : null,
-            now,
-            now
-        );
+            accountId: input.accountId,
+            userId: parseInt(userId),
+            from: input.from || null,
+            toRecipients: (input.to as any) || [],
+            ccRecipients: (input.cc as any) || null,
+            bccRecipients: (input.bcc as any) || null,
+            subject: input.subject,
+            body: input.body,
+            htmlBody: input.htmlBody || null,
+            attachments: (input.attachments as any) || null,
+            replyToMessageId: input.replyToMessageId || null,
+            forwardFromMessageId: input.forwardFromMessageId || null,
+            threadId: input.threadId || null,
+            contactIds: (input.contactIds as any) || null,
+            dealIds: (input.dealIds as any) || null,
+            accountEntityIds: (input.accountEntityIds as any) || null,
+            isScheduled: input.isScheduled || false,
+            scheduledFor: input.scheduledFor || null,
+        };
 
-        // Return the created draft
-        return this.getDraftById(id, userId) as Promise<EmailDraft>;
+        const draft = await prisma.emailDraft.create({
+            data: draftData
+        });
+
+        return this.mapRowToDraft(draft);
     }
 
     /**
@@ -231,8 +148,7 @@ export class DraftModel {
         if (updates.accountEntityIds !== undefined) data.accountEntityIds = (updates.accountEntityIds as any) || null;
         if (updates.isScheduled !== undefined) data.isScheduled = updates.isScheduled;
         if (updates.scheduledFor !== undefined) data.scheduledFor = updates.scheduledFor;
-        if ((updates as any).providerId !== undefined) data.providerId = (updates as any).providerId;
-        if ((updates as any).remoteUid !== undefined) data.remoteUid = (updates as any).remoteUid;
+        if (updates.providerDraftId !== undefined) data.providerId = updates.providerDraftId; // Map to providerId in schema
 
         try {
             const row = await prisma.emailDraft.update({
@@ -244,77 +160,95 @@ export class DraftModel {
             });
             return this.mapRowToDraft(row);
         } catch (err) {
+            console.error('Error updating draft:', err);
             return null;
         }
-        if (updates.attachments !== undefined) {
-            updateFields.push('attachments = ?');
-            params.push(updates.attachments ? JSON.stringify(updates.attachments) : null);
-        }
-        if (updates.contactIds !== undefined) {
-            updateFields.push('contact_ids = ?');
-            params.push(updates.contactIds ? JSON.stringify(updates.contactIds) : null);
-        }
-        if (updates.dealIds !== undefined) {
-            updateFields.push('deal_ids = ?');
-            params.push(updates.dealIds ? JSON.stringify(updates.dealIds) : null);
-        }
-        if (updates.accountEntityIds !== undefined) {
-            updateFields.push('account_entity_ids = ?');
-            params.push(updates.accountEntityIds ? JSON.stringify(updates.accountEntityIds) : null);
-        }
-        if (updates.enableTracking !== undefined) {
-            updateFields.push('enable_tracking = ?');
-            params.push(updates.enableTracking ? 1 : 0);
-        }
-        if (updates.isScheduled !== undefined) {
-            updateFields.push('is_scheduled = ?');
-            params.push(updates.isScheduled ? 1 : 0);
-        }
-        if (updates.scheduledFor !== undefined) {
-            updateFields.push('scheduled_for = ?');
-            params.push(updates.scheduledFor ? updates.scheduledFor.toISOString() : null);
-        }
-        if (updates.providerDraftId !== undefined) {
-            updateFields.push('provider_draft_id = ?');
-            params.push(updates.providerDraftId);
-        }
-
-        // Always update the updated_at timestamp
-        updateFields.push('updated_at = ?');
-        params.push(new Date().toISOString());
-
-        // Add WHERE clause params
-        params.push(draftId, userId);
-
-        const stmt = this.db.prepare(`
-      UPDATE email_drafts
-      SET ${updateFields.join(', ')}
-      WHERE id = ? AND user_id = ?
-    `);
-
-        stmt.run(...params);
-
-        // Return the updated draft
-        return this.getDraftById(draftId, userId);
     }
 
     /**
-     * Delete a draft
-     * Principle: Hard delete since drafts are not historical records
+     * Delete a draft permanently
      */
-    async deleteTrashedDraft(draftId: string, userId: string): Promise<boolean> {
+    async deleteDraft(draftId: string, userId: string): Promise<boolean> {
         try {
             await prisma.emailDraft.delete({
                 where: {
                     id: draftId,
-                    userId: parseInt(userId),
-                    isTrashed: true
+                    userId: parseInt(userId)
                 }
             });
             return true;
         } catch (err) {
             return false;
         }
+    }
+
+    /**
+     * Move a draft to trash
+     */
+    async trashDraft(draftId: string, userId: string): Promise<EmailDraft | null> {
+        try {
+            const row = await prisma.emailDraft.update({
+                where: {
+                    id: draftId,
+                    userId: parseInt(userId)
+                },
+                data: {
+                    isTrashed: true
+                }
+            });
+            return this.mapRowToDraft(row);
+        } catch (err) {
+            return null;
+        }
+    }
+
+    /**
+     * Trash multiple drafts (batch operation)
+     */
+    async trashDraftsBatch(draftIds: string[], userId: string): Promise<{ trashed: number; failed: number }> {
+        const results = await Promise.all(draftIds.map(async (id) => {
+            const success = await this.trashDraft(id, userId);
+            return success ? 'trashed' : 'failed';
+        }));
+
+        return {
+            trashed: results.filter(r => r === 'trashed').length,
+            failed: results.filter(r => r === 'failed').length
+        };
+    }
+
+    /**
+     * Restore a draft from trash
+     */
+    async restoreDraftFromTrash(draftId: string, userId: string): Promise<EmailDraft | null> {
+        try {
+            const row = await prisma.emailDraft.update({
+                where: {
+                    id: draftId,
+                    userId: parseInt(userId)
+                },
+                data: {
+                    isTrashed: false
+                }
+            });
+            return this.mapRowToDraft(row);
+        } catch (err) {
+            return null;
+        }
+    }
+
+    /**
+     * Get all trashed drafts
+     */
+    async getTrashedDrafts(userId: string, limit = 50, offset = 0): Promise<{ drafts: EmailDraft[]; total: number }> {
+        return this.listDrafts(userId, { limit, offset, includeTrashed: true, scheduledOnly: false });
+    }
+
+    /**
+     * Delete a trashed draft permanently (redundant with deleteDraft but kept for naming consistency)
+     */
+    async deleteTrashedDraft(draftId: string, userId: string): Promise<boolean> {
+        return this.deleteDraft(draftId, userId);
     }
 
     /**
@@ -345,7 +279,8 @@ export class DraftModel {
                 isScheduled: true,
                 scheduledFor: {
                     lte: now
-                }
+                },
+                isTrashed: false
             },
             orderBy: { scheduledFor: 'asc' }
         });
@@ -367,20 +302,22 @@ export class DraftModel {
             bcc: (row.bccRecipients as string[]) || undefined,
             subject: row.subject,
             body: row.body,
-            htmlBody: row.html_body || undefined,
-            attachments: row.attachments ? JSON.parse(row.attachments) : undefined,
-            replyToMessageId: row.reply_to_message_id || undefined,
-            forwardFromMessageId: row.forward_from_message_id || undefined,
-            threadId: row.thread_id || undefined,
-            contactIds: row.contact_ids ? JSON.parse(row.contact_ids) : undefined,
-            dealIds: row.deal_ids ? JSON.parse(row.deal_ids) : undefined,
-            accountEntityIds: row.account_entity_ids ? JSON.parse(row.account_entity_ids) : undefined,
-            enableTracking: row.enable_tracking === 1,
-            isScheduled: row.is_scheduled === 1,
-            scheduledFor: row.scheduled_for ? new Date(row.scheduled_for) : undefined,
-            providerDraftId: row.provider_draft_id || undefined,
-            createdAt: new Date(row.created_at),
-            updatedAt: new Date(row.updated_at),
+            htmlBody: row.htmlBody || undefined,
+            attachments: (row.attachments as any) || undefined,
+            replyToMessageId: row.replyToMessageId || undefined,
+            forwardFromMessageId: row.forwardFromMessageId || undefined,
+            threadId: row.threadId || undefined,
+            contactIds: (row.contactIds as any) || undefined,
+            dealIds: (row.dealIds as any) || undefined,
+            accountEntityIds: (row.accountEntityIds as any) || undefined,
+            enableTracking: false,
+            isScheduled: row.isScheduled,
+            scheduledFor: row.scheduledFor ? new Date(row.scheduledFor) : undefined,
+            providerDraftId: row.providerId || undefined,
+            providerId: row.providerId || undefined,
+            remoteUid: row.remoteUid || undefined,
+            createdAt: new Date(row.createdAt),
+            updatedAt: new Date(row.updatedAt),
         };
     }
 }

@@ -9,11 +9,9 @@ export interface EventShare {
 }
 
 export class EventShareModel {
-    constructor(_db?: any) { }
+    constructor() { }
 
-    initialize(): void {
-        // No-op with Prisma
-    }
+    initialize(): void { }
 
     private mapPrismaToShare(share: any): EventShare {
         return {

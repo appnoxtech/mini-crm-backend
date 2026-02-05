@@ -20,11 +20,9 @@ export interface EventNotification {
 }
 
 export class EventNotificationModel {
-    constructor(_db?: any) { }
+    constructor() { }
 
-    initialize(): void {
-        // No-op with Prisma
-    }
+    initialize(): void { }
 
     private mapPrismaToNotification(n: any): EventNotification {
         return {

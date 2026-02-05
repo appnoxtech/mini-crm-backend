@@ -9,11 +9,9 @@ export interface EventReminder {
 }
 
 export class EventReminderModel {
-    constructor(_db?: any) { }
+    constructor() { }
 
-    initialize(): void {
-        // No-op with Prisma
-    }
+    initialize(): void { }
 
     private mapPrismaToReminder(reminder: any): EventReminder {
         return {
