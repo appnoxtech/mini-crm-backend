@@ -75,7 +75,7 @@ export class DraftService {
 
         // Fallback: check if it's a synced draft in the Email table
         const email = await this.emailService.getEmailById(draftId, userId);
-        if (email && (email.folder === 'DRAFT' || email.labelIds?.includes('SPAM'))) {
+        if (email && (email.folder === 'DRAFT' || email.labelIds?.includes('DRAFT') || email.labelIds?.includes('SPAM'))) {
             // Map Email to EmailDraft structure
             return {
                 id: email.id,
@@ -324,7 +324,7 @@ export class DraftService {
             // If not found locally, check if it's a synced draft (from Email table) we need to "adopt"
             if (!localUpdated) {
                 const syncedEmail = await this.emailService.getEmailById(draftId, userId);
-                if (syncedEmail && (syncedEmail.folder === 'DRAFT' || syncedEmail.labelIds?.includes('SPAM'))) {
+                if (syncedEmail && (syncedEmail.folder === 'DRAFT' || syncedEmail.labelIds?.includes('DRAFT') || syncedEmail.labelIds?.includes('SPAM'))) {
                     console.log(`Adopting synced draft ${draftId} into local drafts...`);
                     // Create a new local draft based on the synced email + updates
                     const createInput: CreateDraftInput = {
