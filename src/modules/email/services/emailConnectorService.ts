@@ -1492,8 +1492,29 @@ export class EmailConnectorService {
       } else if (provider === 'imap' || provider === 'custom') {
         const client = await this.connectIMAP(account);
         try {
-          await client.mailboxOpen('Drafts');
-          await client.messageDelete(providerDraftId);
+          // Smart resolve 'Drafts' folder
+          let draftsPath = 'Drafts';
+          try {
+            // Try standard first
+            await client.mailboxOpen('Drafts');
+          } catch (e) {
+            const mailboxes = await client.list();
+            const draftBox = mailboxes.find((box: any) =>
+              (box.specialUse === '\\Drafts' || box.name.toLowerCase().includes('draft'))
+            );
+            if (draftBox) {
+              draftsPath = draftBox.path;
+              await client.mailboxOpen(draftsPath);
+            } else {
+              throw e;
+            }
+          }
+
+          // Delete by UID
+          // Note: deleteDraft usually implies permanent delete for drafts
+          await client.messageFlagsAdd(providerDraftId, ['\\Deleted'], { uid: true });
+          // Force expunge or close to apply
+          await client.mailboxClose();
         } finally {
           await client.logout();
         }
@@ -1528,7 +1549,28 @@ export class EmailConnectorService {
   async moveImapEmailToTrash(account: EmailAccount, folder: string, uid: number, messageId?: string): Promise<void> {
     const client = await this.connectIMAP(account);
     try {
-      await client.mailboxOpen(folder);
+      try {
+        await client.mailboxOpen(folder);
+      } catch (error: any) {
+        // Resolve folder if it doesn't exist directly (e.g. 'DRAFTS' -> 'INBOX.Drafts')
+        const mailboxes = await client.list();
+        let resolvedPath: string | null = null;
+        const normalize = (s: string) => s.toLowerCase().trim();
+
+        if (normalize(folder) === 'drafts' || normalize(folder) === 'draft') {
+          resolvedPath = mailboxes.find((m: any) => m.specialUse === '\\Drafts' || normalize(m.path).includes('draft'))?.path || null;
+        } else if (normalize(folder) === 'sent') {
+          resolvedPath = mailboxes.find((m: any) => m.specialUse === '\\Sent' || normalize(m.path).includes('sent'))?.path || null;
+        }
+
+        if (resolvedPath) {
+          console.log(`[IMAP] Resolved folder ${folder} to ${resolvedPath}`);
+          await client.mailboxOpen(resolvedPath);
+        } else {
+          throw error;
+        }
+      }
+
       // IMAP move to trash usually means moving to the Trash folder
       const mailboxes = await client.list();
       const trashBox = mailboxes.find((box: any) => (box.specialUse === '\\Trash' || box.name.toLowerCase().includes('trash')));
@@ -1573,7 +1615,28 @@ export class EmailConnectorService {
   async deleteImapEmailPermanently(account: EmailAccount, folder: string, uid: number, messageId?: string): Promise<void> {
     const client = await this.connectIMAP(account);
     try {
-      await client.mailboxOpen(folder);
+      try {
+        await client.mailboxOpen(folder);
+      } catch (error: any) {
+        // Resolve folder if it doesn't exist directly
+        const mailboxes = await client.list();
+        let resolvedPath: string | null = null;
+        const normalize = (s: string) => s.toLowerCase().trim();
+
+        if (normalize(folder) === 'drafts' || normalize(folder) === 'draft') {
+          resolvedPath = mailboxes.find((m: any) => m.specialUse === '\\Drafts' || normalize(m.path).includes('draft'))?.path || null;
+        } else if (normalize(folder) === 'trash') {
+          resolvedPath = mailboxes.find((m: any) => m.specialUse === '\\Trash' || normalize(m.path).includes('trash'))?.path || null;
+        }
+
+        if (resolvedPath) {
+          console.log(`[IMAP] Resolved folder ${folder} to ${resolvedPath}`);
+          await client.mailboxOpen(resolvedPath);
+        } else {
+          throw error;
+        }
+      }
+
       await client.messageDelete(uid);
       await client.mailboxClose(); // Expunge happens on close usually
     } finally {

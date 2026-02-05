@@ -277,7 +277,7 @@ export class StructuredKBModel {
             }
         });
 
-        return rows.map(row => ({
+        return rows.map((row: { version: number; changedSections: unknown; changeTimestamp: Date }) => ({
             version: row.version,
             changed_sections: (row.changedSections as string[]) || [],
             change_timestamp: row.changeTimestamp

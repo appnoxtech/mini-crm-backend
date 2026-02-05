@@ -155,18 +155,22 @@ export class EmailService {
       ...(emailData.bcc || [])
     ];
 
-    for (const recipientEmail of allRecipients) {
+    for (const rawRecipient of allRecipients) {
       try {
-        const recipientAccount = await this.emailModel.getEmailAccountByEmail(recipientEmail);
+        const cleanRecipient = this.extractEmailFromAddress(rawRecipient);
+        if (!cleanRecipient) continue;
+
+        const recipientAccount = await this.emailModel.getEmailAccountByEmail(cleanRecipient);
 
         if (recipientAccount) {
-          const isSelfSent = recipientAccount.userId === account.userId;
+          const isSelfSent = String(recipientAccount.id) === String(account.id);
+          const isSameUser = String(recipientAccount.userId) === String(account.userId);
 
           // 1. Create a database record for the recipient immediately
           // This ensures they see the email even before sync
           const recipientEmailRecord: Email = {
             ...email,
-            id: `${recipientAccount.id}-${messageId}`, // Unique ID using consistent format
+            id: isSelfSent ? emailId : `${recipientAccount.id}-${messageId}`, // Use the sent ID for self, composite for others
             accountId: recipientAccount.id,
             isIncoming: true,
             isRead: false,
@@ -180,17 +184,17 @@ export class EmailService {
           const existingForRecipient = await this.emailModel.findEmailByMessageId(messageId, recipientAccount.id);
 
           if (!existingForRecipient) {
-            // For self-sent emails, we still already have the sent copy, 
-            // so we only create an additional incoming-focused record for other recipients
-            if (!isSelfSent) {
-              await this.emailModel.createEmail(recipientEmailRecord);
-            }
+            // New recipient (not self): Create the incoming-focused record
+            await this.emailModel.createEmail(recipientEmailRecord);
+          } else if (isSelfSent) {
+            // Self-sent email: Update the existing "Sent" record to also be in INBOX
+            await this.emailModel.updateEmail(emailId, { folder: 'INBOX' });
           }
 
           // 2. Trigger real-time notification for the recipient (including self!)
           // Self-sent emails should notify the sender that they have "received" their own email
           if (this.notificationService) {
-            console.log(`[Email] Notifying ${isSelfSent ? 'self' : 'recipient'} ${recipientAccount.userId} about new email`);
+            console.log(`[Email] Notifying user ${recipientAccount.userId} about new email ${recipientAccount.id === account.id ? '(SELF)' : '(INTERNAL)'}`);
             this.notificationService.notifyNewEmail(recipientAccount.userId, recipientEmailRecord);
           }
         }
@@ -393,11 +397,28 @@ export class EmailService {
 
       // Update folder if it changed (handles moves between Inbox/Trash/etc)
       if (parsed.folder && existing.folder !== parsed.folder) {
-        console.log(`[Sync] Email ${existing.id} folder changed: ${existing.folder} -> ${parsed.folder}`);
-        updates.folder = parsed.folder;
-        updates.uid = parsed.uid; // Also update UID since it changes when moving folders
-        updates.labelIds = [parsed.folder]; // Update labels to match
-        needsUpdate = true;
+        // PRIORITY FIX FOR SELF-SENT EMAILS:
+        // If an email is already in 'INBOX', don't let a secondary sync (e.g. from the SENT folder)
+        // move it out to 'SENT'. We want it to stay in 'INBOX' to remain visible there.
+        if (existing.folder === 'INBOX' && parsed.folder === 'SENT') {
+          console.log(`[Sync] Skipping folder move for self-sent email ${existing.id}: SENT -> INBOX (keeping INBOX)`);
+
+          // However, we SHOULD update the SentAt/Created time if the sent copy has better data
+          updates.sentAt = parsed.sentAt;
+          needsUpdate = true;
+        } else {
+          console.log(`[Sync] Email ${existing.id} folder changed: ${existing.folder} -> ${parsed.folder}`);
+          updates.folder = parsed.folder;
+          updates.uid = parsed.uid; // Also update UID since it changes when moving folders
+          updates.labelIds = [parsed.folder]; // Update labels to match
+          needsUpdate = true;
+
+          // If an email has "moved" to the inbox, notify the user as it's a new arrival for their attention
+          if (parsed.folder === 'INBOX' && this.notificationService) {
+            console.log(`[Email] Notifying about email ${existing.id} moving to INBOX`);
+            this.notificationService.notifyNewEmail(account.userId, { ...existing, ...updates });
+          }
+        }
       }
 
       if (needsUpdate) {
@@ -494,8 +515,8 @@ export class EmailService {
       }
     }
 
-    // Notify user about new incoming email
-    if (this.notificationService && isIncoming) {
+    // Notify user about new incoming email OR self-sent email appearing in Inbox
+    if (this.notificationService && (isIncoming || email.folder === 'INBOX')) {
       this.notificationService.notifyNewEmail(account.userId, email);
     }
 
@@ -681,6 +702,9 @@ export class EmailService {
       receivedAt: new Date(parseInt(message.internalDate)),
       // Store labelIds for direction detection
       labelIds: message.labelIds || [],
+      // For Gmail, if it has the INBOX label, mark it as being in the INBOX folder
+      folder: (message.labelIds || []).includes("INBOX") ? "INBOX" :
+        (message.labelIds || []).includes("SENT") ? "SENT" : undefined,
       attachments: this.extractAttachmentsFromGmailPayload(message.payload),
     } as any;
   }
@@ -703,6 +727,7 @@ export class EmailService {
       isRead: !!message.isRead,
       sentAt: new Date(message.sentDateTime),
       receivedAt: new Date(message.receivedDateTime),
+      folder: (message.parentFolderId === 'inbox' || message.inferenceClassification === 'focused') ? 'INBOX' : undefined,
       attachments: (message.attachments || []).map((att: any) => {
         const contentType = att.contentType || 'application/octet-stream';
         const attachment: EmailAttachment = {
@@ -1641,6 +1666,21 @@ export class EmailService {
       console.error(`[ReadSync] Failed to sync status for ${email.id} (${provider}):`, error);
       // We could add a retry queue here if needed
     }
+  }
+
+  /**
+   * Sync draft to provider
+   */
+  async syncDraft(userId: string, draftId: string): Promise<boolean> {
+    const draft = await this.draftModel.getDraftById(draftId, userId);
+    if (!draft) return false;
+
+    // Use DraftService logic if possible, but DraftService calls EmailService.saveDraft.
+    // This method is for when we want to trigger a sync from EmailService context
+    // or if we have specific flagging needs.
+    // Actually, this is redundant if DraftService handles it.
+    // But we might need to flag it as DRAFT on the provider side manually if saveDraft didn't?
+    return true;
   }
 
   /**

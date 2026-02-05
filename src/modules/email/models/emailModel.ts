@@ -194,7 +194,10 @@ export class EmailModel {
   async getEmailAccountByEmail(email: string): Promise<EmailAccount | null> {
     const row = await prisma.emailAccount.findFirst({
       where: {
-        email,
+        email: {
+          equals: email,
+          mode: 'insensitive'
+        },
         isActive: true
       }
     });
@@ -456,7 +459,7 @@ export class EmailModel {
     } else if (folder === "spam") {
       rawWhere += ` AND (e."labelIds"::text LIKE '%SPAM%' OR e."labelIds"::text LIKE '%JUNK%') AND NOT (e."labelIds"::text LIKE '%TRASH%')`;
     } else if (folder === "drafts" || folder === "drfts") {
-      rawWhere += ` AND (e.folder = 'DRAFT' OR e."labelIds"::text LIKE '%DRAFT%')`;
+      rawWhere += ` AND (e.folder = 'DRAFT' OR e."labelIds"::text LIKE '%DRAFT%') AND (e."labelIds" IS NULL OR NOT (e."labelIds"::text LIKE '%TRASH%'))`;
 
     } else if (folder === "trash") {
       rawWhere += ` AND e."labelIds"::text LIKE '%TRASH%'`;
