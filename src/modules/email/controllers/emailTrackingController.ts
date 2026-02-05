@@ -53,7 +53,7 @@ export class EmailTrackingController {
 
             // Get the email account to find the userId
             const emailAccount = await this.emailModel.getEmailAccountById(email.accountId);
-            
+
             if (emailAccount) {
                 console.log(`👤 [TRACKING] Found email account for userId: ${emailAccount.userId}`);
 
@@ -71,7 +71,7 @@ export class EmailTrackingController {
                 // Check if we already notified recently (deduplicate within time window)
                 const now = Date.now();
                 const lastNotified = recentlyNotified.get(emailId);
-                
+
                 if (lastNotified && (now - lastNotified) < DEDUP_WINDOW_MS) {
                     console.log(`⏭️ [TRACKING] Skipping duplicate notification for emailId: ${emailId} (within 60s window)`);
                 } else {
@@ -79,12 +79,13 @@ export class EmailTrackingController {
                     console.log(`🔔 [TRACKING] Sending notification to userId: ${emailAccount.userId} for messageId: ${email.messageId}`);
                     this.notificationService.notifyEmailOpened(
                         emailAccount.userId,
+                        email.id,
                         email.messageId,
                         email.to[0] || 'Unknown',
                         (email.opens || 0) + 1
                     );
                     console.log(`✅ [TRACKING] Notification sent successfully`);
-                    
+
                     // Record that we notified for this email
                     recentlyNotified.set(emailId, now);
                 }
@@ -132,7 +133,7 @@ export class EmailTrackingController {
             if (email) {
                 // Get the email account to find the userId
                 const emailAccount = await this.emailModel.getEmailAccountById(email.accountId);
-                
+
                 if (emailAccount) {
                     // Increment the counter
                     await this.emailModel.incrementClicks(emailId);
@@ -150,19 +151,20 @@ export class EmailTrackingController {
                     const clickKey = `click-${emailId}`;
                     const now = Date.now();
                     const lastNotified = recentlyNotified.get(clickKey);
-                    
+
                     if (lastNotified && (now - lastNotified) < DEDUP_WINDOW_MS) {
                         console.log(`⏭️ [TRACKING] Skipping duplicate click notification for emailId: ${emailId}`);
                     } else {
                         // Notify the user via real-time socket with correct userId
                         this.notificationService.notifyEmailLinkClicked(
                             emailAccount.userId,
+                            email.id,
                             email.messageId,
                             originalUrl,
                             email.to[0] || 'Unknown',
                             (email.clicks || 0) + 1
                         );
-                        
+
                         // Record that we notified for this click
                         recentlyNotified.set(clickKey, now);
                     }

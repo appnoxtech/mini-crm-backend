@@ -3,7 +3,7 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { corsMiddleware } from './shared/middleware/auth';
-import { startTokenRefreshJob } from './cron/tokenRefresh';
+import { startTokenRefreshJob } from './cron/tokenRefresh'; import { startEmailSyncJob } from './cron/emailSync';
 import { startTrashCleanupJob } from './cron/trashCleanup';
 import os from 'os';
 
@@ -294,6 +294,7 @@ server.listen(PORT, '0.0.0.0', () => {
 
 // Start cron jobs
 startTokenRefreshJob();
+startEmailSyncJob(notificationService);
 startReminderProcessor(notificationDispatcherService);
 startTrashCleanupJob();
 

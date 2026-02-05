@@ -2,7 +2,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { Email } from '../models/types';
 
 export interface EmailNotification {
-  type: 'new_email' | 'sync_status' | 'error' | 'email_opened' | 'email_link_clicked' | 'email_delivered' | 'email_bounced' | 'email_status_changed';
+  type: 'new_email' | 'email_sent' | 'sync_status' | 'error' | 'email_opened' | 'email_link_clicked' | 'email_delivered' | 'email_bounced' | 'email_status_changed' | 'calendar_reminder';
   data: any;
   timestamp: Date;
 }
@@ -99,8 +99,12 @@ export class RealTimeNotificationService {
     const userSockets = this.userSockets.get(stringUserId);
     const socketCount = userSockets?.size || 0;
 
-    console.log(`📡 [SOCKET] Emitting ${notification.type} notification to user: ${stringUserId} (${socketCount} socket(s))`);
+    const logEntry = `[${new Date().toISOString()}] 📡 Emitting ${notification.type} to user ${stringUserId} (${socketCount} sockets)\n`;
+    try {
+      require('fs').appendFileSync('notifications.log', logEntry);
+    } catch (e) { }
 
+    console.log(`📡 [SOCKET] Emitting ${notification.type} notification to user: ${stringUserId} (${socketCount} socket(s))`);
     this.io.to(`user_${stringUserId}`).emit('notification', notification);
 
     if (socketCount === 0) {
@@ -233,11 +237,26 @@ export class RealTimeNotificationService {
     });
   }
 
-  notifyEmailOpened(userId: string, messageId: string, recipientEmail?: string, openCount?: number): void {
-    console.log(`📬 [NOTIFY] Email opened - userId: ${userId}, messageId: ${messageId}, recipient: ${recipientEmail}, count: ${openCount}`);
+  notifyEmailSent(userId: string, email: Email): void {
+    this.notifyUser(userId, {
+      type: 'email_sent',
+      data: {
+        id: email.id,
+        messageId: email.messageId,
+        to: email.to,
+        subject: email.subject,
+        timestamp: email.sentAt
+      },
+      timestamp: new Date()
+    });
+  }
+
+  notifyEmailOpened(userId: string, emailId: string, messageId: string, recipientEmail?: string, openCount?: number): void {
+    console.log(`📬 [NOTIFY] Email opened - userId: ${userId}, emailId: ${emailId}, messageId: ${messageId}, recipient: ${recipientEmail}, count: ${openCount}`);
     this.notifyUser(userId, {
       type: 'email_opened',
       data: {
+        id: emailId,
         messageId,
         recipientEmail,
         openCount,
@@ -247,10 +266,11 @@ export class RealTimeNotificationService {
     });
   }
 
-  notifyEmailLinkClicked(userId: string, messageId: string, originalUrl: string, recipientEmail?: string, clickCount?: number): void {
+  notifyEmailLinkClicked(userId: string, emailId: string, messageId: string, originalUrl: string, recipientEmail?: string, clickCount?: number): void {
     this.notifyUser(userId, {
       type: 'email_link_clicked',
       data: {
+        id: emailId,
         messageId,
         originalUrl,
         recipientEmail,
@@ -261,10 +281,11 @@ export class RealTimeNotificationService {
     });
   }
 
-  notifyEmailDelivered(userId: string, messageId: string, recipientEmail?: string): void {
+  notifyEmailDelivered(userId: string, emailId: string, messageId: string, recipientEmail?: string): void {
     this.notifyUser(userId, {
       type: 'email_delivered',
       data: {
+        id: emailId,
         messageId,
         recipientEmail,
         timestamp: new Date()
@@ -273,10 +294,11 @@ export class RealTimeNotificationService {
     });
   }
 
-  notifyEmailBounced(userId: string, messageId: string, recipientEmail?: string, reason?: string): void {
+  notifyEmailBounced(userId: string, emailId: string, messageId: string, recipientEmail?: string, reason?: string): void {
     this.notifyUser(userId, {
       type: 'email_bounced',
       data: {
+        id: emailId,
         messageId,
         recipientEmail,
         reason,

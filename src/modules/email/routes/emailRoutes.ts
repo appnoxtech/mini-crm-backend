@@ -54,6 +54,7 @@ export function createEmailRoutes(
   router.post('/accounts/:accountId/sync', (req: any, res) => emailController.triggerEmailSync(req, res));
   router.get('/queue/status', (req: any, res) => emailController.getQueueStatus(req, res));
   router.get('/notifications/stats', (req: any, res) => emailController.getNotificationStats(req, res));
+  router.get('/notifications/test', (req: any, res) => emailController.testNotification(req, res));
 
   // Email retrieval and management
   router.post('/sync-archive', (req: any, res) => emailController.triggerArchiveSync(req, res));

@@ -159,8 +159,8 @@ export class EmailService {
       try {
         const recipientAccount = await this.emailModel.getEmailAccountByEmail(recipientEmail);
 
-        if (recipientAccount && recipientAccount.userId !== account.userId) {
-
+        if (recipientAccount) {
+          const isSelfSent = recipientAccount.userId === account.userId;
 
           // 1. Create a database record for the recipient immediately
           // This ensures they see the email even before sync
@@ -170,21 +170,28 @@ export class EmailService {
             accountId: recipientAccount.id,
             isIncoming: true,
             isRead: false,
+            // For self-sent emails, mark them differently so they appear in both Inbox and Sent
+            folder: 'INBOX',
             // Directional metadata
             receivedAt: new Date(),
           };
 
-          // Check if recipient already has this email (unlikely if just sent, but safe)
+          // Check if recipient already has this email
           const existingForRecipient = await this.emailModel.findEmailByMessageId(messageId, recipientAccount.id);
-          if (!existingForRecipient) {
-            await this.emailModel.createEmail(recipientEmailRecord);
 
+          if (!existingForRecipient) {
+            // For self-sent emails, we still already have the sent copy, 
+            // so we only create an additional incoming-focused record for other recipients
+            if (!isSelfSent) {
+              await this.emailModel.createEmail(recipientEmailRecord);
+            }
           }
 
-          // 2. Trigger real-time notification for the recipient
+          // 2. Trigger real-time notification for the recipient (including self!)
+          // Self-sent emails should notify the sender that they have "received" their own email
           if (this.notificationService) {
+            console.log(`[Email] Notifying ${isSelfSent ? 'self' : 'recipient'} ${recipientAccount.userId} about new email`);
             this.notificationService.notifyNewEmail(recipientAccount.userId, recipientEmailRecord);
-
           }
         }
       } catch (internalNotifyError) {

@@ -452,9 +452,9 @@ export class EmailModel {
     if (accountId) rawWhere += ` AND e."accountId" = '${accountId}'`;
 
     if (folder === "inbox") {
-      rawWhere += ` AND e."isIncoming" = true AND (e."labelIds" IS NULL OR (NOT (e."labelIds"::text LIKE '%SPAM%') AND NOT (e."labelIds"::text LIKE '%JUNK%') AND NOT (e."labelIds"::text LIKE '%TRASH%') AND NOT (e."labelIds"::text LIKE '%ARCHIVE%')))`;
+      rawWhere += ` AND (e."isIncoming" = true OR e."folder" = 'INBOX') AND (e."labelIds" IS NULL OR (NOT (e."labelIds"::text LIKE '%SPAM%') AND NOT (e."labelIds"::text LIKE '%JUNK%') AND NOT (e."labelIds"::text LIKE '%TRASH%') AND NOT (e."labelIds"::text LIKE '%ARCHIVE%')))`;
     } else if (folder === "sent") {
-      rawWhere += ` AND e."isIncoming" = false AND (e."labelIds" IS NULL OR (NOT (e."labelIds"::text LIKE '%DRAFT%') AND NOT (e."labelIds"::text LIKE '%TRASH%')))`;
+      rawWhere += ` AND (e."isIncoming" = false OR e."folder" = 'SENT') AND (e."labelIds" IS NULL OR (NOT (e."labelIds"::text LIKE '%DRAFT%') AND NOT (e."labelIds"::text LIKE '%TRASH%')))`;
     } else if (folder === "spam") {
       rawWhere += ` AND (e."labelIds"::text LIKE '%SPAM%' OR e."labelIds"::text LIKE '%JUNK%') AND NOT (e."labelIds"::text LIKE '%TRASH%')`;
     } else if (folder === "drafts" || folder === "drfts") {
@@ -475,25 +475,34 @@ export class EmailModel {
       rawWhere += ` AND (e."subject" ILIKE '%${search}%' OR e."from_address" ILIKE '%${search}%' OR ec."body" ILIKE '%${search}%')`;
     }
 
+    // Deduplicate across accounts for the same user if no specific accountId is provided
+    // This handles cases where a user has multiple alias accounts for the same mailbox
+    const distinctClause = accountId ? '' : 'DISTINCT ON (e."messageId")';
+    const orderByClause = accountId ? 'ORDER BY e."sentAt" DESC' : 'ORDER BY e."messageId", e."sentAt" DESC';
+
     const totalResults = (await prisma.$queryRawUnsafe(`
-      SELECT COUNT(*) as total 
-      FROM emails e 
-      JOIN email_accounts ea ON e."accountId" = ea."id"
-      ${joinContent}
-      WHERE ${rawWhere}
+      SELECT COUNT(*) as total FROM (
+        SELECT ${distinctClause} e.id
+        FROM emails e 
+        JOIN email_accounts ea ON e."accountId" = ea."id"
+        ${joinContent}
+        WHERE ${rawWhere}
+      ) as sub
     `)) as { total: bigint }[];
     const total = (totalResults && totalResults.length > 0 && totalResults[0]) ? Number(totalResults[0].total) : 0;
 
-    // Optimized select: We DO NOT select body, htmlBody, attachments for the list view
-    // This significantly reduces payload size
+    // We use a subquery to support DISTINCT ON for deduplication while maintaining sentAt ordering
     const rows = (await prisma.$queryRawUnsafe(`
-      SELECT e.*, 
-        (SELECT COUNT(*)::int FROM emails e2 WHERE e2."threadId" = e."threadId" AND e."threadId" IS NOT NULL) as "threadCount"
-      FROM emails e 
-      JOIN email_accounts ea ON e."accountId" = ea."id"
-      ${joinContent}
-      WHERE ${rawWhere}
-      ORDER BY e."sentAt" DESC 
+      SELECT * FROM (
+        SELECT ${distinctClause} e.*, 
+          (SELECT COUNT(*)::int FROM emails e2 WHERE e2."threadId" = e."threadId" AND e."threadId" IS NOT NULL) as "threadCount"
+        FROM emails e 
+        JOIN email_accounts ea ON e."accountId" = ea."id"
+        ${joinContent}
+        WHERE ${rawWhere}
+        ${orderByClause}
+      ) as sub
+      ORDER BY sub."sentAt" DESC 
       LIMIT ${limit} OFFSET ${offset}
     `)) as any[];
 

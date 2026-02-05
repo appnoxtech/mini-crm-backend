@@ -1719,4 +1719,47 @@ export class EmailController {
       return ResponseHandler.error(res, error.message);
     }
   }
+
+  /**
+   * Test notification endpoint for debugging
+   */
+  async testNotification(req: AuthenticatedRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return ResponseHandler.unauthorized(res, "User not authenticated");
+      }
+
+      const userId = req.user.id.toString();
+      console.log(`🧪 [DEBUG] Triggering test notification for user: ${userId}`);
+
+      if (this.notificationService) {
+        const stats = this.notificationService.getConnectionStats();
+        const isConnected = this.notificationService.isUserConnected(userId);
+
+        this.notificationService.notifyUser(userId, {
+          type: 'new_email',
+          data: {
+            id: 'test-id-' + Date.now(),
+            from: 'System Test <test@example.com>',
+            subject: 'Test Notification arrived!',
+            snippet: 'This is a test notification to verify WebSocket connection.',
+            receivedAt: new Date(),
+            isRead: false
+          },
+          timestamp: new Date()
+        });
+
+        return ResponseHandler.success(res, {
+          stats,
+          isConnected,
+          message: "Test notification sent"
+        });
+      }
+
+      return ResponseHandler.error(res, "Notification service not initialized");
+    } catch (error: any) {
+      console.error("Error in testNotification:", error);
+      return ResponseHandler.internalError(res, "Failed to send test notification");
+    }
+  }
 }

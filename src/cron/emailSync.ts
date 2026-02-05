@@ -56,11 +56,6 @@ export function startEmailSyncJob(
 
                     const result = await emailService.processIncomingEmails(account);
                     console.log(`✅ Synced ${result.processed} emails for ${account.email}, errors: ${result.errors}`);
-
-                    // Notify user if there are new emails
-                    if (result.processed > 0 && notificationService) {
-                        notificationService.notifySyncStatus(account.userId, account.id, 'completed');
-                    }
                 } catch (err: any) {
                     console.error(`❌ Failed to sync emails for account ${accountRow.email}:`, err.message);
                 }
