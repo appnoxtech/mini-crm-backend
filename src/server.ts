@@ -7,6 +7,8 @@ import { startTokenRefreshJob } from './cron/tokenRefresh'; import { startEmailS
 import { startTrashCleanupJob } from './cron/trashCleanup';
 import os from 'os';
 import { initStructuredKBController } from './modules/ai-agent/controllers/structuredKBController';
+// Import Draft module (need to import these specifically if not already)
+import { DraftModel, DraftService, DraftController, createDraftRoutes } from './modules/email';
 
 // Load environment variables
 dotenv.config();
@@ -16,7 +18,6 @@ import { UserModel } from './modules/auth/models/User';
 import { OtpModel } from './modules/auth/models/Otp';
 import { LeadModel } from './modules/leads/models/Lead';
 import { EmailModel } from './modules/email/models/emailModel';
-import { DraftModel } from './modules/email/models/draftModel';
 import { PipelineModel } from './modules/pipelines/models/Pipeline';
 import { PipelineStageModel } from './modules/pipelines/models/PipelineStage';
 import { DealModel } from './modules/pipelines/models/Deal';
@@ -41,7 +42,6 @@ import { AuthService } from './modules/auth/services/authService';
 import { LeadService } from './modules/leads/services/leadService';
 import { EmailService } from './modules/email/services/emailService';
 import { EmailConnectorService } from './modules/email/services/emailConnectorService';
-import { DraftService } from './modules/email/services/draftService';
 import { OAuthService } from './modules/email/services/oauthService';
 import { EmailQueueService } from './modules/email/services/emailQueueService';
 import { RealTimeNotificationService } from './modules/email/services/realTimeNotificationService';
@@ -70,7 +70,6 @@ import { gmailPushService } from './modules/email/services/gmailPushService';
 import { AuthController } from './modules/auth/controllers/authController';
 import { LeadController } from './modules/leads/controllers/leadController';
 import { EmailController } from './modules/email/controllers/emailController';
-import { DraftController } from './modules/email/controllers/draftController';
 import { PipelineController } from './modules/pipelines/controllers/pipelineController';
 import { DealController } from './modules/pipelines/controllers/dealController';
 import { ProductController } from './modules/pipelines/controllers/productController';
@@ -84,7 +83,6 @@ import { ProfileController } from './modules/management/persons/controllers/prof
 import { createAuthRoutes } from './modules/auth/routes/authRoutes';
 import { createLeadRoutes } from './modules/leads/routes/leadRoutes';
 import { createEmailRoutes } from './modules/email/routes/emailRoutes';
-import { createDraftRoutes } from './modules/email/routes/draftRoutes';
 import { createSummarizationRoutes } from './modules/email/routes/summarizationRoutes';
 import { createPipelineRoutes } from './modules/pipelines/routes/pipelineRoutes';
 import { createDealRoutes } from './modules/pipelines/routes/dealRoutes';
@@ -105,7 +103,7 @@ import { EmailTrackingController } from './modules/email/controllers/emailTracki
 // Import data import module
 import { ImportModel, ImportService, ImportController, createImportRoutes } from './modules/import';
 
-// Import AI agent module
+// Import AI agent moduleen
 import { SuggestionOrchestratorService } from './modules/ai-agent/services/suggestionOrchestratorService';
 import { SuggestionController } from './modules/ai-agent/controllers/suggestionController';
 import { AIConfigController } from './modules/ai-agent/controllers/aiConfigController';
@@ -149,6 +147,11 @@ const io = new SocketIOServer(server, {
   }
 });
 const PORT = Number(process.env.PORT) || 4000;
+
+// Request tracking metrics
+let currentRequests = 0;
+let peakRequests = 0;
+let totalRequests = 0;
 
 
 // Initialize models
@@ -264,6 +267,27 @@ const notificationCalendarController = new NotificationController(eventNotificat
 initStructuredKBController();
 
 // Middleware
+app.use((req, res, next) => {
+  currentRequests++;
+  totalRequests++;
+
+  if (currentRequests > peakRequests) {
+    peakRequests = currentRequests;
+  }
+
+  // Log every 100 requests
+  if (totalRequests % 100 === 0) {
+    console.log(`📊 Stats - Current: ${currentRequests}, Peak: ${peakRequests}, Total: ${totalRequests}`);
+  }
+
+  // When response finishes, decrement counter
+  res.on('finish', () => {
+    currentRequests--;
+  });
+
+  next();
+});
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(corsMiddleware);
@@ -314,6 +338,17 @@ app.use('/api/calendar', createCalendarRoutes(calendarController, reminderCalend
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// Metrics endpoint
+app.get('/metrics', (req, res) => {
+  res.json({
+    current_concurrent_requests: currentRequests,
+    peak_concurrent_requests: peakRequests,
+    total_requests: totalRequests,
+    uptime_seconds: process.uptime(),
+    memory_usage_mb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
+  });
 });
 
 // Error handling middleware
