@@ -16,8 +16,16 @@ parentPort.on('message', async (task) => {
     try {
         if (type === 'parse') {
             // Ensure source is a string or Buffer
-            const sourceData = Buffer.isBuffer(source) ? source :
-                (typeof source === 'object' && source.type === 'Buffer' ? Buffer.from(source.data) : String(source));
+            let sourceData: any;
+            if (Buffer.isBuffer(source)) {
+                sourceData = source;
+            } else if (source instanceof Uint8Array) {
+                sourceData = Buffer.from(source);
+            } else if (typeof source === 'object' && source !== null && source.type === 'Buffer') {
+                sourceData = Buffer.from(source.data);
+            } else {
+                sourceData = String(source || "");
+            }
 
             const parsed = await simpleParser(sourceData);
 

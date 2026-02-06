@@ -472,7 +472,22 @@ export class EmailService {
               needsUpdate = true;
             }
 
+            // Body repair: if existing email has no body but we just parsed one, update it
+            const existingHasBody = (existing.body && existing.body !== "" && existing.body !== "Error parsing email content." && existing.body !== "[object Uint8Array]");
+            const parsedHasBody = (parsed.body && parsed.body !== "");
+
+            if (!existingHasBody && parsedHasBody) {
+              updates.body = parsed.body;
+              updates.snippet = this.generateSnippet(parsed);
+              needsUpdate = true;
+            }
+            if (!existing.htmlBody && parsed.htmlBody) {
+              updates.htmlBody = parsed.htmlBody;
+              needsUpdate = true;
+            }
+
             if (needsUpdate) {
+              (updates as any).messageId = existing.messageId; // Pass messageId for EmailContent update
               emailsToUpdate.push({ id: existing.id, updates });
             }
           }
@@ -480,9 +495,11 @@ export class EmailService {
           continue;
         }
 
-        // New email - reuse content if exists
+        // New email - reuse content if exists AND it's not empty
+        // This prevents overwriting a correctly parsed new email with a broken/empty record in the DB
         const existingContent = existingContentMap.get(parsed.messageId);
-        if (existingContent) {
+        if (existingContent && (existingContent.body || existingContent.htmlBody)) {
+          // Only reuse if the existing content seems valid
           parsed.body = existingContent.body;
           parsed.htmlBody = existingContent.htmlBody;
           parsed.attachments = existingContent.attachments;
@@ -922,7 +939,7 @@ export class EmailService {
     );
 
     return {
-      messageId: headers["message-id"],
+      messageId: this.normalizeMessageId(headers["message-id"] || message.id),
       providerId: message.id,
       threadId: message.threadId,
       from: headers["from"],
@@ -931,10 +948,16 @@ export class EmailService {
         .filter(Boolean)
         .map((s: string) => s.trim()),
       cc: headers["cc"]
-        ? headers["cc"].split(",").map((s: string) => s.trim())
+        ? headers["cc"]
+          .split(",")
+          .filter(Boolean)
+          .map((s: string) => s.trim())
         : undefined,
       bcc: headers["bcc"]
-        ? headers["bcc"].split(",").map((s: string) => s.trim())
+        ? headers["bcc"]
+          .split(",")
+          .filter(Boolean)
+          .map((s: string) => s.trim())
         : undefined,
       subject: headers["subject"] || "",
       body: this.extractTextFromGmailPayload(message.payload),
@@ -951,9 +974,29 @@ export class EmailService {
     } as any;
   }
 
+  private normalizeMessageId(messageId: string): string {
+    if (!messageId) return "";
+    let id = messageId.trim();
+    if (id.startsWith('<') && id.endsWith('>')) {
+      id = id.substring(1, id.length - 1);
+    }
+    return id.toLowerCase();
+  }
+
+  private stripHtml(html: string): string {
+    if (!html) return "";
+    return html
+      .replace(/<style[^>]*>.*<\/style>/gms, '')
+      .replace(/<script[^>]*>.*<\/script>/gms, '')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .trim();
+  }
+
   private parseOutlookMessage(message: any): Partial<Email> {
     return {
-      messageId: message.internetMessageId,
+      messageId: this.normalizeMessageId(message.internetMessageId || message.id),
       providerId: message.id,
       threadId: message.conversationId,
       from: message.from?.emailAddress?.address,
@@ -998,15 +1041,27 @@ export class EmailService {
 
     if (source) {
       try {
-        // Ensure source is a string or Buffer for simpleParser
-        // imapflow returns Buffer, but let's be safe
-        const sourceData = Buffer.isBuffer(source) ? source : String(source);
+        // Robust Buffer check
+        let sourceData: any;
+        if (Buffer.isBuffer(source)) {
+          sourceData = source;
+        } else if (source instanceof Uint8Array) {
+          sourceData = Buffer.from(source);
+        } else if (typeof source === 'object' && source !== null && source.type === 'Buffer' && Array.isArray(source.data)) {
+          sourceData = Buffer.from(source.data);
+        } else {
+          sourceData = String(source || "");
+        }
 
-        // Use worker thread for parsing to avoid blocking the event loop
+        // Use worker thread for parsing
         parsed = await this.parseWithWorker(sourceData);
 
-        body = parsed.text || ""; // Plain text body
-        // Prefer HTML, fallback to textAsHtml, then undefined
+        // Fallback: if text is missing but HTML is present, strip tags for body
+        body = parsed.text || "";
+        if (!body && (parsed.html || parsed.textAsHtml)) {
+          body = this.stripHtml(parsed.html || parsed.textAsHtml);
+        }
+
         htmlBody = parsed.html || parsed.textAsHtml || undefined;
 
         // Parse attachments (same structure as Gmail)
@@ -1067,7 +1122,7 @@ export class EmailService {
     }
 
     return {
-      messageId: parsed.messageId || message.envelope?.messageId,
+      messageId: this.normalizeMessageId(parsed.messageId || message.envelope?.messageId || `msg_${Date.now()}`),
       threadId: threadId,
       from: from,
       to: to,
@@ -1090,7 +1145,9 @@ export class EmailService {
   private extractTextFromGmailPayload(payload: any): string {
     if (!payload) return "";
     if (payload.mimeType === "text/plain" && payload.body?.data) {
-      return Buffer.from(payload.body.data, "base64").toString();
+      // Gmail uses URL-safe base64 (replace - with + and _ with /)
+      const base64 = payload.body.data.replace(/-/g, '+').replace(/_/g, '/');
+      return Buffer.from(base64, "base64").toString();
     }
     for (const part of payload.parts || []) {
       const text = this.extractTextFromGmailPayload(part);
@@ -1102,7 +1159,9 @@ export class EmailService {
   private extractHtmlFromGmailPayload(payload: any): string | undefined {
     if (!payload) return undefined;
     if (payload.mimeType === "text/html" && payload.body?.data) {
-      return Buffer.from(payload.body.data, "base64").toString();
+      // Gmail uses URL-safe base64 (replace - with + and _ with /)
+      const base64 = payload.body.data.replace(/-/g, '+').replace(/_/g, '/');
+      return Buffer.from(base64, "base64").toString();
     }
     for (const part of payload.parts || []) {
       const html = this.extractHtmlFromGmailPayload(part);
@@ -1154,6 +1213,16 @@ export class EmailService {
   private getGmailHeader(headers: any[], name: string): string | undefined {
     const header = headers.find(h => h.name.toLowerCase() === name.toLowerCase());
     return header ? header.value : undefined;
+  }
+
+  private generateSnippet(email: Partial<Email>): string {
+    if (email.snippet) return email.snippet;
+    if (email.body) {
+      return email.body.substring(0, 200).replace(/(\r\n|\n|\r)/gm, " ");
+    } else if (email.htmlBody) {
+      return this.stripHtml(email.htmlBody).substring(0, 200).replace(/(\r\n|\n|\r)/gm, " ").trim();
+    }
+    return "";
   }
 
   private async matchEmailWithCRMEntities(email: Partial<Email>): Promise<{

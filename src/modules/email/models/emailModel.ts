@@ -12,21 +12,40 @@ export class EmailModel {
 
   async createEmail(email: Email): Promise<Email> {
     // 1. Save or update unique content
+    // Check if we should update existing content (e.g. if it was empty before)
     await prisma.emailContent.upsert({
       where: { messageId: email.messageId },
       create: {
         messageId: email.messageId,
-        body: email.body,
+        body: email.body || "",
         htmlBody: email.htmlBody || null,
         attachments: (email.attachments as any) || [],
         createdAt: email.createdAt,
         updatedAt: email.updatedAt
       },
-      update: {}
+      update: {
+        // If the new body is not empty but the existing one might be, we could update.
+        // Prisma upsert 'update' doesn't easily support conditional setting based on existing DB value without a query.
+        // However, we can at least ensure we provide the data if we have it.
+        ...(email.body ? { body: email.body } : {}),
+        ...(email.htmlBody ? { htmlBody: email.htmlBody } : {}),
+        ...(email.attachments ? { attachments: (email.attachments as any) } : {}),
+        updatedAt: new Date()
+      }
     });
 
     // 2. Save account-specific metadata
-    const snippet = email.snippet || email.body.substring(0, 200).replace(/(\r\n|\n|\r)/gm, " ");
+    let snippet = email.snippet;
+    if (!snippet) {
+      if (email.body) {
+        snippet = email.body.substring(0, 200).replace(/(\r\n|\n|\r)/gm, " ");
+      } else if (email.htmlBody) {
+        // Simple tag stripping to get snippet from HTML
+        snippet = email.htmlBody.replace(/<[^>]*>/g, ' ').substring(0, 200).replace(/(\r\n|\n|\r)/gm, " ").trim();
+      } else {
+        snippet = "";
+      }
+    }
 
     const data: any = {
       id: email.id,
@@ -38,7 +57,8 @@ export class EmailModel {
       cc: (email.cc as any) || [],
       bcc: (email.bcc as any) || [],
       subject: email.subject,
-      body: email.body,
+      body: email.body || "",
+      htmlBody: email.htmlBody || null,
       snippet: snippet,
       isRead: email.isRead,
       isIncoming: email.isIncoming,
@@ -74,18 +94,42 @@ export class EmailModel {
     if (emails.length === 0) return { inserted: 0, skipped: 0 };
 
     try {
-      // 1. Prepare data for bulk insert
-      const contentData = emails.map(email => ({
-        messageId: email.messageId,
-        body: email.body,
-        htmlBody: email.htmlBody || null,
-        attachments: (email.attachments as any) || [],
-        createdAt: email.createdAt,
-        updatedAt: email.updatedAt
-      }));
+      // 1. Prepare unique content data (deduplicate by messageId)
+      // We use a Map to ensure only one record per messageId, preferring the one with a body if available
+      const contentMap = new Map<string, any>();
+      for (const email of emails) {
+        const existing = contentMap.get(email.messageId);
+        // Prefer content that has a body or htmlBody
+        const hasContent = (email.body && email.body.length > 0) || (email.htmlBody && email.htmlBody.length > 0);
+        const existingHasContent = existing && ((existing.body && existing.body.length > 0) || (existing.htmlBody && existing.htmlBody.length > 0));
 
+        if (!existing || (!existingHasContent && hasContent)) {
+          contentMap.set(email.messageId, {
+            messageId: email.messageId,
+            body: email.body || "",
+            htmlBody: email.htmlBody || null,
+            attachments: (email.attachments as any) || [],
+            createdAt: email.createdAt,
+            updatedAt: email.updatedAt
+          });
+        }
+      }
+
+      const contentData = Array.from(contentMap.values());
+
+      // 2. Prepare Email records
       const emailData = emails.map(email => {
-        const snippet = email.snippet || email.body.substring(0, 200).replace(/(\r\n|\n|\r)/gm, " ");
+        let snippet = email.snippet;
+        if (!snippet) {
+          if (email.body) {
+            snippet = email.body.substring(0, 200).replace(/(\r\n|\n|\r)/gm, " ");
+          } else if (email.htmlBody) {
+            snippet = email.htmlBody.replace(/<[^>]*>/g, ' ').substring(0, 200).replace(/(\r\n|\n|\r)/gm, " ").trim();
+          } else {
+            snippet = "";
+          }
+        }
+
         return {
           id: email.id,
           messageId: email.messageId,
@@ -96,7 +140,8 @@ export class EmailModel {
           cc: (email.cc as any) || [],
           bcc: (email.bcc as any) || [],
           subject: email.subject,
-          body: email.body,
+          body: email.body || "",
+          htmlBody: email.htmlBody || null,
           snippet: snippet,
           isRead: email.isRead,
           isIncoming: email.isIncoming,
@@ -115,20 +160,64 @@ export class EmailModel {
         };
       });
 
-      // 2. Execute transaction
-      await prisma.$transaction([
-        // Upsert content logic: createMany doesn't support ON CONFLICT well in standard Prisma without preview features or raw
-        // So we might stick to createMany with skipDuplicates: true if collisions are rare, or simple creates.
-        // For safety/upsert behavior in bulk, standard createMany(skipDuplicates: true) is best option for now.
-        prisma.emailContent.createMany({
-          data: contentData,
+      // 3. Find existing content records that might need repair
+      const messageIds = contentData.map(c => c.messageId);
+      const existingContent = await prisma.emailContent.findMany({
+        where: { messageId: { in: messageIds } },
+        select: { messageId: true, body: true }
+      });
+
+      const existingContentMap = new Map(existingContent.map(c => [c.messageId, c]));
+      const contentDataToCreate = [];
+      const contentDataToUpdate = [];
+
+      for (const content of contentData) {
+        const existing = existingContentMap.get(content.messageId);
+        if (!existing) {
+          contentDataToCreate.push(content);
+        } else {
+          const existingIsEmpty = !existing.body || existing.body === "" || existing.body === "Error parsing email content." || existing.body === "[object Uint8Array]";
+          const newHasBody = content.body && content.body !== "" && content.body !== "Error parsing email content.";
+          if (existingIsEmpty && newHasBody) {
+            contentDataToUpdate.push(content);
+          }
+        }
+      }
+
+      // 4. Build transaction operations
+      const operations: any[] = [];
+
+      // Create new content
+      if (contentDataToCreate.length > 0) {
+        operations.push(prisma.emailContent.createMany({
+          data: contentDataToCreate,
           skipDuplicates: true
-        }),
-        prisma.email.createMany({
-          data: emailData,
-          skipDuplicates: true
-        })
-      ]);
+        }));
+      }
+
+      // Update/Repair existing content
+      for (const content of contentDataToUpdate) {
+        operations.push(prisma.emailContent.update({
+          where: { messageId: content.messageId },
+          data: {
+            body: content.body,
+            htmlBody: content.htmlBody,
+            attachments: content.attachments as any,
+            updatedAt: new Date()
+          }
+        }));
+      }
+
+      // Upsert Emails - we use separate upserts if we want to support repair of existing Email table rows
+      // or createMany with skipDuplicates for speed. 
+      // For synchromization, we usually want createMany skipDuplicates: true for new emails.
+      operations.push(prisma.email.createMany({
+        data: emailData,
+        skipDuplicates: true
+      }));
+
+      // 5. Execute transaction
+      await prisma.$transaction(operations);
 
       return { inserted: emails.length, skipped: 0 };
     } catch (err) {
@@ -1018,15 +1107,34 @@ export class EmailModel {
     if (updates.updatedAt !== undefined) data.updatedAt = updates.updatedAt;
     else data.updatedAt = new Date();
 
+    if (updates.body !== undefined) data.body = updates.body;
+    if (updates.htmlBody !== undefined) data.htmlBody = updates.htmlBody;
+    if (updates.attachments !== undefined) data.attachments = updates.attachments as any;
+
     if (Object.keys(data).length === 0) return false;
 
     try {
-      await prisma.email.update({
+      // 1. Update the email record itself
+      const updatedEmail = await prisma.email.update({
         where: { id: emailId },
         data
       });
+
+      // 2. Also update the associated EmailContent if body/htmlBody/attachments provided
+      if (updates.body || updates.htmlBody || updates.attachments) {
+        await prisma.emailContent.update({
+          where: { messageId: updatedEmail.messageId },
+          data: {
+            ...(updates.body ? { body: updates.body } : {}),
+            ...(updates.htmlBody ? { htmlBody: updates.htmlBody } : {}),
+            ...(updates.attachments ? { attachments: updates.attachments as any } : {}),
+            updatedAt: new Date()
+          }
+        });
+      }
       return true;
     } catch (err) {
+      console.error(`Failed to update email ${emailId}:`, err);
       return false;
     }
   }
@@ -1046,7 +1154,7 @@ export class EmailModel {
     for (let i = 0; i < updates.length; i += BATCH_SIZE) {
       const batch = updates.slice(i, i + BATCH_SIZE);
 
-      const operations = batch.map(({ id, updates: upd }) => {
+      const operations = batch.flatMap(({ id, updates: upd }) => {
         const data: any = { updatedAt: now };
         if (upd.isRead !== undefined) data.isRead = upd.isRead;
         if (upd.labelIds !== undefined) data.labelIds = upd.labelIds as any;
@@ -1054,11 +1162,31 @@ export class EmailModel {
         if (upd.uid !== undefined) data.uid = upd.uid;
         if (upd.providerId !== undefined) data.providerId = upd.providerId;
         if (upd.sentAt !== undefined) data.sentAt = upd.sentAt;
+        if (upd.body !== undefined) data.body = upd.body;
+        if (upd.htmlBody !== undefined) data.htmlBody = upd.htmlBody;
+        if (upd.attachments !== undefined) data.attachments = upd.attachments as any;
 
-        return prisma.email.update({
+        const ops = [];
+        ops.push(prisma.email.update({
           where: { id },
           data
-        });
+        }));
+
+        // If messageId is available and we are updating content fields, update EmailContent too
+        const messageId = (upd as any).messageId;
+        if (messageId && (upd.body || upd.htmlBody || upd.attachments)) {
+          ops.push(prisma.emailContent.update({
+            where: { messageId },
+            data: {
+              ...(upd.body ? { body: upd.body } : {}),
+              ...(upd.htmlBody ? { htmlBody: upd.htmlBody } : {}),
+              ...(upd.attachments ? { attachments: upd.attachments as any } : {}),
+              updatedAt: now
+            }
+          }));
+        }
+
+        return ops;
       });
 
       try {
@@ -1177,7 +1305,7 @@ export class EmailModel {
       bcc: (row.bcc as any) || (row.bcc_addresses as any) || undefined,
       subject: row.subject,
       snippet: row.snippet || undefined,
-      body: content.body || row.body || "",
+      body: (content.body && content.body !== "Error parsing email content.") ? content.body : (row.body || ""),
       htmlBody: content.htmlBody || row.htmlBody || undefined,
       attachments: (content.attachments as any) || (row.attachments as any) || [],
       isRead: row.isRead,

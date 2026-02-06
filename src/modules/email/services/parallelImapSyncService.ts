@@ -100,10 +100,10 @@ export class ParallelImapSyncService {
             if (path.toUpperCase() === 'INBOX') {
                 label = 'INBOX';
                 priority = priorityMap.INBOX ?? 10;
-            } else if (specialUse === '\\Sent' || name === 'Sent' || name === 'Sent Items' || name === 'Sent Mail' || path === 'INBOX.Sent Messages') {
+            } else if (specialUse === '\\Sent' || name === 'Sent' || name === 'Sent Items' || name === 'Sent Mail' || path === 'INBOX.Sent Messages' || path.toUpperCase().includes('SENT')) {
                 label = 'SENT';
                 priority = priorityMap.SENT ?? 8;
-            } else if (specialUse === '\\Drafts' || name.toLowerCase().includes('draft') || path === 'INBOX.Drafts') {
+            } else if (specialUse === '\\Drafts' || name.toLowerCase().includes('draft') || path === 'INBOX.Drafts' || path.toUpperCase().includes('DRAFT')) {
                 label = 'DRAFT';
                 priority = priorityMap.DRAFT ?? 5;
             } else if (specialUse === '\\Junk' || name.toLowerCase().includes('spam') || name.toLowerCase().includes('junk') || path === 'INBOX.Spam') {
@@ -309,8 +309,8 @@ export class ParallelImapSyncService {
      */
     async quickSync(account: EmailAccount, lastSyncTime?: Date): Promise<SyncResult> {
         return this.syncEmails(account, {
-            maxConnections: 20,
-            batchSize: 5,
+            maxConnections: 5,
+            batchSize: 50,
             lastSyncTime,
             foldersToSync: ['INBOX', 'SENT', 'DRAFT'],
         });
