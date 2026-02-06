@@ -9,6 +9,8 @@ import nodemailer from 'nodemailer';
 import { DraftModel } from "../models/draftModel";
 import { EmailDraft } from "../models/draftTypes";
 import { v4 as uuidv4 } from 'uuid';
+import { Worker } from 'worker_threads';
+import path from 'path';
 
 export class EmailService {
   private emailModel: EmailModel;
@@ -17,6 +19,10 @@ export class EmailService {
   private activityModel?: DealActivityModel;
   private historicalSyncService: HistoricalSyncService;
   private draftModel: DraftModel;
+  private worker: Worker | null = null;
+  // Determine correct path based on environment (ts-node vs compiled js)
+  // path.extname(__filename) will be .ts in dev and .js in prod usually
+  private workerScriptPath = path.join(__dirname, `../workers/emailParser${path.extname(__filename)}`);
 
   constructor(
     emailModel: EmailModel,
@@ -35,6 +41,63 @@ export class EmailService {
       connectorService,
       notificationService
     );
+    this.initializeWorker();
+  }
+
+  private initializeWorker() {
+    try {
+      // Support ts-node in development
+      const options: any = {};
+
+      // If the worker script is .ts, we need to register ts-node
+      if (this.workerScriptPath.endsWith('.ts')) {
+        options.execArgv = ["-r", "ts-node/register"];
+      }
+
+      this.worker = new Worker(this.workerScriptPath, options);
+      this.worker.on('error', (err) => console.error('Email Parser Worker Error:', err));
+
+      this.setupWorkerMessageHandler();
+    } catch (e) {
+      console.error('Failed to initialize email worker:', e);
+    }
+  }
+
+  private pendingTasks: Map<string, { resolve: (val: any) => void; reject: (err: any) => void }> = new Map();
+
+  private setupWorkerMessageHandler() {
+    if (!this.worker) return;
+    this.worker.on('message', (msg) => {
+      const task = this.pendingTasks.get(msg.id);
+      if (task) {
+        if (msg.success) {
+          task.resolve(msg.data);
+        } else {
+          task.reject(new Error(msg.error));
+        }
+        this.pendingTasks.delete(msg.id);
+      }
+    });
+  }
+
+  private parseWithWorker(source: any): Promise<any> {
+    if (!this.worker) {
+      // Fallback if worker failed to init
+      return simpleParser(source);
+    }
+    return new Promise((resolve, reject) => {
+      const id = uuidv4();
+      this.pendingTasks.set(id, { resolve, reject });
+      this.worker!.postMessage({ id, source, type: 'parse' });
+
+      // Timeout safety
+      setTimeout(() => {
+        if (this.pendingTasks.has(id)) {
+          this.pendingTasks.delete(id);
+          reject(new Error('Worker timeout'));
+        }
+      }, 30000);
+    });
   }
 
   public getEmailModel(): EmailModel {
@@ -251,7 +314,6 @@ export class EmailService {
     account: EmailAccount
   ): Promise<{ processed: number; errors: number; newEmails: number }> {
 
-
     const provider = account.provider;
     let rawEmails: any[] = [];
     let processed = 0;
@@ -259,8 +321,6 @@ export class EmailService {
     let newEmails = 0;
 
     try {
-
-
       // Notify user that sync is in progress
       if (this.notificationService) {
         this.notificationService.notifySyncStatus(account.userId, account.id, 'starting');
@@ -272,24 +332,17 @@ export class EmailService {
         : undefined;
 
       if (provider === "gmail") {
-
-        // Fetch up to 100 emails for better sync coverage
         rawEmails = await this.connectorService.fetchGmailEmails(
           account,
           syncSince,
-          100 // Increased from default 50 for better sync coverage
+          100
         );
       } else if (provider === "outlook") {
-
         rawEmails = await this.connectorService.fetchOutlookEmails(
           account,
           syncSince
         );
       } else if (provider === "imap" || provider === "custom") {
-
-
-        // Use parallel sync for IMAP for better performance
-        // Quick sync if we have a lastSyncAt, full sync otherwise
         const useQuickSync = !!account.lastSyncAt;
         rawEmails = await this.connectorService.fetchIMAPEmailsParallel(
           account,
@@ -298,27 +351,218 @@ export class EmailService {
         );
       }
 
+      if (rawEmails.length === 0) {
+        // No emails to process, just update sync time
+        await this.emailModel.updateEmailAccount(account.id, {
+          lastSyncAt: new Date(),
+        });
 
+        if (this.notificationService) {
+          this.notificationService.notifySyncStatus(account.userId, account.id, 'completed', {
+            processed: 0,
+            newEmails: 0,
+            errors: 0
+          });
+        }
+        return { processed: 0, errors: 0, newEmails: 0 };
+      }
 
-      for (const rawEmail of rawEmails) {
-        try {
-          const result = await this.processSingleEmail(account, rawEmail);
-          if (result) {
-            processed++;
-            if (result.isNew) newEmails++;
+      // ============ OPTIMIZED BATCH PROCESSING ============
+      const startTime = Date.now();
+      console.log(`[EmailSync] Starting optimized batch processing for ${rawEmails.length} emails`);
+
+      // Step 1: Parse all emails in parallel with concurrency limit
+      const PARSE_CONCURRENCY = 10;
+      const parsedEmails: { raw: any; parsed: Partial<Email> | null; error?: string }[] = [];
+
+      for (let i = 0; i < rawEmails.length; i += PARSE_CONCURRENCY) {
+        const batch = rawEmails.slice(i, i + PARSE_CONCURRENCY);
+        const batchResults = await Promise.allSettled(
+          batch.map(async (rawEmail) => {
+            try {
+              const parsed = await this.parseRawEmail(rawEmail, provider);
+              return { raw: rawEmail, parsed };
+            } catch (error: any) {
+              return { raw: rawEmail, parsed: null, error: error.message };
+            }
+          })
+        );
+
+        for (const result of batchResults) {
+          if (result.status === 'fulfilled') {
+            parsedEmails.push(result.value);
+          } else {
+            parsedEmails.push({ raw: null, parsed: null, error: result.reason?.message });
+            errors++;
           }
-        } catch (error: any) {
-          console.error("Error processing individual email:", error);
-          errors++;
-          // Continue processing other emails
         }
       }
+
+      console.log(`[EmailSync] Parsed ${parsedEmails.length} emails in ${Date.now() - startTime}ms`);
+
+      // Step 2: Extract messageIds for batch existence check
+      const messageIds = parsedEmails
+        .filter(e => e.parsed?.messageId)
+        .map(e => e.parsed!.messageId!);
+
+      // Step 3: Batch fetch existing emails (1 query instead of N)
+      const existingEmailsMap = await this.emailModel.findEmailsByMessageIds(messageIds, account.id);
+      console.log(`[EmailSync] Found ${existingEmailsMap.size} existing emails out of ${messageIds.length}`);
+
+      // Step 4: For IMAP, also check by UID (batch)
+      let existingUidsSet = new Set<string>();
+      if (provider === 'imap' || provider === 'custom') {
+        const folderUidPairs = parsedEmails
+          .filter(e => e.parsed && (e.parsed as any).uid && (e.parsed as any).folder)
+          .map(e => ({ folder: (e.parsed as any).folder, uid: (e.parsed as any).uid }));
+
+        if (folderUidPairs.length > 0) {
+          existingUidsSet = await this.emailModel.findExistingImapUids(account.id, folderUidPairs);
+        }
+      }
+
+      // Step 5: Batch fetch existing content for deduplication
+      const existingContentMap = await this.emailModel.findExistingContentByMessageIds(messageIds);
+      console.log(`[EmailSync] Found ${existingContentMap.size} existing content records`);
+
+      // Step 6: Separate new emails from existing ones
+      const emailsToCreate: Email[] = [];
+      const emailsToUpdate: { id: string; updates: any }[] = [];
+      const newEmailNotifications: Email[] = [];
+
+      for (const { raw, parsed, error } of parsedEmails) {
+        if (error || !parsed || !parsed.messageId) {
+          if (error) errors++;
+          continue;
+        }
+
+        // Check if exists by messageId
+        const existing = existingEmailsMap.get(parsed.messageId);
+
+        // Also check by IMAP UID if applicable
+        const uidKey = (parsed as any).uid && (parsed as any).folder
+          ? `${(parsed as any).folder}:${(parsed as any).uid}`
+          : null;
+        const existsByUid = uidKey ? existingUidsSet.has(uidKey) : false;
+
+        if (existing || existsByUid) {
+          // Email exists - check if we need updates
+          if (existing) {
+            let needsUpdate = false;
+            const updates: any = {};
+
+            if (!existing.providerId && parsed.providerId) {
+              updates.providerId = parsed.providerId;
+              needsUpdate = true;
+            }
+            if ((parsed as any).uid && existing.uid === null) {
+              updates.uid = (parsed as any).uid;
+              needsUpdate = true;
+            }
+            if ((parsed as any).folder && existing.folder !== (parsed as any).folder) {
+              // Skip folder move if keeping email in INBOX
+              if (!(existing.folder === 'INBOX' && (parsed as any).folder === 'SENT')) {
+                updates.folder = (parsed as any).folder;
+                updates.labelIds = [(parsed as any).folder];
+                needsUpdate = true;
+              }
+            }
+            if (existing.isRead !== parsed.isRead) {
+              updates.isRead = parsed.isRead;
+              needsUpdate = true;
+            }
+
+            if (needsUpdate) {
+              emailsToUpdate.push({ id: existing.id, updates });
+            }
+          }
+          processed++;
+          continue;
+        }
+
+        // New email - reuse content if exists
+        const existingContent = existingContentMap.get(parsed.messageId);
+        if (existingContent) {
+          parsed.body = existingContent.body;
+          parsed.htmlBody = existingContent.htmlBody;
+          parsed.attachments = existingContent.attachments;
+        }
+
+        // Match with CRM entities (lightweight)
+        const { contactIds, dealIds, accountEntityIds } =
+          await this.matchEmailWithCRMEntities(parsed);
+
+        const isIncoming = this.determineEmailDirection(parsed, account, raw);
+        const uniqueEmailId = `${account.id}-${parsed.messageId}`;
+
+        const email: Email = {
+          id: uniqueEmailId,
+          messageId: parsed.messageId,
+          accountId: account.id,
+          from: parsed.from!,
+          to: parsed.to || [],
+          subject: parsed.subject || "",
+          body: parsed.body || "",
+          isRead: parsed.isRead ?? true,
+          isIncoming: isIncoming,
+          sentAt: parsed.sentAt ? new Date(parsed.sentAt) : new Date(),
+          receivedAt: parsed.receivedAt ? new Date(parsed.receivedAt) : new Date(),
+          contactIds,
+          dealIds,
+          accountEntityIds,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        // Add optional fields
+        if (parsed.threadId) email.threadId = parsed.threadId;
+        if (parsed.cc) email.cc = parsed.cc;
+        if (parsed.bcc) email.bcc = parsed.bcc;
+        if (parsed.htmlBody) email.htmlBody = parsed.htmlBody;
+        if (parsed.attachments) email.attachments = parsed.attachments;
+        if (parsed.labelIds) email.labelIds = parsed.labelIds;
+        if ((parsed as any).uid) email.uid = (parsed as any).uid;
+        if ((parsed as any).folder) email.folder = (parsed as any).folder;
+        if (parsed.providerId) email.providerId = parsed.providerId;
+
+        emailsToCreate.push(email);
+
+        // Queue notification for new incoming emails
+        if (isIncoming || email.folder === 'INBOX') {
+          newEmailNotifications.push(email);
+        }
+
+        processed++;
+        newEmails++;
+      }
+
+      // Step 7: Bulk insert new emails (single transaction)
+      if (emailsToCreate.length > 0) {
+        console.log(`[EmailSync] Bulk inserting ${emailsToCreate.length} new emails`);
+        await this.emailModel.bulkCreateEmails(emailsToCreate);
+      }
+
+      // Step 8: Batch update existing emails
+      if (emailsToUpdate.length > 0) {
+        console.log(`[EmailSync] Updating ${emailsToUpdate.length} existing emails`);
+        await this.emailModel.batchUpdateEmails(emailsToUpdate);
+      }
+
+      // Step 9: Send notifications for new emails (async, don't block)
+      if (this.notificationService && newEmailNotifications.length > 0) {
+        console.log(`[EmailSync] Sending ${newEmailNotifications.length} notifications`);
+        for (const email of newEmailNotifications) {
+          this.notificationService.notifyNewEmail(account.userId, email);
+        }
+      }
+
+      console.log(`[EmailSync] Batch processing completed in ${Date.now() - startTime}ms`);
+      // ============ END OPTIMIZED BATCH PROCESSING ============
 
       // Refresh flags for existing emails
       if (provider === "imap" || provider === "custom") {
         await this.refreshEmailFlags(account);
       } else if (provider === "gmail" && account.lastHistoryId) {
-        // Incremental sync via history for label/status changes
         await this.syncGmailHistory(account);
       } else if (provider === "outlook") {
         await this.refreshOutlookFlags(account);
@@ -328,8 +572,6 @@ export class EmailService {
       await this.emailModel.updateEmailAccount(account.id, {
         lastSyncAt: new Date(),
       });
-
-
 
       // Notify user about sync completion
       if (this.notificationService) {
@@ -759,7 +1001,9 @@ export class EmailService {
         // Ensure source is a string or Buffer for simpleParser
         // imapflow returns Buffer, but let's be safe
         const sourceData = Buffer.isBuffer(source) ? source : String(source);
-        parsed = await simpleParser(sourceData);
+
+        // Use worker thread for parsing to avoid blocking the event loop
+        parsed = await this.parseWithWorker(sourceData);
 
         body = parsed.text || ""; // Plain text body
         // Prefer HTML, fallback to textAsHtml, then undefined

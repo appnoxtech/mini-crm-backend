@@ -2,6 +2,7 @@ import { ImapFlow, MailboxLockObject } from 'imapflow';
 import { EmailAccount } from '../models/types';
 import { EmailService } from './emailService';
 import { RealTimeNotificationService } from './realTimeNotificationService';
+import { EmailQueueService } from './emailQueueService';
 
 interface IMAPConnection {
     client: ImapFlow;
@@ -22,6 +23,7 @@ export class IMAPIdleService {
     private connections: Map<string, IMAPConnection> = new Map();
     private emailService: EmailService | null = null;
     private notificationService: RealTimeNotificationService | null = null;
+    private emailQueueService: EmailQueueService | null = null;
     private isShuttingDown: boolean = false;
     private readonly MAX_RECONNECT_ATTEMPTS = 5;
     private readonly RECONNECT_DELAY_MS = 5000;
@@ -36,11 +38,12 @@ export class IMAPIdleService {
      */
     initialize(
         emailService: EmailService,
-        notificationService: RealTimeNotificationService
+        notificationService: RealTimeNotificationService,
+        emailQueueService: EmailQueueService
     ): void {
         this.emailService = emailService;
         this.notificationService = notificationService;
-
+        this.emailQueueService = emailQueueService;
     }
 
     /**
@@ -194,12 +197,14 @@ export class IMAPIdleService {
         }
 
         try {
-
-
-            // Trigger a quick sync to fetch the new emails
-            const result = await this.emailService.processIncomingEmails(account);
-
-
+            // Queue the sync job instead of processing immediately (non-blocking)
+            if (this.emailQueueService) {
+                this.emailQueueService.queueEmailSync(account.id, account.userId, 'high');
+            } else if (this.emailService) {
+                // Fallback for immediate processing if queue service is missing (should not happen)
+                console.warn(`[IMAP IDLE] Queue service missing for ${account.email}, falling back to immediate sync`);
+                await this.emailService.processIncomingEmails(account);
+            }
 
             // Notifications are sent inside processIncomingEmails via notifyNewEmail
         } catch (error: any) {

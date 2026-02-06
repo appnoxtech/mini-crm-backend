@@ -3,13 +3,72 @@ import { EmailConnectorService } from './emailConnectorService';
 import { RealTimeNotificationService } from './realTimeNotificationService';
 import { Email, EmailAccount } from '../models/types';
 import { simpleParser } from 'mailparser';
+import { Worker } from 'worker_threads';
+import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
 
 export class HistoricalSyncService {
+    private worker: Worker | null = null;
+    // Determine correct path based on environment (ts-node vs compiled js)
+    private workerScriptPath = path.join(__dirname, `../workers/emailParser${path.extname(__filename)}`);
+
     constructor(
         private emailModel: EmailModel,
         private connectorService: EmailConnectorService,
         private notificationService?: RealTimeNotificationService
-    ) { }
+    ) {
+        this.initializeWorker();
+    }
+
+    private initializeWorker() {
+        try {
+            const options: any = {};
+            if (this.workerScriptPath.endsWith('.ts')) {
+                options.execArgv = ["-r", "ts-node/register"];
+            }
+
+            this.worker = new Worker(this.workerScriptPath, options);
+            this.worker.on('error', (err) => console.error('[HistoricalSync] Parser Worker Error:', err));
+            this.setupWorkerMessageHandler();
+        } catch (e) {
+            console.error('[HistoricalSync] Failed to initialize worker:', e);
+        }
+    }
+
+    private pendingTasks: Map<string, { resolve: (val: any) => void; reject: (err: any) => void }> = new Map();
+
+    private setupWorkerMessageHandler() {
+        if (!this.worker) return;
+        this.worker.on('message', (msg) => {
+            const task = this.pendingTasks.get(msg.id);
+            if (task) {
+                if (msg.success) {
+                    task.resolve(msg.data);
+                } else {
+                    task.reject(new Error(msg.error));
+                }
+                this.pendingTasks.delete(msg.id);
+            }
+        });
+    }
+
+    private parseWithWorker(source: any): Promise<any> {
+        if (!this.worker) {
+            return simpleParser(source);
+        }
+        return new Promise((resolve, reject) => {
+            const id = uuidv4();
+            this.pendingTasks.set(id, { resolve, reject });
+            this.worker!.postMessage({ id, source, type: 'parse' });
+
+            setTimeout(() => {
+                if (this.pendingTasks.has(id)) {
+                    this.pendingTasks.delete(id);
+                    reject(new Error('Worker timeout'));
+                }
+            }, 60000); // 60s timeout for history
+        });
+    }
 
     /**
      * Quick initial load: Fetch latest 100 emails immediately (for fast UI display)
@@ -295,10 +354,11 @@ export class HistoricalSyncService {
         if (source) {
             try {
                 const sourceData = Buffer.isBuffer(source) ? source : String(source);
-                parsed = await simpleParser(sourceData);
+                parsed = await this.parseWithWorker(sourceData);
                 body = parsed.text || "";
                 htmlBody = parsed.html || parsed.textAsHtml || undefined;
             } catch (err) {
+                console.warn('[HistoricalSync] Parse error:', err);
                 body = "Error parsing email content.";
             }
         }

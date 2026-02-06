@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import express from 'express';
+import compression from 'compression';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { corsMiddleware } from './shared/middleware/auth';
@@ -224,7 +225,7 @@ configService.initializeSystem().catch(error => {
 });
 
 // Initialize instant notification services
-imapIdleService.initialize(emailService, notificationService);
+imapIdleService.initialize(emailService, notificationService, emailQueueService);
 gmailPushService.initialize(emailService, notificationService);
 
 // Initialize controllers
@@ -264,6 +265,7 @@ const notificationCalendarController = new NotificationController(eventNotificat
 initStructuredKBController();
 
 // Middleware
+app.use(compression());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(corsMiddleware);

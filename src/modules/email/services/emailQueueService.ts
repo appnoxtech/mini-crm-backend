@@ -58,11 +58,23 @@ export class EmailQueueService {
     this.isProcessing = true;
 
     try {
-      // Process sync queue
-      await this.processSyncQueue();
+      // Process up to MAX_CONCURRENT_SYNCS jobs
+      const MAX_CONCURRENT_SYNCS = 5;
+      const activeJobs = []; // Track active promises if needed, but here we just loop
 
-      // Process send queue
-      await this.processSendQueue();
+      while (this.syncQueue.length > 0 && this.activeSyncs < MAX_CONCURRENT_SYNCS) {
+        const job = this.syncQueue.shift();
+        if (!job) break;
+
+        this.activeSyncs++;
+
+        // Process in background (don't await here, just track promise)
+        this.processSingleSyncJob(job).finally(() => {
+          this.activeSyncs--;
+          // Trigger next if queue has items
+          this.processQueues(); // Check if we can pick up more
+        });
+      }
     } catch (error) {
       console.error('Error processing email queues:', error);
     } finally {
@@ -70,38 +82,25 @@ export class EmailQueueService {
     }
   }
 
-  private async processSyncQueue(): Promise<void> {
-    if (this.syncQueue.length === 0) {
-      // Auto-schedule email sync for all active accounts
-      await this.scheduleEmailSyncForAllAccounts();
-      if (this.syncQueue.length === 0) return;
-    }
+  private activeSyncs = 0;
 
-    const job = this.syncQueue.shift();
-    if (!job) return;
-
+  private async processSingleSyncJob(job: EmailSyncJob): Promise<void> {
     try {
-
-
       const account = await this.emailModel.getEmailAccountById(job.accountId);
       if (!account || !account.isActive) {
-
         return;
       }
 
-      // Pre-flight check: if provider needs IMAP but it's missing, log and skip instead of failing and re-queuing
+      // Pre-flight check: if provider needs IMAP but it's missing
       if ((account.provider === 'imap' || account.provider === 'custom') && !account.imapConfig) {
-        console.error(`Skipping sync for ${account.email}: IMAP configuration is missing for ${account.provider} account.`);
+        console.error(`Skipping sync for ${account.email}: IMAP configuration is missing.`);
         return;
       }
 
-      const result = await this.emailService.processIncomingEmails(account);
-
+      await this.emailService.processIncomingEmails(account);
     } catch (error: any) {
       console.error(`Failed to sync emails for account ${job.accountId}:`, error);
 
-      // Re-queue with lower priority if it's a temporary failure
-      // Permanent failures (like missing config which we now handle above, or authentication errors) shouldn't be re-queued indefinitely
       const errorMessage = error.message || '';
       const isPermanentFailure =
         errorMessage.includes('configuration is missing') ||
@@ -112,6 +111,12 @@ export class EmailQueueService {
         this.queueEmailSync(job.accountId, job.userId, 'low');
       }
     }
+  }
+
+  // kept for compatibility but logic moved to processSingleSyncJob
+  private async processSyncQueue(): Promise<void> {
+    // This is now handled inside processQueues concurrently
+    return;
   }
 
   private async processSendQueue(): Promise<void> {
