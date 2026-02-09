@@ -3,13 +3,72 @@ import { EmailConnectorService } from './emailConnectorService';
 import { RealTimeNotificationService } from './realTimeNotificationService';
 import { Email, EmailAccount } from '../models/types';
 import { simpleParser } from 'mailparser';
+import { Worker } from 'worker_threads';
+import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
 
 export class HistoricalSyncService {
+    private worker: Worker | null = null;
+    // Determine correct path based on environment (ts-node vs compiled js)
+    private workerScriptPath = path.join(__dirname, `../workers/emailParser${path.extname(__filename)}`);
+
     constructor(
         private emailModel: EmailModel,
         private connectorService: EmailConnectorService,
         private notificationService?: RealTimeNotificationService
-    ) { }
+    ) {
+        this.initializeWorker();
+    }
+
+    private initializeWorker() {
+        try {
+            const options: any = {};
+            if (this.workerScriptPath.endsWith('.ts')) {
+                options.execArgv = ["-r", "ts-node/register"];
+            }
+
+            this.worker = new Worker(this.workerScriptPath, options);
+            this.worker.on('error', (err) => console.error('[HistoricalSync] Parser Worker Error:', err));
+            this.setupWorkerMessageHandler();
+        } catch (e) {
+            console.error('[HistoricalSync] Failed to initialize worker:', e);
+        }
+    }
+
+    private pendingTasks: Map<string, { resolve: (val: any) => void; reject: (err: any) => void }> = new Map();
+
+    private setupWorkerMessageHandler() {
+        if (!this.worker) return;
+        this.worker.on('message', (msg) => {
+            const task = this.pendingTasks.get(msg.id);
+            if (task) {
+                if (msg.success) {
+                    task.resolve(msg.data);
+                } else {
+                    task.reject(new Error(msg.error));
+                }
+                this.pendingTasks.delete(msg.id);
+            }
+        });
+    }
+
+    private parseWithWorker(source: any): Promise<any> {
+        if (!this.worker) {
+            return simpleParser(source);
+        }
+        return new Promise((resolve, reject) => {
+            const id = uuidv4();
+            this.pendingTasks.set(id, { resolve, reject });
+            this.worker!.postMessage({ id, source, type: 'parse' });
+
+            setTimeout(() => {
+                if (this.pendingTasks.has(id)) {
+                    this.pendingTasks.delete(id);
+                    reject(new Error('Worker timeout'));
+                }
+            }, 60000); // 60s timeout for history
+        });
+    }
 
     /**
      * Quick initial load: Fetch latest 100 emails immediately (for fast UI display)
@@ -59,7 +118,8 @@ export class HistoricalSyncService {
                             uid: raw.uid,
                             folder: folder,
                             labelIds: [folder.toUpperCase()],
-                            attachments: parsed.attachments || []
+                            attachments: parsed.attachments || [],
+                            snippet: this.generateSnippet(parsed)
                         };
 
                         allEmails.push(email);
@@ -188,7 +248,8 @@ export class HistoricalSyncService {
                                 uid: raw.uid,
                                 folder: folder,
                                 labelIds: [folder.toUpperCase()],
-                                attachments: parsed.attachments || []
+                                attachments: parsed.attachments || [],
+                                snippet: this.generateSnippet(parsed)
                             };
 
                             emailsToSave.push(email);
@@ -266,7 +327,8 @@ export class HistoricalSyncService {
                     createdAt: new Date(),
                     updatedAt: new Date(),
                     uid: raw.uid,
-                    folder: folder
+                    folder: folder,
+                    snippet: this.generateSnippet(parsed)
                 };
 
                 emailsToSave.push(email);
@@ -285,29 +347,90 @@ export class HistoricalSyncService {
         });
     }
 
+    private generateSnippet(email: Partial<Email>): string {
+        if (email.snippet) return email.snippet;
+        if (email.body) {
+            return email.body.substring(0, 200).replace(/(\r\n|\n|\r)/gm, " ");
+        } else if (email.htmlBody) {
+            return this.stripHtml(email.htmlBody).substring(0, 200).replace(/(\r\n|\n|\r)/gm, " ").trim();
+        }
+        return "";
+    }
+
     // Helper methods
+    private normalizeMessageId(messageId: string): string {
+        if (!messageId) return "";
+        let id = messageId.trim();
+        if (id.startsWith('<') && id.endsWith('>')) {
+            id = id.substring(1, id.length - 1);
+        }
+        return id.toLowerCase();
+    }
+
+    private stripHtml(html: string): string {
+        if (!html) return "";
+        return html
+            .replace(/<style[^>]*>.*<\/style>/gms, '')
+            .replace(/<script[^>]*>.*<\/script>/gms, '')
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .replace(/&nbsp;/g, ' ')
+            .trim();
+    }
+
     private async parseIMAPMessage(message: any): Promise<Partial<Email>> {
         const source = message.source;
         let body = "";
         let htmlBody: string | undefined;
         let parsed: any = {};
+        let attachments: any[] = [];
 
         if (source) {
             try {
-                const sourceData = Buffer.isBuffer(source) ? source : String(source);
-                parsed = await simpleParser(sourceData);
+                // Robust Buffer check
+                let sourceData: any;
+                if (Buffer.isBuffer(source)) {
+                    sourceData = source;
+                } else if (source instanceof Uint8Array) {
+                    sourceData = Buffer.from(source);
+                } else if (typeof source === 'object' && source !== null && source.type === 'Buffer' && Array.isArray(source.data)) {
+                    sourceData = Buffer.from(source.data);
+                } else {
+                    sourceData = String(source || "");
+                }
+
+                parsed = await this.parseWithWorker(sourceData);
+
+                // Fallback: if text is missing but HTML is present, strip tags for body
                 body = parsed.text || "";
+                if (!body && (parsed.html || parsed.textAsHtml)) {
+                    body = this.stripHtml(parsed.html || parsed.textAsHtml);
+                }
+
                 htmlBody = parsed.html || parsed.textAsHtml || undefined;
+
+                if (parsed.attachments && parsed.attachments.length > 0) {
+                    attachments = parsed.attachments.map((att: any) => ({
+                        id: uuidv4(),
+                        filename: att.filename || 'unnamed',
+                        contentType: att.contentType || 'application/octet-stream',
+                        size: att.size || 0,
+                        contentId: att.contentId || att.cid,
+                        content: att.content ? (Buffer.isBuffer(att.content) ? att.content.toString('base64') : att.content) : undefined,
+                        encoding: 'base64'
+                    }));
+                }
             } catch (err) {
+                console.warn('[HistoricalSync] Parse error:', err);
                 body = "Error parsing email content.";
             }
         }
 
-        const from = parsed.from?.text || message.envelope?.from?.[0]?.address;
+        const from = parsed.from?.text || message.envelope?.from?.[0]?.address || "";
         const to = parsed.to?.value?.map((a: any) => a.name ? `${a.name} <${a.address}>` : a.address) ||
-            (message.envelope?.to || []).map((a: any) => a.address);
+            (message.envelope?.to || []).map((a: any) => a.address) || [];
         const subject = parsed.subject || message.envelope?.subject || "";
-        const date = parsed.date || message.envelope?.date;
+        const date = parsed.date || message.envelope?.date || new Date();
 
         let isRead = true;
         if (message.flags) {
@@ -319,13 +442,14 @@ export class HistoricalSyncService {
         }
 
         return {
-            messageId: parsed.messageId || message.envelope?.messageId,
+            messageId: this.normalizeMessageId(parsed.messageId || message.envelope?.messageId || `hist_${Date.now()}_${Math.random()}`),
             threadId: parsed.inReplyTo || undefined,
             from,
             to,
             subject,
             body,
             htmlBody,
+            attachments,
             sentAt: date,
             receivedAt: date,
             isRead,

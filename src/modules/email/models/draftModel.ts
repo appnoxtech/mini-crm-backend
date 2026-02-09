@@ -83,14 +83,17 @@ export class DraftModel {
             accountId,
             scheduledOnly = false,
             includeTrashed = false,
+            trashedOnly = false,
         } = options;
 
         const where: any = {
             userId: parseInt(userId)
         };
 
-        // Exclude trashed drafts by default
-        if (!includeTrashed) {
+        // Filter by trash status
+        if (trashedOnly) {
+            where.isTrashed = true;
+        } else if (!includeTrashed) {
             where.isTrashed = false;
         }
 
@@ -241,7 +244,7 @@ export class DraftModel {
      * Get all trashed drafts
      */
     async getTrashedDrafts(userId: string, limit = 50, offset = 0): Promise<{ drafts: EmailDraft[]; total: number }> {
-        return this.listDrafts(userId, { limit, offset, includeTrashed: true, scheduledOnly: false });
+        return this.listDrafts(userId, { limit, offset, trashedOnly: true, scheduledOnly: false });
     }
 
     /**

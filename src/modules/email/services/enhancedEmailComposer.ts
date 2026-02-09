@@ -161,8 +161,13 @@ export class EnhancedEmailComposer {
 
   private injectTrackingPixel(html: string, emailId: string): string {
     const baseUrl = process.env.TRACKING_BASE_URL || 'http://localhost:4000';
-    const pixelUrl = `${baseUrl}/api/emails/track/open/${emailId}`;
-    const pixelTag = `<img src="${pixelUrl}" width="1" height="1" style="display:none !important;" alt="" />`;
+    // Add cache-busting timestamp to prevent caching issues
+    const timestamp = Date.now();
+    const pixelUrl = `${baseUrl}/api/emails/track/open/${emailId}?t=${timestamp}`;
+
+    // Use a more natural-looking image tag that mimics a signature or footer element
+    // This helps avoid spam filters that look for typical tracking pixel patterns
+    const pixelTag = `<img src="${pixelUrl}" width="1" height="1" border="0" style="height:1px!important;width:1px!important;border-width:0!important;margin:0!important;padding:0!important;" alt="" />`;
 
     if (html.includes('</body>')) {
       return html.replace('</body>', `${pixelTag}</body>`);

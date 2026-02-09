@@ -102,4 +102,5 @@ export interface ListDraftsOptions {
     accountId?: string;
     scheduledOnly?: boolean;
     includeTrashed?: boolean;  // Include trashed drafts in results
+    trashedOnly?: boolean;     // Only return trashed drafts
 }

@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,40 +7,34 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ============================================
-// Auth Module
-// ============================================
-
 model User {
-  id              Int      @id @default(autoincrement())
-  email           String   @unique
-  name            String
-  passwordHash    String
-  profileImg      Json?
-  phone           String?
-  role            String?  @default("user")
-  dateFormat      String?
-  timezone        String?
-  language        String?
-  defaultCurrency String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  // Relationships
-  emailAccounts   EmailAccount[]
-  leads           Lead[]
-  pipelines       Pipeline[]
-  deals           Deal[]         @relation("DealOwner")
-  assignedDeals   Deal[]         @relation("DealAssigned")
-  calls           Call[]
-  callEvents      CallEvent[]
-  assignedCalls   Call[]         @relation("CallAssigned")
-  dealHistories   DealHistory[]
-  labels          Label[]
-  activities      DealActivity[]
+  id                Int             @id @default(autoincrement())
+  email             String          @unique
+  name              String
+  passwordHash      String
+  profileImg        Json?
+  phone             String?
+  role              String?         @default("user")
+  dateFormat        String?
+  timezone          String?
+  language          String?
+  defaultCurrency   String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
   generalActivities Activity[]
-  imports         Import[]
-  calendarEvents  CalendarEvent[]
+  calendarEvents    CalendarEvent[]
+  callEvents        CallEvent[]
+  assignedCalls     Call[]          @relation("CallAssigned")
+  calls             Call[]
+  activities        DealActivity[]
+  dealHistories     DealHistory[]
+  assignedDeals     Deal[]          @relation("DealAssigned")
+  deals             Deal[]          @relation("DealOwner")
+  emailAccounts     EmailAccount[]
+  imports           Import[]
+  labels            Label[]
+  leads             Lead[]
+  pipelines         Pipeline[]
 
   @@map("users")
 }
@@ -58,70 +49,61 @@ model Otp {
   @@map("otps")
 }
 
-// ============================================
-// Email Module
-// ============================================
-
 model EmailAccount {
-  id            String    @id @default(uuid())
+  id            String       @id @default(uuid())
   userId        Int
   email         String
   provider      String
   accessToken   String?
   refreshToken  String?
-  imapConfig    String?   // JSON string
-  smtpConfig    String?   // JSON string
-  isActive      Boolean   @default(true)
+  imapConfig    String?
+  smtpConfig    String?
+  isActive      Boolean      @default(true)
   lastSyncAt    DateTime?
   lastHistoryId String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  user          User      @relation(fields: [userId], references: [id])
-  emails        Email[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  user          User         @relation(fields: [userId], references: [id])
   drafts        EmailDraft[]
+  emails        Email[]
 
   @@map("email_accounts")
 }
 
 model Email {
-  id              String   @id @default(uuid())
-  messageId       String
-  threadId        String?
-  accountId       String
-  from            String   @map("from_address")
-  to              Json     @map("to_addresses")
-  cc              Json?    @map("cc_addresses")
-  bcc             Json?    @map("bcc_addresses")
-  subject         String
-  body            String
-  htmlBody        String?
-  isRead          Boolean  @default(false)
-  isIncoming      Boolean  @default(true)
-  sentAt          DateTime
-  receivedAt      DateTime?
-  contactIds      Json?
-  dealIds         Json?
+  id               String               @id @default(uuid())
+  messageId        String
+  threadId         String?
+  accountId        String
+  from             String               @map("from_address")
+  to               Json                 @map("to_addresses")
+  cc               Json?                @map("cc_addresses")
+  bcc              Json?                @map("bcc_addresses")
+  subject          String
+  body             String
+  htmlBody         String?
+  isRead           Boolean              @default(false)
+  isIncoming       Boolean              @default(true)
+  sentAt           DateTime
+  receivedAt       DateTime?
+  contactIds       Json?
+  dealIds          Json?
   accountEntityIds Json?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  labelIds        Json?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  labelIds         Json?
   attachments      Json?
-  uid             Int?
-  folder          String?
-  providerId      String?
-  snippet         String?
-  
-  // Tracking fields
-  opens           Int      @default(0)
-  clicks          Int      @default(0)
-  lastOpenedAt    DateTime?
-  lastClickedAt   DateTime?
-
-  account         EmailAccount @relation(fields: [accountId], references: [id])
-  content         EmailContent @relation(fields: [messageId], references: [messageId])
-  trackingEvents  EmailTrackingEvent[]
-  // Note: threadId is intentionally NOT a foreign key - thread summaries are created asynchronously
+  uid              Int?
+  folder           String?
+  providerId       String?
+  snippet          String?
+  clicks           Int                  @default(0)
+  lastClickedAt    DateTime?
+  lastOpenedAt     DateTime?
+  opens            Int                  @default(0)
+  trackingEvents   EmailTrackingEvent[]
+  account          EmailAccount         @relation(fields: [accountId], references: [id])
+  content          EmailContent         @relation(fields: [messageId], references: [messageId])
 
   @@unique([messageId, accountId])
   @@index([accountId, sentAt(sort: Desc)])
@@ -131,12 +113,11 @@ model Email {
 model EmailTrackingEvent {
   id        String   @id @default(uuid())
   emailId   String
-  type      String   // 'open' or 'click'
+  type      String
   ipAddress String?
   userAgent String?
-  metadata  Json?    // For clicks, store the URL
+  metadata  Json?
   createdAt DateTime @default(now())
-
   email     Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
 
   @@index([emailId])
@@ -150,56 +131,54 @@ model EmailContent {
   attachments Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-
   emails      Email[]
 
   @@map("email_contents")
 }
 
 model ThreadSummary {
-  threadId         String   @id @map("thread_id")
+  threadId         String    @id @map("thread_id")
   summary          String
-  keyPoints        Json?    @map("key_points")
-  actionItems      Json?    @map("action_items")
+  keyPoints        Json?     @map("key_points")
+  actionItems      Json?     @map("action_items")
   sentiment        String?
   participants     Json?
-  processingTime   Int?     @map("processing_time")
-  modelVersion     String?  @map("model_version")
-  status           String   @default("pending")
-  runpodJobId      String?  @map("runpod_job_id")
+  processingTime   Int?      @map("processing_time")
+  modelVersion     String?   @map("model_version")
+  status           String    @default("pending")
+  runpodJobId      String?   @map("runpod_job_id")
   submittedAt      DateTime? @map("submitted_at")
   completedAt      DateTime? @map("completed_at")
-  lastSummarizedAt DateTime @map("last_summarized_at")
+  lastSummarizedAt DateTime  @map("last_summarized_at")
 
   @@map("thread_summaries")
 }
 
 model EmailDraft {
-  id                   String   @id @default(uuid())
+  id                   String       @id @default(uuid())
   accountId            String
   userId               Int
-  from                 String?
-  toRecipients         Json     @map("to_recipients")
-  ccRecipients         Json?    @map("cc_recipients")
-  bccRecipients        Json?    @map("bcc_recipients")
+  toRecipients         Json         @map("to_recipients")
+  ccRecipients         Json?        @map("cc_recipients")
+  bccRecipients        Json?        @map("bcc_recipients")
   subject              String
   body                 String
-  htmlBody             String?  @map("html_body")
+  htmlBody             String?      @map("html_body")
   attachments          Json?
-  replyToMessageId     String?  @map("reply_to_message_id")
-  forwardFromMessageId String?  @map("forward_from_message_id")
-  threadId             String?  @map("thread_id")
-  contactIds           Json?    @map("contact_ids")
-  dealIds              Json?    @map("deal_ids")
-  accountEntityIds     Json?    @map("account_entity_ids")
-  isScheduled          Boolean  @default(false) @map("is_scheduled")
-  scheduledFor         DateTime? @map("scheduled_for")
-  providerId           String?   @map("provider_id")
-  remoteUid            String?   @map("remote_uid")
-  isTrashed            Boolean  @default(false) @map("is_trashed")
-  createdAt            DateTime @default(now()) @map("created_at")
-  updatedAt            DateTime @updatedAt @map("updated_at")
-
+  replyToMessageId     String?      @map("reply_to_message_id")
+  forwardFromMessageId String?      @map("forward_from_message_id")
+  threadId             String?      @map("thread_id")
+  contactIds           Json?        @map("contact_ids")
+  dealIds              Json?        @map("deal_ids")
+  accountEntityIds     Json?        @map("account_entity_ids")
+  isScheduled          Boolean      @default(false) @map("is_scheduled")
+  scheduledFor         DateTime?    @map("scheduled_for")
+  createdAt            DateTime     @default(now()) @map("created_at")
+  updatedAt            DateTime     @updatedAt @map("updated_at")
+  providerId           String?      @map("provider_id")
+  remoteUid            String?      @map("remote_uid")
+  from                 String?
+  isTrashed            Boolean      @default(false) @map("is_trashed")
   account              EmailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -211,89 +190,77 @@ model EmailDraft {
   @@map("email_drafts")
 }
 
-// ============================================
-// Leads Module
-// ============================================
-
 model Lead {
-  id        Int      @id @default(autoincrement())
+  id        Int           @id @default(autoincrement())
   name      String
   company   String?
   value     Float?
-  stage     String   @default("OPEN")
+  stage     String        @default("OPEN")
   notes     String?
   userId    Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
   closedAt  DateTime?
-
-  user      User     @relation(fields: [userId], references: [id])
   history   LeadHistory[]
+  user      User          @relation(fields: [userId], references: [id])
 
   @@map("leads")
 }
 
 model LeadHistory {
-  id      Int      @id @default(autoincrement())
-  leadId  Int
-  type    String
-  text    String
-  at      DateTime @default(now())
-
-  lead    Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  id     Int      @id @default(autoincrement())
+  leadId Int
+  type   String
+  text   String
+  at     DateTime @default(now())
+  lead   Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
   @@map("lead_history")
 }
 
-// ============================================
-// Pipelines & Deals Module
-// ============================================
-
 model Pipeline {
-  id          Int      @id @default(autoincrement())
+  id          Int             @id @default(autoincrement())
   name        String
   description String?
   userId      Int
-  isDefault   Boolean  @default(false)
-  isActive    Boolean  @default(true)
-  dealRotting Boolean  @default(false)
-  rottenDays  Int      @default(30)
+  isDefault   Boolean         @default(false)
+  isActive    Boolean         @default(true)
+  dealRotting Boolean         @default(false)
+  rottenDays  Int             @default(30)
   ownerIds    Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  stages      PipelineStage[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
   deals       Deal[]
   labels      Label[]
+  stages      PipelineStage[]
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("pipelines")
 }
 
 model PipelineStage {
-  id          Int      @id @default(autoincrement())
+  id          Int           @id @default(autoincrement())
   pipelineId  Int
   name        String
   orderIndex  Int
   rottenDays  Int?
-  probability Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  pipeline    Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
-  deals       Deal[]
+  probability Int           @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
   historyFrom DealHistory[] @relation("HistoryFromStage")
   historyTo   DealHistory[] @relation("HistoryToStage")
+  deals       Deal[]
+  pipeline    Pipeline      @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
 
   @@unique([pipelineId, orderIndex])
   @@map("pipeline_stages")
 }
 
 model Deal {
-  id                Int      @id @default(autoincrement())
+  id                Int            @id @default(autoincrement())
   title             String
-  value             Float?   @default(0)
-  currency          String?  @default("USD")
+  value             Float?         @default(0)
+  currency          String?        @default("USD")
   pipelineId        Int
   stageId           Int
   email             Json?
@@ -301,15 +268,15 @@ model Deal {
   description       String?
   expectedCloseDate DateTime?
   actualCloseDate   DateTime?
-  probability       Int      @default(0)
+  probability       Int            @default(0)
   userId            Int
   assignedTo        Int?
-  status            String?  @default("OPEN")
+  status            String?        @default("OPEN")
   lostReason        String?
   lastActivityAt    DateTime?
-  isRotten          Boolean  @default(false)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  isRotten          Boolean        @default(false)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
   deletedAt         DateTime?
   archivedAt        DateTime?
   personId          Int?
@@ -318,24 +285,23 @@ model Deal {
   labelIds          Json?
   customFields      Json?
   ownerIds          Json?
-  isVisibleToAll    Boolean @default(true)
-
-  user              User     @relation("DealOwner", fields: [userId], references: [id], onDelete: Cascade)
-  assignedUser      User?    @relation("DealAssigned", fields: [assignedTo], references: [id])
-  pipeline          Pipeline @relation(fields: [pipelineId], references: [id])
-  stage             PipelineStage @relation(fields: [stageId], references: [id])
+  isVisibleToAll    Boolean        @default(true)
   calls             Call[]
-  history           DealHistory[]
-  products          Product[]
   activities        DealActivity[]
-  person            Person?        @relation(fields: [personId], references: [id])
+  history           DealHistory[]
+  assignedUser      User?          @relation("DealAssigned", fields: [assignedTo], references: [id])
   organization      Organization?  @relation(fields: [organizationId], references: [id])
+  person            Person?        @relation(fields: [personId], references: [id])
+  pipeline          Pipeline       @relation(fields: [pipelineId], references: [id])
+  stage             PipelineStage  @relation(fields: [stageId], references: [id])
+  user              User           @relation("DealOwner", fields: [userId], references: [id], onDelete: Cascade)
+  products          Product[]
 
   @@map("deals")
 }
 
 model DealHistory {
-  id            Int      @id @default(autoincrement())
+  id            Int            @id @default(autoincrement())
   dealId        Int
   userId        Int
   eventType     String
@@ -346,19 +312,18 @@ model DealHistory {
   stageDuration Float?
   description   String?
   metadata      String?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime       @default(now())
   leftAt        DateTime?
-
-  deal          Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
-  user          User     @relation(fields: [userId], references: [id])
+  deal          Deal           @relation(fields: [dealId], references: [id], onDelete: Cascade)
   fromStage     PipelineStage? @relation("HistoryFromStage", fields: [fromStageId], references: [id])
   toStage       PipelineStage? @relation("HistoryToStage", fields: [toStageId], references: [id])
+  user          User           @relation(fields: [userId], references: [id])
 
   @@map("deal_history")
 }
 
 model Product {
-  id          Int      @id @default(autoincrement())
+  id          Int       @id @default(autoincrement())
   dealId      Int
   userId      Int
   title       String
@@ -369,16 +334,15 @@ model Product {
   discount    Float?
   billingDate DateTime?
   description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  deal        Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deal        Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
 
   @@map("products")
 }
 
 model Label {
-  id             Int      @id @default(autoincrement())
+  id             Int           @id @default(autoincrement())
   value          String
   color          String?
   orderIndex     Int
@@ -386,13 +350,12 @@ model Label {
   userId         Int?
   organizationId Int?
   personId       Int?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  user           User?    @relation(fields: [userId], references: [id])
-  pipeline       Pipeline? @relation(fields: [pipelineId], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
   organization   Organization? @relation(fields: [organizationId], references: [id])
-  person         Person?   @relation(fields: [personId], references: [id])
+  person         Person?       @relation(fields: [personId], references: [id])
+  pipeline       Pipeline?     @relation(fields: [pipelineId], references: [id])
+  user           User?         @relation(fields: [userId], references: [id])
 
   @@map("labels")
 }
@@ -422,16 +385,11 @@ model DealActivity {
   completedAt  DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
-
   dealRelation Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("deal_activities")
 }
-
-// ============================================
-// Management Module
-// ============================================
 
 model Organization {
   id                Int       @id @default(autoincrement())
@@ -450,10 +408,9 @@ model Organization {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   deletedAt         DateTime?
-  
-  persons           Person[]
-  labels            Label[]
   deals             Deal[]
+  labels            Label[]
+  persons           Person[]
 
   @@map("organisations")
 }
@@ -469,13 +426,12 @@ model Person {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
-
-  organization   Organization? @relation(fields: [organizationId], references: [id])
   calls          Call[]
+  deals          Deal[]
+  labels         Label[]
   userEmails     PersonEmail[]
   userPhones     PersonPhone[]
-  labels         Label[]
-  deals          Deal[]
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
   @@map("persons")
 }
@@ -484,7 +440,6 @@ model PersonEmail {
   id       Int    @id @default(autoincrement())
   personId Int
   email    String @unique
-
   person   Person @relation(fields: [personId], references: [id], onDelete: Cascade)
 
   @@map("person_emails")
@@ -494,28 +449,23 @@ model PersonPhone {
   id       Int    @id @default(autoincrement())
   personId Int
   phone    String @unique
-
   person   Person @relation(fields: [personId], references: [id], onDelete: Cascade)
 
   @@map("person_phones")
 }
 
-// ============================================
-// Calls Module
-// ============================================
-
 model Call {
-  id               Int      @id @default(autoincrement())
-  twilioCallSid    String?  @unique
+  id               Int               @id @default(autoincrement())
+  twilioCallSid    String?           @unique
   twilioAccountSid String?
-  direction        String   @default("outbound")
-  status           String   @default("initiated")
+  direction        String            @default("outbound")
+  status           String            @default("initiated")
   fromNumber       String
   toNumber         String
   startTime        DateTime?
   answerTime       DateTime?
   endTime          DateTime?
-  duration         Int      @default(0)
+  duration         Int               @default(0)
   ringDuration     Int?
   userId           Int
   contactId        Int?
@@ -526,37 +476,34 @@ model Call {
   summary          String?
   queueName        String?
   assignedAgentId  Int?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
   deletedAt        DateTime?
-
-  user             User     @relation(fields: [userId], references: [id])
-  assignedAgent    User?    @relation("CallAssigned", fields: [assignedAgentId], references: [id])
-  contact          Person?  @relation(fields: [contactId], references: [id])
-  deal             Deal?    @relation(fields: [dealId], references: [id])
-  // Lead relation intentionally omitted if not fully defined yet, can add later
+  events           CallEvent[]
   participants     CallParticipant[]
   recordings       CallRecording[]
-  events           CallEvent[]
+  assignedAgent    User?             @relation("CallAssigned", fields: [assignedAgentId], references: [id])
+  contact          Person?           @relation(fields: [contactId], references: [id])
+  deal             Deal?             @relation(fields: [dealId], references: [id])
+  user             User              @relation(fields: [userId], references: [id])
 
   @@map("calls")
 }
 
 model CallParticipant {
-  id             Int      @id @default(autoincrement())
+  id             Int       @id @default(autoincrement())
   callId         Int
   participantSid String?
   phoneNumber    String
   name           String?
-  role           String   @default("callee")
+  role           String    @default("callee")
   joinTime       DateTime?
   leaveTime      DateTime?
-  muted          Boolean  @default(false)
-  hold           Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  call           Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
+  muted          Boolean   @default(false)
+  hold           Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  call           Call      @relation(fields: [callId], references: [id], onDelete: Cascade)
 
   @@map("call_participants")
 }
@@ -577,18 +524,17 @@ model CallRecording {
   transcriptionUrl    String?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
-
   call                Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
 
   @@map("call_recordings")
 }
 
 model EmailSyncState {
-  id             String   @id @default(uuid())
-  accountId      String
-  folder         String
-  lastSyncedUid  Int      @default(0)
-  updatedAt      DateTime @updatedAt
+  id            String   @id @default(uuid())
+  accountId     String
+  folder        String
+  lastSyncedUid Int      @default(0)
+  updatedAt     DateTime @updatedAt
 
   @@unique([accountId, folder])
   @@map("email_sync_state")
@@ -602,40 +548,35 @@ model CallEvent {
   triggeredBy Int?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-
   call        Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
   user        User?    @relation(fields: [triggeredBy], references: [id])
 
   @@map("call_events")
 }
-// ============================================
-// Import Module
-// ============================================
 
 model Import {
-  id                Int           @id @default(autoincrement())
+  id                Int             @id @default(autoincrement())
   userId            Int
   entityType        String
   fileName          String
   fileFormat        String
-  status            String        @default("pending")
-  totalRows         Int           @default(0)
-  processedRows     Int           @default(0)
-  successCount      Int           @default(0)
-  errorCount        Int           @default(0)
-  skippedCount      Int           @default(0)
-  duplicateHandling String        @default("skip")
+  status            String          @default("pending")
+  totalRows         Int             @default(0)
+  processedRows     Int             @default(0)
+  successCount      Int             @default(0)
+  errorCount        Int             @default(0)
+  skippedCount      Int             @default(0)
+  duplicateHandling String          @default("skip")
   mapping           Json?
   filePath          String?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
   completedAt       DateTime?
   errorSummary      String?
-
-  user              User          @relation(fields: [userId], references: [id])
   errors            ImportError[]
   records           ImportRecord[]
   staging           ImportStaging[]
+  user              User            @relation(fields: [userId], references: [id])
 
   @@map("imports")
 }
@@ -649,7 +590,6 @@ model ImportError {
   errorType  String
   message    String
   createdAt  DateTime @default(now())
-
   import     Import   @relation(fields: [importId], references: [id], onDelete: Cascade)
 
   @@map("import_errors")
@@ -659,10 +599,9 @@ model ImportRecord {
   id        Int      @id @default(autoincrement())
   importId  Int
   entityId  Int
-  action    String   // 'created' or 'updated'
+  action    String
   createdAt DateTime @default(now())
-
-  import     Import   @relation(fields: [importId], references: [id], onDelete: Cascade)
+  import    Import   @relation(fields: [importId], references: [id], onDelete: Cascade)
 
   @@map("import_records")
 }
@@ -680,62 +619,54 @@ model ImportTemplate {
 }
 
 model ImportStaging {
-  id         Int      @id @default(autoincrement())
-  importId   Int
-  data       Json
-  rowNumber  Int
-  createdAt  DateTime @default(now())
-
-  import     Import   @relation(fields: [importId], references: [id], onDelete: Cascade)
+  id        Int      @id @default(autoincrement())
+  importId  Int
+  data      Json
+  rowNumber Int
+  createdAt DateTime @default(now())
+  import    Import   @relation(fields: [importId], references: [id], onDelete: Cascade)
 
   @@map("import_staging")
 }
 
-// ============================================
-// Calendar Module
-// ============================================
-
 model CalendarEvent {
-  id            Int             @id @default(autoincrement())
+  id            Int                 @id @default(autoincrement())
   userId        Int
   title         String
   description   String?
   startTime     DateTime
   endTime       DateTime
   location      String?
-  isAllDay      Boolean         @default(false)
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  isAllDay      Boolean             @default(false)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
   deletedAt     DateTime?
-
-  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notifications EventNotification[]
   reminders     EventReminder[]
   shares        EventShare[]
-  notifications EventNotification[]
 
   @@map("calendar_events")
 }
 
 model EventReminder {
-  id                    Int      @id @default(autoincrement())
+  id                    Int                 @id @default(autoincrement())
   eventId               Int
   reminderMinutesBefore Int
-  isDefault             Boolean  @default(false)
-  createdAt             DateTime @default(now())
-
-  event                 CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  isDefault             Boolean             @default(false)
+  createdAt             DateTime            @default(now())
   notifications         EventNotification[]
+  event                 CalendarEvent       @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@map("event_reminders")
 }
 
 model EventShare {
-  id               Int      @id @default(autoincrement())
+  id               Int           @id @default(autoincrement())
   eventId          Int
   sharedWithUserId Int
-  participantType  String   @default("user") // 'user' or 'person'
-  createdAt        DateTime @default(now())
-
+  participantType  String        @default("user")
+  createdAt        DateTime      @default(now())
   event            CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@unique([eventId, sharedWithUserId, participantType])
@@ -743,19 +674,18 @@ model EventShare {
 }
 
 model EventNotification {
-  id            Int      @id @default(autoincrement())
+  id            Int           @id @default(autoincrement())
   eventId       Int
   reminderId    Int
   userId        Int
-  userType      String   @default("user") // 'user' or 'person'
+  userType      String        @default("user")
   scheduledAt   DateTime
-  status        String   @default("pending")
+  status        String        @default("pending")
   inAppSentAt   DateTime?
   emailSentAt   DateTime?
   failureReason String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
   event         CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
   reminder      EventReminder @relation(fields: [reminderId], references: [id], onDelete: Cascade)
 
@@ -763,21 +693,16 @@ model EventNotification {
   @@map("event_notifications")
 }
 
-// ============================================
-// AI Agent Module
-// ============================================
-
 model PricingTier {
   id            String         @id @default(uuid())
   name          String
   basePrice     Float
   currency      String         @default("EUR")
-  features      Json?          // Array of strings
+  features      Json?
   contractTerms String?
   isActive      Boolean        @default(true)
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
-
   discountRules DiscountRule[]
 
   @@map("pricing_tiers")
@@ -786,26 +711,25 @@ model PricingTier {
 model DiscountRule {
   id         String      @id @default(uuid())
   tierId     String
-  type       String      // volume, duration, seasonal, loyalty
+  type       String
   percentage Float
-  conditions Json?       // Object with specific rules
+  conditions Json?
   createdAt  DateTime    @default(now())
-
   tier       PricingTier @relation(fields: [tierId], references: [id], onDelete: Cascade)
 
   @@map("discount_rules")
 }
 
 model BrandGuidelines {
-  id                  String   @id @default("default")
-  tone                String   @default("professional")
-  voiceCharacteristics Json?    // Array of strings
-  openingPhrases      Json?    // Array of strings
-  closingPhrases      Json?    // Array of strings
-  signatureTemplate   String?
-  ctaPatterns         Json?    // Array of strings
-  avoidPhrases        Json?    // Array of strings
-  updatedAt           DateTime @default(now()) @updatedAt
+  id                   String   @id @default("default")
+  tone                 String   @default("professional")
+  voiceCharacteristics Json?
+  openingPhrases       Json?
+  closingPhrases       Json?
+  signatureTemplate    String?
+  ctaPatterns          Json?
+  avoidPhrases         Json?
+  updatedAt            DateTime @default(now()) @updatedAt
 
   @@map("brand_guidelines")
 }
@@ -815,7 +739,7 @@ model KnowledgeBase {
   category  String
   topic     String
   content   String
-  keywords  Json?    // Array of strings
+  keywords  Json?
   updatedAt DateTime @default(now()) @updatedAt
 
   @@map("knowledge_base")
@@ -826,13 +750,13 @@ model ClientProfile {
   dealId            Int?
   personId          Int?
   organizationId    Int?
-  requirements      Json?    // Array of strings
+  requirements      Json?
   budgetMin         Float?
   budgetMax         Float?
   timeline          String?
-  decisionMakers    Json?    // Array of strings
-  objections        Json?    // Array of strings
-  preferences       Json?    // Object
+  decisionMakers    Json?
+  objections        Json?
+  preferences       Json?
   relationshipStage String?
   maturityScore     Float?
   lastUpdated       DateTime @default(now()) @updatedAt
@@ -852,9 +776,9 @@ model EmailSuggestion {
   confidenceScore Float?
   reasoning       String?
   qualityScore    Float?
-  issues          Json?     // Array of objects
+  issues          Json?
   status          String    @default("generated")
-  userEdits       String?   // JSON object or string
+  userEdits       String?
   sentAt          DateTime?
   createdAt       DateTime  @default(now())
 
@@ -874,17 +798,16 @@ model Activity {
   location        String?
   videoCallLink   String?
   createdBy       Int
-  assignedUserIds Json?    // Array of user IDs
+  assignedUserIds Json?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-
   user            User     @relation(fields: [createdBy], references: [id])
 
   @@map("activities")
 }
 
 model StructuredKnowledgeBase {
-  id                         String   @id @default("default")
+  id                           String   @id @default("default")
   category_1_company_profile   Json?
   category_2_products_services Json?
   category_3_sales_process     Json?
@@ -894,21 +817,21 @@ model StructuredKnowledgeBase {
   category_7_operations        Json?
   category_8_resources         Json?
   category_9_pricing           Json?
-  version                    Int      @default(1)
-  completion_percent         Float    @default(0)
-  updated_at                 DateTime @default(now()) @updatedAt
+  version                      Int      @default(1)
+  completion_percent           Float    @default(0)
+  updated_at                   DateTime @default(now()) @updatedAt
 
   @@map("structured_knowledge_base")
 }
 
 model StructuredKBVersion {
-  id               String   @id @default(uuid())
-  kbId             String   @map("kb_id")
-  version          Int
-  fullKBSnapshot   Json     @map("full_kb_snapshot")
-  changedSections  Json     @map("changed_sections")
-  changedBy        String?  @map("changed_by")
-  changeTimestamp  DateTime @default(now()) @map("change_timestamp")
+  id              String   @id @default(uuid())
+  kbId            String   @map("kb_id")
+  version         Int
+  fullKBSnapshot  Json     @map("full_kb_snapshot")
+  changedSections Json     @map("changed_sections")
+  changedBy       String?  @map("changed_by")
+  changeTimestamp DateTime @default(now()) @map("change_timestamp")
 
   @@unique([kbId, version])
   @@map("structured_kb_versions")

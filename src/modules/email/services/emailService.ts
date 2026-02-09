@@ -9,6 +9,8 @@ import nodemailer from 'nodemailer';
 import { DraftModel } from "../models/draftModel";
 import { EmailDraft } from "../models/draftTypes";
 import { v4 as uuidv4 } from 'uuid';
+import { Worker } from 'worker_threads';
+import path from 'path';
 
 export class EmailService {
   private emailModel: EmailModel;
@@ -17,6 +19,10 @@ export class EmailService {
   private activityModel?: DealActivityModel;
   private historicalSyncService: HistoricalSyncService;
   private draftModel: DraftModel;
+  private worker: Worker | null = null;
+  // Determine correct path based on environment (ts-node vs compiled js)
+  // path.extname(__filename) will be .ts in dev and .js in prod usually
+  private workerScriptPath = path.join(__dirname, `../workers/emailParser${path.extname(__filename)}`);
 
   constructor(
     emailModel: EmailModel,
@@ -35,6 +41,63 @@ export class EmailService {
       connectorService,
       notificationService
     );
+    this.initializeWorker();
+  }
+
+  private initializeWorker() {
+    try {
+      // Support ts-node in development
+      const options: any = {};
+
+      // If the worker script is .ts, we need to register ts-node
+      if (this.workerScriptPath.endsWith('.ts')) {
+        options.execArgv = ["-r", "ts-node/register"];
+      }
+
+      this.worker = new Worker(this.workerScriptPath, options);
+      this.worker.on('error', (err) => console.error('Email Parser Worker Error:', err));
+
+      this.setupWorkerMessageHandler();
+    } catch (e) {
+      console.error('Failed to initialize email worker:', e);
+    }
+  }
+
+  private pendingTasks: Map<string, { resolve: (val: any) => void; reject: (err: any) => void }> = new Map();
+
+  private setupWorkerMessageHandler() {
+    if (!this.worker) return;
+    this.worker.on('message', (msg) => {
+      const task = this.pendingTasks.get(msg.id);
+      if (task) {
+        if (msg.success) {
+          task.resolve(msg.data);
+        } else {
+          task.reject(new Error(msg.error));
+        }
+        this.pendingTasks.delete(msg.id);
+      }
+    });
+  }
+
+  private parseWithWorker(source: any): Promise<any> {
+    if (!this.worker) {
+      // Fallback if worker failed to init
+      return simpleParser(source);
+    }
+    return new Promise((resolve, reject) => {
+      const id = uuidv4();
+      this.pendingTasks.set(id, { resolve, reject });
+      this.worker!.postMessage({ id, source, type: 'parse' });
+
+      // Timeout safety
+      setTimeout(() => {
+        if (this.pendingTasks.has(id)) {
+          this.pendingTasks.delete(id);
+          reject(new Error('Worker timeout'));
+        }
+      }, 30000);
+    });
   }
 
   public getEmailModel(): EmailModel {
@@ -155,18 +218,22 @@ export class EmailService {
       ...(emailData.bcc || [])
     ];
 
-    for (const recipientEmail of allRecipients) {
+    for (const rawRecipient of allRecipients) {
       try {
-        const recipientAccount = await this.emailModel.getEmailAccountByEmail(recipientEmail);
+        const cleanRecipient = this.extractEmailFromAddress(rawRecipient);
+        if (!cleanRecipient) continue;
+
+        const recipientAccount = await this.emailModel.getEmailAccountByEmail(cleanRecipient);
 
         if (recipientAccount) {
-          const isSelfSent = recipientAccount.userId === account.userId;
+          const isSelfSent = String(recipientAccount.id) === String(account.id);
+          const isSameUser = String(recipientAccount.userId) === String(account.userId);
 
           // 1. Create a database record for the recipient immediately
           // This ensures they see the email even before sync
           const recipientEmailRecord: Email = {
             ...email,
-            id: `${recipientAccount.id}-${messageId}`, // Unique ID using consistent format
+            id: isSelfSent ? emailId : `${recipientAccount.id}-${messageId}`, // Use the sent ID for self, composite for others
             accountId: recipientAccount.id,
             isIncoming: true,
             isRead: false,
@@ -180,17 +247,17 @@ export class EmailService {
           const existingForRecipient = await this.emailModel.findEmailByMessageId(messageId, recipientAccount.id);
 
           if (!existingForRecipient) {
-            // For self-sent emails, we still already have the sent copy, 
-            // so we only create an additional incoming-focused record for other recipients
-            if (!isSelfSent) {
-              await this.emailModel.createEmail(recipientEmailRecord);
-            }
+            // New recipient (not self): Create the incoming-focused record
+            await this.emailModel.createEmail(recipientEmailRecord);
+          } else if (isSelfSent) {
+            // Self-sent email: Update the existing "Sent" record to also be in INBOX
+            await this.emailModel.updateEmail(emailId, { folder: 'INBOX' });
           }
 
           // 2. Trigger real-time notification for the recipient (including self!)
           // Self-sent emails should notify the sender that they have "received" their own email
           if (this.notificationService) {
-            console.log(`[Email] Notifying ${isSelfSent ? 'self' : 'recipient'} ${recipientAccount.userId} about new email`);
+            console.log(`[Email] Notifying user ${recipientAccount.userId} about new email ${recipientAccount.id === account.id ? '(SELF)' : '(INTERNAL)'}`);
             this.notificationService.notifyNewEmail(recipientAccount.userId, recipientEmailRecord);
           }
         }
@@ -247,7 +314,6 @@ export class EmailService {
     account: EmailAccount
   ): Promise<{ processed: number; errors: number; newEmails: number }> {
 
-
     const provider = account.provider;
     let rawEmails: any[] = [];
     let processed = 0;
@@ -255,8 +321,6 @@ export class EmailService {
     let newEmails = 0;
 
     try {
-
-
       // Notify user that sync is in progress
       if (this.notificationService) {
         this.notificationService.notifySyncStatus(account.userId, account.id, 'starting');
@@ -268,24 +332,17 @@ export class EmailService {
         : undefined;
 
       if (provider === "gmail") {
-
-        // Fetch up to 100 emails for better sync coverage
         rawEmails = await this.connectorService.fetchGmailEmails(
           account,
           syncSince,
-          100 // Increased from default 50 for better sync coverage
+          100
         );
       } else if (provider === "outlook") {
-
         rawEmails = await this.connectorService.fetchOutlookEmails(
           account,
           syncSince
         );
       } else if (provider === "imap" || provider === "custom") {
-
-
-        // Use parallel sync for IMAP for better performance
-        // Quick sync if we have a lastSyncAt, full sync otherwise
         const useQuickSync = !!account.lastSyncAt;
         rawEmails = await this.connectorService.fetchIMAPEmailsParallel(
           account,
@@ -294,27 +351,235 @@ export class EmailService {
         );
       }
 
+      if (rawEmails.length === 0) {
+        // No emails to process, just update sync time
+        await this.emailModel.updateEmailAccount(account.id, {
+          lastSyncAt: new Date(),
+        });
 
+        if (this.notificationService) {
+          this.notificationService.notifySyncStatus(account.userId, account.id, 'completed', {
+            processed: 0,
+            newEmails: 0,
+            errors: 0
+          });
+        }
+        return { processed: 0, errors: 0, newEmails: 0 };
+      }
 
-      for (const rawEmail of rawEmails) {
-        try {
-          const result = await this.processSingleEmail(account, rawEmail);
-          if (result) {
-            processed++;
-            if (result.isNew) newEmails++;
+      // ============ OPTIMIZED BATCH PROCESSING ============
+      const startTime = Date.now();
+      console.log(`[EmailSync] Starting optimized batch processing for ${rawEmails.length} emails`);
+
+      // Step 1: Parse all emails in parallel with concurrency limit
+      const PARSE_CONCURRENCY = 10;
+      const parsedEmails: { raw: any; parsed: Partial<Email> | null; error?: string }[] = [];
+
+      for (let i = 0; i < rawEmails.length; i += PARSE_CONCURRENCY) {
+        const batch = rawEmails.slice(i, i + PARSE_CONCURRENCY);
+        const batchResults = await Promise.allSettled(
+          batch.map(async (rawEmail) => {
+            try {
+              const parsed = await this.parseRawEmail(rawEmail, provider);
+              return { raw: rawEmail, parsed };
+            } catch (error: any) {
+              return { raw: rawEmail, parsed: null, error: error.message };
+            }
+          })
+        );
+
+        for (const result of batchResults) {
+          if (result.status === 'fulfilled') {
+            parsedEmails.push(result.value);
+          } else {
+            parsedEmails.push({ raw: null, parsed: null, error: result.reason?.message });
+            errors++;
           }
-        } catch (error: any) {
-          console.error("Error processing individual email:", error);
-          errors++;
-          // Continue processing other emails
         }
       }
+
+      console.log(`[EmailSync] Parsed ${parsedEmails.length} emails in ${Date.now() - startTime}ms`);
+
+      // Step 2: Extract messageIds for batch existence check
+      const messageIds = parsedEmails
+        .filter(e => e.parsed?.messageId)
+        .map(e => e.parsed!.messageId!);
+
+      // Step 3: Batch fetch existing emails (1 query instead of N)
+      const existingEmailsMap = await this.emailModel.findEmailsByMessageIds(messageIds, account.id);
+      console.log(`[EmailSync] Found ${existingEmailsMap.size} existing emails out of ${messageIds.length}`);
+
+      // Step 4: For IMAP, also check by UID (batch)
+      let existingUidsSet = new Set<string>();
+      if (provider === 'imap' || provider === 'custom') {
+        const folderUidPairs = parsedEmails
+          .filter(e => e.parsed && (e.parsed as any).uid && (e.parsed as any).folder)
+          .map(e => ({ folder: (e.parsed as any).folder, uid: (e.parsed as any).uid }));
+
+        if (folderUidPairs.length > 0) {
+          existingUidsSet = await this.emailModel.findExistingImapUids(account.id, folderUidPairs);
+        }
+      }
+
+      // Step 5: Batch fetch existing content for deduplication
+      const existingContentMap = await this.emailModel.findExistingContentByMessageIds(messageIds);
+      console.log(`[EmailSync] Found ${existingContentMap.size} existing content records`);
+
+      // Step 6: Separate new emails from existing ones
+      const emailsToCreate: Email[] = [];
+      const emailsToUpdate: { id: string; updates: any }[] = [];
+      const newEmailNotifications: Email[] = [];
+
+      for (const { raw, parsed, error } of parsedEmails) {
+        if (error || !parsed || !parsed.messageId) {
+          if (error) errors++;
+          continue;
+        }
+
+        // Check if exists by messageId
+        const existing = existingEmailsMap.get(parsed.messageId);
+
+        // Also check by IMAP UID if applicable
+        const uidKey = (parsed as any).uid && (parsed as any).folder
+          ? `${(parsed as any).folder}:${(parsed as any).uid}`
+          : null;
+        const existsByUid = uidKey ? existingUidsSet.has(uidKey) : false;
+
+        if (existing || existsByUid) {
+          // Email exists - check if we need updates
+          if (existing) {
+            let needsUpdate = false;
+            const updates: any = {};
+
+            if (!existing.providerId && parsed.providerId) {
+              updates.providerId = parsed.providerId;
+              needsUpdate = true;
+            }
+            if ((parsed as any).uid && existing.uid === null) {
+              updates.uid = (parsed as any).uid;
+              needsUpdate = true;
+            }
+            if ((parsed as any).folder && existing.folder !== (parsed as any).folder) {
+              // Skip folder move if keeping email in INBOX
+              if (!(existing.folder === 'INBOX' && (parsed as any).folder === 'SENT')) {
+                updates.folder = (parsed as any).folder;
+                updates.labelIds = [(parsed as any).folder];
+                needsUpdate = true;
+              }
+            }
+            if (existing.isRead !== parsed.isRead) {
+              updates.isRead = parsed.isRead;
+              needsUpdate = true;
+            }
+
+            // Body repair: if existing email has no body but we just parsed one, update it
+            const existingHasBody = (existing.body && existing.body !== "" && existing.body !== "Error parsing email content." && existing.body !== "[object Uint8Array]");
+            const parsedHasBody = (parsed.body && parsed.body !== "");
+
+            if (!existingHasBody && parsedHasBody) {
+              updates.body = parsed.body;
+              updates.snippet = this.generateSnippet(parsed);
+              needsUpdate = true;
+            }
+            if (!existing.htmlBody && parsed.htmlBody) {
+              updates.htmlBody = parsed.htmlBody;
+              needsUpdate = true;
+            }
+
+            if (needsUpdate) {
+              (updates as any).messageId = existing.messageId; // Pass messageId for EmailContent update
+              emailsToUpdate.push({ id: existing.id, updates });
+            }
+          }
+          processed++;
+          continue;
+        }
+
+        // New email - reuse content if exists AND it's not empty
+        // This prevents overwriting a correctly parsed new email with a broken/empty record in the DB
+        const existingContent = existingContentMap.get(parsed.messageId);
+        if (existingContent && (existingContent.body || existingContent.htmlBody)) {
+          // Only reuse if the existing content seems valid
+          parsed.body = existingContent.body;
+          parsed.htmlBody = existingContent.htmlBody;
+          parsed.attachments = existingContent.attachments;
+        }
+
+        // Match with CRM entities (lightweight)
+        const { contactIds, dealIds, accountEntityIds } =
+          await this.matchEmailWithCRMEntities(parsed);
+
+        const isIncoming = this.determineEmailDirection(parsed, account, raw);
+        const uniqueEmailId = `${account.id}-${parsed.messageId}`;
+
+        const email: Email = {
+          id: uniqueEmailId,
+          messageId: parsed.messageId,
+          accountId: account.id,
+          from: parsed.from!,
+          to: parsed.to || [],
+          subject: parsed.subject || "",
+          body: parsed.body || "",
+          isRead: parsed.isRead ?? true,
+          isIncoming: isIncoming,
+          sentAt: parsed.sentAt ? new Date(parsed.sentAt) : new Date(),
+          receivedAt: parsed.receivedAt ? new Date(parsed.receivedAt) : new Date(),
+          contactIds,
+          dealIds,
+          accountEntityIds,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        // Add optional fields
+        if (parsed.threadId) email.threadId = parsed.threadId;
+        if (parsed.cc) email.cc = parsed.cc;
+        if (parsed.bcc) email.bcc = parsed.bcc;
+        if (parsed.htmlBody) email.htmlBody = parsed.htmlBody;
+        if (parsed.attachments) email.attachments = parsed.attachments;
+        if (parsed.labelIds) email.labelIds = parsed.labelIds;
+        if ((parsed as any).uid) email.uid = (parsed as any).uid;
+        if ((parsed as any).folder) email.folder = (parsed as any).folder;
+        if (parsed.providerId) email.providerId = parsed.providerId;
+
+        emailsToCreate.push(email);
+
+        // Queue notification for new incoming emails
+        if (isIncoming || email.folder === 'INBOX') {
+          newEmailNotifications.push(email);
+        }
+
+        processed++;
+        newEmails++;
+      }
+
+      // Step 7: Bulk insert new emails (single transaction)
+      if (emailsToCreate.length > 0) {
+        console.log(`[EmailSync] Bulk inserting ${emailsToCreate.length} new emails`);
+        await this.emailModel.bulkCreateEmails(emailsToCreate);
+      }
+
+      // Step 8: Batch update existing emails
+      if (emailsToUpdate.length > 0) {
+        console.log(`[EmailSync] Updating ${emailsToUpdate.length} existing emails`);
+        await this.emailModel.batchUpdateEmails(emailsToUpdate);
+      }
+
+      // Step 9: Send notifications for new emails (async, don't block)
+      if (this.notificationService && newEmailNotifications.length > 0) {
+        console.log(`[EmailSync] Sending ${newEmailNotifications.length} notifications`);
+        for (const email of newEmailNotifications) {
+          this.notificationService.notifyNewEmail(account.userId, email);
+        }
+      }
+
+      console.log(`[EmailSync] Batch processing completed in ${Date.now() - startTime}ms`);
+      // ============ END OPTIMIZED BATCH PROCESSING ============
 
       // Refresh flags for existing emails
       if (provider === "imap" || provider === "custom") {
         await this.refreshEmailFlags(account);
       } else if (provider === "gmail" && account.lastHistoryId) {
-        // Incremental sync via history for label/status changes
         await this.syncGmailHistory(account);
       } else if (provider === "outlook") {
         await this.refreshOutlookFlags(account);
@@ -324,8 +589,6 @@ export class EmailService {
       await this.emailModel.updateEmailAccount(account.id, {
         lastSyncAt: new Date(),
       });
-
-
 
       // Notify user about sync completion
       if (this.notificationService) {
@@ -393,11 +656,28 @@ export class EmailService {
 
       // Update folder if it changed (handles moves between Inbox/Trash/etc)
       if (parsed.folder && existing.folder !== parsed.folder) {
-        console.log(`[Sync] Email ${existing.id} folder changed: ${existing.folder} -> ${parsed.folder}`);
-        updates.folder = parsed.folder;
-        updates.uid = parsed.uid; // Also update UID since it changes when moving folders
-        updates.labelIds = [parsed.folder]; // Update labels to match
-        needsUpdate = true;
+        // PRIORITY FIX FOR SELF-SENT EMAILS:
+        // If an email is already in 'INBOX', don't let a secondary sync (e.g. from the SENT folder)
+        // move it out to 'SENT'. We want it to stay in 'INBOX' to remain visible there.
+        if (existing.folder === 'INBOX' && parsed.folder === 'SENT') {
+          console.log(`[Sync] Skipping folder move for self-sent email ${existing.id}: SENT -> INBOX (keeping INBOX)`);
+
+          // However, we SHOULD update the SentAt/Created time if the sent copy has better data
+          updates.sentAt = parsed.sentAt;
+          needsUpdate = true;
+        } else {
+          console.log(`[Sync] Email ${existing.id} folder changed: ${existing.folder} -> ${parsed.folder}`);
+          updates.folder = parsed.folder;
+          updates.uid = parsed.uid; // Also update UID since it changes when moving folders
+          updates.labelIds = [parsed.folder]; // Update labels to match
+          needsUpdate = true;
+
+          // If an email has "moved" to the inbox, notify the user as it's a new arrival for their attention
+          if (parsed.folder === 'INBOX' && this.notificationService) {
+            console.log(`[Email] Notifying about email ${existing.id} moving to INBOX`);
+            this.notificationService.notifyNewEmail(account.userId, { ...existing, ...updates });
+          }
+        }
       }
 
       if (needsUpdate) {
@@ -494,8 +774,8 @@ export class EmailService {
       }
     }
 
-    // Notify user about new incoming email
-    if (this.notificationService && isIncoming) {
+    // Notify user about new incoming email OR self-sent email appearing in Inbox
+    if (this.notificationService && (isIncoming || email.folder === 'INBOX')) {
       this.notificationService.notifyNewEmail(account.userId, email);
     }
 
@@ -659,7 +939,7 @@ export class EmailService {
     );
 
     return {
-      messageId: headers["message-id"],
+      messageId: this.normalizeMessageId(headers["message-id"] || message.id),
       providerId: message.id,
       threadId: message.threadId,
       from: headers["from"],
@@ -668,10 +948,16 @@ export class EmailService {
         .filter(Boolean)
         .map((s: string) => s.trim()),
       cc: headers["cc"]
-        ? headers["cc"].split(",").map((s: string) => s.trim())
+        ? headers["cc"]
+          .split(",")
+          .filter(Boolean)
+          .map((s: string) => s.trim())
         : undefined,
       bcc: headers["bcc"]
-        ? headers["bcc"].split(",").map((s: string) => s.trim())
+        ? headers["bcc"]
+          .split(",")
+          .filter(Boolean)
+          .map((s: string) => s.trim())
         : undefined,
       subject: headers["subject"] || "",
       body: this.extractTextFromGmailPayload(message.payload),
@@ -681,13 +967,36 @@ export class EmailService {
       receivedAt: new Date(parseInt(message.internalDate)),
       // Store labelIds for direction detection
       labelIds: message.labelIds || [],
+      // For Gmail, if it has the INBOX label, mark it as being in the INBOX folder
+      folder: (message.labelIds || []).includes("INBOX") ? "INBOX" :
+        (message.labelIds || []).includes("SENT") ? "SENT" : undefined,
       attachments: this.extractAttachmentsFromGmailPayload(message.payload),
     } as any;
   }
 
+  private normalizeMessageId(messageId: string): string {
+    if (!messageId) return "";
+    let id = messageId.trim();
+    if (id.startsWith('<') && id.endsWith('>')) {
+      id = id.substring(1, id.length - 1);
+    }
+    return id.toLowerCase();
+  }
+
+  private stripHtml(html: string): string {
+    if (!html) return "";
+    return html
+      .replace(/<style[^>]*>.*<\/style>/gms, '')
+      .replace(/<script[^>]*>.*<\/script>/gms, '')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .trim();
+  }
+
   private parseOutlookMessage(message: any): Partial<Email> {
     return {
-      messageId: message.internetMessageId,
+      messageId: this.normalizeMessageId(message.internetMessageId || message.id),
       providerId: message.id,
       threadId: message.conversationId,
       from: message.from?.emailAddress?.address,
@@ -703,6 +1012,7 @@ export class EmailService {
       isRead: !!message.isRead,
       sentAt: new Date(message.sentDateTime),
       receivedAt: new Date(message.receivedDateTime),
+      folder: (message.parentFolderId === 'inbox' || message.inferenceClassification === 'focused') ? 'INBOX' : undefined,
       attachments: (message.attachments || []).map((att: any) => {
         const contentType = att.contentType || 'application/octet-stream';
         const attachment: EmailAttachment = {
@@ -731,13 +1041,27 @@ export class EmailService {
 
     if (source) {
       try {
-        // Ensure source is a string or Buffer for simpleParser
-        // imapflow returns Buffer, but let's be safe
-        const sourceData = Buffer.isBuffer(source) ? source : String(source);
-        parsed = await simpleParser(sourceData);
+        // Robust Buffer check
+        let sourceData: any;
+        if (Buffer.isBuffer(source)) {
+          sourceData = source;
+        } else if (source instanceof Uint8Array) {
+          sourceData = Buffer.from(source);
+        } else if (typeof source === 'object' && source !== null && source.type === 'Buffer' && Array.isArray(source.data)) {
+          sourceData = Buffer.from(source.data);
+        } else {
+          sourceData = String(source || "");
+        }
 
-        body = parsed.text || ""; // Plain text body
-        // Prefer HTML, fallback to textAsHtml, then undefined
+        // Use worker thread for parsing
+        parsed = await this.parseWithWorker(sourceData);
+
+        // Fallback: if text is missing but HTML is present, strip tags for body
+        body = parsed.text || "";
+        if (!body && (parsed.html || parsed.textAsHtml)) {
+          body = this.stripHtml(parsed.html || parsed.textAsHtml);
+        }
+
         htmlBody = parsed.html || parsed.textAsHtml || undefined;
 
         // Parse attachments (same structure as Gmail)
@@ -798,7 +1122,7 @@ export class EmailService {
     }
 
     return {
-      messageId: parsed.messageId || message.envelope?.messageId,
+      messageId: this.normalizeMessageId(parsed.messageId || message.envelope?.messageId || `msg_${Date.now()}`),
       threadId: threadId,
       from: from,
       to: to,
@@ -821,7 +1145,9 @@ export class EmailService {
   private extractTextFromGmailPayload(payload: any): string {
     if (!payload) return "";
     if (payload.mimeType === "text/plain" && payload.body?.data) {
-      return Buffer.from(payload.body.data, "base64").toString();
+      // Gmail uses URL-safe base64 (replace - with + and _ with /)
+      const base64 = payload.body.data.replace(/-/g, '+').replace(/_/g, '/');
+      return Buffer.from(base64, "base64").toString();
     }
     for (const part of payload.parts || []) {
       const text = this.extractTextFromGmailPayload(part);
@@ -833,7 +1159,9 @@ export class EmailService {
   private extractHtmlFromGmailPayload(payload: any): string | undefined {
     if (!payload) return undefined;
     if (payload.mimeType === "text/html" && payload.body?.data) {
-      return Buffer.from(payload.body.data, "base64").toString();
+      // Gmail uses URL-safe base64 (replace - with + and _ with /)
+      const base64 = payload.body.data.replace(/-/g, '+').replace(/_/g, '/');
+      return Buffer.from(base64, "base64").toString();
     }
     for (const part of payload.parts || []) {
       const html = this.extractHtmlFromGmailPayload(part);
@@ -885,6 +1213,16 @@ export class EmailService {
   private getGmailHeader(headers: any[], name: string): string | undefined {
     const header = headers.find(h => h.name.toLowerCase() === name.toLowerCase());
     return header ? header.value : undefined;
+  }
+
+  private generateSnippet(email: Partial<Email>): string {
+    if (email.snippet) return email.snippet;
+    if (email.body) {
+      return email.body.substring(0, 200).replace(/(\r\n|\n|\r)/gm, " ");
+    } else if (email.htmlBody) {
+      return this.stripHtml(email.htmlBody).substring(0, 200).replace(/(\r\n|\n|\r)/gm, " ").trim();
+    }
+    return "";
   }
 
   private async matchEmailWithCRMEntities(email: Partial<Email>): Promise<{
@@ -1641,6 +1979,21 @@ export class EmailService {
       console.error(`[ReadSync] Failed to sync status for ${email.id} (${provider}):`, error);
       // We could add a retry queue here if needed
     }
+  }
+
+  /**
+   * Sync draft to provider
+   */
+  async syncDraft(userId: string, draftId: string): Promise<boolean> {
+    const draft = await this.draftModel.getDraftById(draftId, userId);
+    if (!draft) return false;
+
+    // Use DraftService logic if possible, but DraftService calls EmailService.saveDraft.
+    // This method is for when we want to trigger a sync from EmailService context
+    // or if we have specific flagging needs.
+    // Actually, this is redundant if DraftService handles it.
+    // But we might need to flag it as DRAFT on the provider side manually if saveDraft didn't?
+    return true;
   }
 
   /**

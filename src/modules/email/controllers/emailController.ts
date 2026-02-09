@@ -1213,7 +1213,7 @@ export class EmailController {
           messageId: draft.id, // Use draft ID as message ID
           threadId: draft.threadId,
           accountId: draft.accountId,
-          from: '', // Drafts typically don't have a 'from' until sent, or it's the account's email
+          from: draft.from || '', // Drafts typically don't have a 'from' until sent, or it's the account's email
           to: draft.to,
           cc: draft.cc,
           bcc: draft.bcc,
@@ -1229,6 +1229,9 @@ export class EmailController {
           folder: 'drafts',
           attachments: draft.attachments || [],
           hasAttachments: (draft.attachments?.length || 0) > 0,
+          contactIds: draft.contactIds || [],
+          dealIds: draft.dealIds || [],
+          accountEntityIds: draft.accountEntityIds || [],
           // Other fields can be defaults/undefined
         }));
 
@@ -1246,6 +1249,58 @@ export class EmailController {
           accountId: effectiveAccountId,
         }
       );
+
+      // Special handling for 'trash' folder: Merge trashed drafts
+      if ((folder as string) === 'trash') {
+        try {
+          const trashedDrafts = await this.draftService.getTrashedDrafts(
+            req.user.id.toString(),
+            limit ? parseInt(limit as string) : 50,
+            offset ? parseInt(offset as string) : 0
+          );
+
+          if (trashedDrafts.drafts.length > 0) {
+            const mappedDrafts = trashedDrafts.drafts.map(draft => ({
+              id: draft.id,
+              messageId: draft.id,
+              threadId: draft.threadId,
+              accountId: draft.accountId,
+              from: draft.from || '',
+              to: draft.to,
+              cc: draft.cc,
+              bcc: draft.bcc,
+              subject: `[Draft] ${draft.subject}`,
+              body: draft.body,
+              htmlBody: draft.htmlBody,
+              snippet: draft.body?.substring(0, 100),
+              isRead: true,
+              isIncoming: false,
+              sentAt: draft.updatedAt,
+              createdAt: draft.createdAt,
+              updatedAt: draft.updatedAt,
+              folder: 'trash',
+              attachments: draft.attachments || [],
+              hasAttachments: (draft.attachments?.length || 0) > 0,
+              contactIds: draft.contactIds || [],
+              dealIds: draft.dealIds || [],
+              accountEntityIds: draft.accountEntityIds || [],
+            }));
+
+            emailsResponse.emails = [...emailsResponse.emails, ...mappedDrafts];
+            emailsResponse.total += trashedDrafts.total;
+
+            // Re-sort combined list
+            emailsResponse.emails.sort((a, b) => {
+              const dateA = a.sentAt instanceof Date ? a.sentAt : new Date(a.sentAt);
+              const dateB = b.sentAt instanceof Date ? b.sentAt : new Date(b.sentAt);
+              return dateB.getTime() - dateA.getTime();
+            });
+          }
+        } catch (draftError) {
+          console.error("Error fetching trashed drafts during trash list:", draftError);
+          // Continue with just regular emails if draft fetch fails
+        }
+      }
 
       return ResponseHandler.success(res, emailsResponse, "Emails Fetched Successfully");
 

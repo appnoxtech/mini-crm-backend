@@ -27,7 +27,10 @@ export class RealTimeNotificationService {
       console.log(`🔌 [SOCKET] New connection established - Socket ID: ${socket.id}`);
 
       // Handle user authentication
-      socket.on('authenticate', (userId: any) => {
+      socket.on('authenticate', (data: any) => {
+        // Handle both direct userId and object { userId: "..." }
+        const userId = typeof data === 'object' && data !== null && data.userId ? data.userId : data;
+
         if (!userId) {
           console.warn(`⚠️ [SOCKET] Authentication attempted with empty userId`);
           return;
