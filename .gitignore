@@ -108,3 +108,7 @@ Thumbs.db
 
 
 .package-lock.json
+
+*.md
+*.csv
+*.txt

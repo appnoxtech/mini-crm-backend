@@ -122,7 +122,6 @@ export interface PersonImportData {
     phone?: string;
     phones?: string;  // Comma-separated phones
     organizationName?: string;
-    country?: string;
 }
 
 export interface OrganizationImportData {
@@ -142,4 +141,24 @@ export interface OrganizationImportData {
     annualRevenue?: number;
     numberOfEmployees?: number;
     linkedinProfile?: string;
+    houseNumber?: string;
+    flatNumber?: string;
+}
+
+export interface DealImportData {
+    title: string;
+    value?: string | number;
+    currency?: string;
+    pipelineName?: string;
+    stageName?: string;
+    personName?: string;
+    organizationName?: string;
+    status?: string;
+    probability?: string | number;
+    expectedCloseDate?: string;
+    wonTime?: string;
+    lostTime?: string;
+    lostReason?: string;
+    description?: string;
+    source?: string;
 }

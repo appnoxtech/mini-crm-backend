@@ -465,7 +465,6 @@ model Person {
   organizationId Int?
   emails         Json?
   phones         Json?
-  country        String?
   notes          String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt

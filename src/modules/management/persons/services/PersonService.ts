@@ -36,7 +36,7 @@ export class PersonService {
             }
         }
 
-        return this.personModel.create(data);
+        return await this.personModel.create(data);
     }
 
     async searchPersons(search?: string): Promise<Person[]> {
@@ -60,19 +60,7 @@ export class PersonService {
             }
         }
 
-        if (data.emails) {
-            if (data.emails.length === 0) {
-                throw new Error('At least one email is required');
-            }
-
-            for (const email of data.emails) {
-                if (!email.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.email)) {
-                    throw new Error('Invalid email format');
-                }
-            }
-        }
-
-        return this.personModel.update(id, data);
+        return await this.personModel.update(id, data);
     }
 
 

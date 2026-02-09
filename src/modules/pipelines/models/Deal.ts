@@ -362,6 +362,39 @@ export class DealModel {
         return result;
     }
 
+    async searchByTitle(title: string): Promise<Deal[]> {
+        const deals = await prisma.deal.findMany({
+            where: {
+                title: { contains: title, mode: 'insensitive' },
+                deletedAt: null
+            },
+            take: 50
+        });
+        return deals.map((d: any) => this.mapPrismaDealToDeal(d));
+    }
+
+    async findExistingByTitle(title: string): Promise<{ dealId: number; title: string } | null> {
+        const deal = await prisma.deal.findFirst({
+            where: {
+                title: { equals: title, mode: 'insensitive' },
+                deletedAt: null
+            },
+            select: { id: true, title: true }
+        });
+        return deal ? { dealId: deal.id, title: deal.title } : null;
+    }
+
+    async hardDelete(id: number): Promise<boolean> {
+        try {
+            await prisma.deal.delete({
+                where: { id }
+            });
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
     private mapPrismaDealToDeal(d: any): Deal {
         return {
             id: d.id,

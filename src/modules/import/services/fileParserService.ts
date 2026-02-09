@@ -218,7 +218,18 @@ export class FileParserService {
     mapRowData(row: any[], headers: string[], mappings: { sourceColumn: string; targetField: string }[]): Record<string, any> {
         const result: Record<string, any> = {};
 
+        // First, copy all original data using headers as keys
+        row.forEach((value, index) => {
+            if (headers[index]) {
+                result[headers[index]] = typeof value === 'string' ? value.trim() : value;
+            }
+        });
+
+        // Then apply mappings
         for (const mapping of mappings) {
+            // Skip if targetField is empty (not mapped)
+            if (!mapping.targetField) continue;
+
             const sourceIndex = headers.findIndex(h => h === mapping.sourceColumn);
             if (sourceIndex >= 0) {
                 let value = row[sourceIndex];

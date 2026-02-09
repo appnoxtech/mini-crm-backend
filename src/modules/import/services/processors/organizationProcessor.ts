@@ -236,7 +236,32 @@ export class OrganizationProcessor {
     private parseAddress(data: OrganizationImportData): any {
         const address: any = {};
 
-        if (data.street?.trim()) address.street = data.street.trim();
+        let street = data.street?.trim();
+
+        // Handle split address fields (common in Pipedrive)
+        if (data.houseNumber?.trim() || data.flatNumber?.trim()) {
+            const house = data.houseNumber?.trim() || '';
+            const flat = data.flatNumber?.trim() || '';
+
+            // If we have specific parts, construct the street address
+            // Format: "{House Number} {Street Name}, {Flat/Unit}"
+            if (street) {
+                const parts = [];
+                if (house) parts.push(house);
+                parts.push(street);
+                street = parts.join(' ');
+
+                if (flat) {
+                    street += `, ${flat}`;
+                }
+            } else if (house) {
+                // If no street name but we have house number (unlikely but possible)
+                street = house;
+                if (flat) street += `, ${flat}`;
+            }
+        }
+
+        if (street) address.street = street;
         if (data.city?.trim()) address.city = data.city.trim();
         if (data.state?.trim()) address.state = data.state.trim();
         if (data.country?.trim()) address.country = data.country.trim();
@@ -285,7 +310,7 @@ export class OrganizationProcessor {
      */
     static getFieldDefinitions(): { name: string; type: string; required: boolean; aliases: string[] }[] {
         return [
-            { name: 'name', type: 'string', required: true, aliases: ['name', 'organization name', 'organisation name', 'company', 'company name', 'org name'] },
+            { name: 'name', type: 'string', required: true, aliases: ['name', 'organization name', 'organisation name', 'company', 'company name', 'org name', 'Name'] },
             { name: 'description', type: 'string', required: false, aliases: ['description', 'desc', 'about', 'summary'] },
             { name: 'industry', type: 'string', required: false, aliases: ['industry', 'sector', 'business type'] },
             { name: 'website', type: 'string', required: false, aliases: ['website', 'web', 'url', 'homepage', 'site'] },
@@ -293,11 +318,13 @@ export class OrganizationProcessor {
             { name: 'emails', type: 'string', required: false, aliases: ['emails', 'all emails', 'other emails'] },
             { name: 'phone', type: 'string', required: false, aliases: ['phone', 'telephone', 'contact phone', 'primary phone'] },
             { name: 'phones', type: 'string', required: false, aliases: ['phones', 'all phones', 'other phones'] },
-            { name: 'street', type: 'string', required: false, aliases: ['street', 'address', 'street address', 'address line 1'] },
-            { name: 'city', type: 'string', required: false, aliases: ['city', 'town'] },
-            { name: 'state', type: 'string', required: false, aliases: ['state', 'province', 'region'] },
-            { name: 'country', type: 'string', required: false, aliases: ['country', 'nation'] },
-            { name: 'pincode', type: 'string', required: false, aliases: ['pincode', 'zip', 'zip code', 'postal code', 'postcode'] },
+            { name: 'street', type: 'string', required: false, aliases: ['street', 'address', 'street address', 'address line 1', 'Street/road name of Address', 'Full/combined address of Address'] },
+            { name: 'houseNumber', type: 'string', required: false, aliases: ['house number', 'house no', 'House number of Address'] },
+            { name: 'flatNumber', type: 'string', required: false, aliases: ['flat number', 'apartment', 'suite', 'unit', 'Apartment/suite no of Address'] },
+            { name: 'city', type: 'string', required: false, aliases: ['city', 'town', 'City/town/village/locality of Address'] },
+            { name: 'state', type: 'string', required: false, aliases: ['state', 'province', 'region', 'State/county of Address', 'Region of Address'] },
+            { name: 'country', type: 'string', required: false, aliases: ['country', 'nation', 'Country of Address'] },
+            { name: 'pincode', type: 'string', required: false, aliases: ['pincode', 'zip', 'zip code', 'postal code', 'postcode', 'ZIP/Postal code of Address'] },
             { name: 'annualRevenue', type: 'number', required: false, aliases: ['annual revenue', 'revenue', 'yearly revenue'] },
             { name: 'numberOfEmployees', type: 'number', required: false, aliases: ['number of employees', 'employees', 'employee count', 'size', 'headcount'] },
             { name: 'linkedinProfile', type: 'string', required: false, aliases: ['linkedin', 'linkedin profile', 'linkedin url'] },

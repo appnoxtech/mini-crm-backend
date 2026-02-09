@@ -1,7 +1,7 @@
 import { ImportError, PersonImportData, ProcessResult, DuplicateHandling } from '../../types';
-import { PersonModel } from '../../../management/persons/models/Person';
+import { PersonModel, PersonEmail, PersonPhone, EmailLabel, PhoneType } from '../../../management/persons/models/Person';
 import { OrganizationModel } from '../../../management/organisations/models/Organization';
-import { EmailLabel, PhoneType } from '../../../management/persons/models/Person';
+
 
 export class PersonProcessor {
     private personModel: PersonModel;
@@ -12,92 +12,82 @@ export class PersonProcessor {
         this.orgModel = new OrganizationModel();
     }
 
+    // ... skipping validate ... (I will target chunks to avoid replacing whole file)
+
     /**
      * Validate person data
      */
     validate(data: PersonImportData, rowNumber: number): ImportError[] {
         const errors: ImportError[] = [];
 
-        // Required field validation
-        if (!data.firstName?.trim()) {
-            errors.push({
-                row: rowNumber,
-                column: 'firstName',
-                errorType: 'validation',
-                message: 'First name is required',
-            });
-        } else if (data.firstName.length > 100) {
-            errors.push({
-                row: rowNumber,
-                column: 'firstName',
-                value: data.firstName,
-                errorType: 'validation',
-                message: 'First name must be less than 100 characters',
-            });
-        }
+        try {
+            // Parse name fields using the same logic as processing
+            const { firstName, lastName } = this.parseNameFields(data);
 
-        if (!data.lastName?.trim()) {
-            errors.push({
-                row: rowNumber,
-                column: 'lastName',
-                errorType: 'validation',
-                message: 'Last name is required',
-            });
-        } else if (data.lastName.length > 100) {
-            errors.push({
-                row: rowNumber,
-                column: 'lastName',
-                value: data.lastName,
-                errorType: 'validation',
-                message: 'Last name must be less than 100 characters',
-            });
-        }
+            // Required field validation
+            if (!firstName?.trim()) {
+                errors.push({
+                    row: rowNumber,
+                    column: 'firstName',
+                    errorType: 'validation',
+                    message: 'First name is required',
+                });
+            } else if (firstName.length > 100) {
+                errors.push({
+                    row: rowNumber,
+                    column: 'firstName',
+                    value: firstName,
+                    errorType: 'validation',
+                    message: 'First name must be less than 100 characters',
+                });
+            }
 
-        // Email validation
-        const emails = this.parseEmails(data);
-        if (emails.length === 0) {
-            errors.push({
-                row: rowNumber,
-                column: 'email',
-                errorType: 'validation',
-                message: 'At least one email is required',
-            });
-        } else {
-            for (const emailObj of emails) {
-                if (!this.isValidEmail(emailObj.email)) {
+            // Last name validation (optional but must be valid if provided)
+            if (lastName && lastName.length > 100) {
+                errors.push({
+                    row: rowNumber,
+                    column: 'lastName',
+                    value: lastName,
+                    errorType: 'validation',
+                    message: 'Last name must be less than 100 characters',
+                });
+            }
+
+            // Email validation (optional but must be valid if provided)
+            const emails = this.parseEmails(data);
+            if (emails.length > 0) {
+                for (const emailObj of emails) {
+                    if (!this.isValidEmail(emailObj.email)) {
+                        errors.push({
+                            row: rowNumber,
+                            column: 'email',
+                            value: emailObj.email,
+                            errorType: 'validation',
+                            message: `Invalid email format: ${emailObj.email}`,
+                        });
+                    }
+                }
+            }
+
+            // Phone validation (optional but must be valid if provided)
+            const phones = this.parsePhones(data);
+            for (const phoneObj of phones) {
+                if (!this.isValidPhone(phoneObj.number)) {
                     errors.push({
                         row: rowNumber,
-                        column: 'email',
-                        value: emailObj.email,
+                        column: 'phone',
+                        value: phoneObj.number,
                         errorType: 'validation',
-                        message: `Invalid email format: ${emailObj.email}`,
+                        message: `Invalid phone format: ${phoneObj.number}`,
                     });
                 }
             }
-        }
 
-        // Phone validation (optional but must be valid if provided)
-        const phones = this.parsePhones(data);
-        for (const phoneObj of phones) {
-            if (!this.isValidPhone(phoneObj.number)) {
-                errors.push({
-                    row: rowNumber,
-                    column: 'phone',
-                    value: phoneObj.number,
-                    errorType: 'validation',
-                    message: `Invalid phone format: ${phoneObj.number}`,
-                });
-            }
-        }
-
-        // Country validation (optional)
-        if (data.country && data.country.length > 100) {
+        } catch (error) {
             errors.push({
                 row: rowNumber,
-                column: 'country',
-                value: data.country,
-                errorType: 'validation',
-                message: 'Country must be less than 100 characters',
+                errorType: 'system',
+                message: `Validation error: ${error instanceof Error ? error.message : 'Unknown error'}`,
             });
         }
 
@@ -107,37 +97,47 @@ export class PersonProcessor {
     /**
      * Check for duplicates
      */
+    /**
+     * Check for duplicates
+     */
     async checkDuplicate(data: PersonImportData): Promise<{ isDuplicate: boolean; existingId?: number; field?: string; value?: string }> {
-        const emails = this.parseEmails(data);
-        const emailStrings = emails.map(e => e.email);
+        try {
+            const emails = this.parseEmails(data);
+            const emailStrings = emails.map(e => e.email);
 
-        // Check email duplicates
-        const existingEmail = await this.personModel.findExistingEmail(emailStrings);
-        if (existingEmail) {
-            return {
-                isDuplicate: true,
-                existingId: existingEmail.personId,
-                field: 'email',
-                value: existingEmail.email,
-            };
-        }
-
-        // Check phone duplicates
-        const phones = this.parsePhones(data);
-        const phoneStrings = phones.map(p => p.number);
-        if (phoneStrings.length > 0) {
-            const existingPhone = await this.personModel.findExistingPhone(phoneStrings);
-            if (existingPhone) {
-                return {
-                    isDuplicate: true,
-                    existingId: existingPhone.personId,
-                    field: 'phone',
-                    value: existingPhone.phone,
-                };
+            // Check email duplicates
+            if (emailStrings.length > 0) {
+                const existingEmail = await this.personModel.findExistingEmail(emailStrings);
+                if (existingEmail) {
+                    return {
+                        isDuplicate: true,
+                        existingId: existingEmail.personId,
+                        field: 'email',
+                        value: existingEmail.email,
+                    };
+                }
             }
-        }
 
-        return { isDuplicate: false };
+            // Check phone duplicates
+            const phones = this.parsePhones(data);
+            const phoneStrings = phones.map(p => p.number);
+            if (phoneStrings.length > 0) {
+                const existingPhone = await this.personModel.findExistingPhone(phoneStrings);
+                if (existingPhone) {
+                    return {
+                        isDuplicate: true,
+                        existingId: existingPhone.personId,
+                        field: 'phone',
+                        value: existingPhone.phone,
+                    };
+                }
+            }
+
+            return { isDuplicate: false };
+        } catch (error) {
+            console.error('Error checking duplicates:', error);
+            return { isDuplicate: false };
+        }
     }
 
     /**
@@ -148,86 +148,193 @@ export class PersonProcessor {
         userId: number,
         duplicateHandling: DuplicateHandling
     ): Promise<ProcessResult> {
-        const emails = this.parseEmails(data);
-        const phones = this.parsePhones(data);
+        try {
+            const emails = this.parseEmails(data);
+            const phones = this.parsePhones(data);
 
-        // Check for duplicates
-        const duplicateCheck = await this.checkDuplicate(data);
+            // Parse name fields (handle Pipedrive "Name" field that contains full name)
+            const { firstName, lastName } = this.parseNameFields(data);
 
-        if (duplicateCheck.isDuplicate) {
-            switch (duplicateHandling) {
-                case 'skip':
-                    return { status: 'skipped' };
-                case 'update':
-                    return this.updateExistingPerson(duplicateCheck.existingId!, data, emails, phones);
-                case 'error':
-                    throw new Error(`Duplicate ${duplicateCheck.field} found: ${duplicateCheck.value}`);
-                case 'create':
-                    // Fall through to create new (may fail due to unique constraints)
-                    break;
+            // Check for duplicates
+            const duplicateCheck = await this.checkDuplicate(data);
+
+            if (duplicateCheck.isDuplicate) {
+                switch (duplicateHandling) {
+                    case 'skip':
+                        return { status: 'skipped' };
+                    case 'update':
+                        return this.updateExistingPerson(duplicateCheck.existingId!, data, emails, phones, firstName, lastName);
+                    case 'error':
+                        throw new Error(`Duplicate ${duplicateCheck.field} found: ${duplicateCheck.value}`);
+                    case 'create':
+                        // Fall through to create new (may fail due to unique constraints)
+                        break;
+                }
             }
+
+            // Resolve organization if provided
+            let organizationId: number | undefined;
+            if (data.organizationName?.trim()) {
+                try {
+                    organizationId = await this.resolveOrganization(data.organizationName.trim());
+                } catch (error) {
+                    console.error('Error resolving organization:', error);
+                    // Continue without organization
+                }
+            }
+
+            // Create new person
+            const person = await this.personModel.create({
+                firstName: firstName.trim(),
+                lastName: lastName?.trim() || '',
+                emails,
+                phones,
+                organizationId,
+            });
+
+            return { status: 'created', id: person.id };
+        } catch (error) {
+            throw new Error(`Failed to process person: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
-
-        // Resolve organization if provided
-        let organizationId: number | undefined;
-        if (data.organizationName?.trim()) {
-            organizationId = await this.resolveOrganization(data.organizationName.trim());
-        }
-
-        // Create new person
-        const person = await this.personModel.create({
-            firstName: data.firstName.trim(),
-            lastName: data.lastName.trim(),
-            emails: emails as any,
-            phones: phones as any,
-            organizationId,
-            country: data.country?.trim(),
-        });
-
-        return { status: 'created', id: person.id };
     }
 
     /**
-     * Parse emails from import data
+     * Parse name fields from import data - handles Pipedrive CSV format
+     * Pipedrive has "Name" (full name), "First name", and "Last name" columns
      */
-    private parseEmails(data: PersonImportData): { email: string; label: string }[] {
-        const emails: { email: string; label: string }[] = [];
+    private parseNameFields(data: PersonImportData): { firstName: string; lastName: string } {
+        const rawData = data as any;
 
-        if (data.email?.trim()) {
-            emails.push({ email: data.email.trim().toLowerCase(), label: 'work' as EmailLabel });
+        // Priority 1: Use "First name" and "Last name" if available (Pipedrive format)
+        if (rawData['First name']?.trim()) {
+            return {
+                firstName: rawData['First name'].trim(),
+                lastName: rawData['Last name']?.trim() || ''
+            };
         }
 
-        if (data.emails?.trim()) {
-            const emailList = data.emails.split(/[,;]/).map(e => e.trim().toLowerCase()).filter(Boolean);
-            emailList.forEach(email => {
-                if (!emails.some(e => e.email === email)) {
-                    emails.push({ email, label: 'work' as EmailLabel });
+        // Priority 2: Use standard firstName/lastName fields
+        if (data.firstName?.trim()) {
+            return {
+                firstName: data.firstName.trim(),
+                lastName: data.lastName?.trim() || ''
+            };
+        }
+
+        // Priority 3: Parse "Name" field (full name) - split into first and last
+        if (rawData['Name']?.trim()) {
+            const fullName = rawData['Name'].trim();
+            const nameParts = fullName.split(/\s+/);
+
+            if (nameParts.length === 1) {
+                return { firstName: nameParts[0], lastName: '' };
+            } else {
+                // First part is first name, rest is last name
+                return {
+                    firstName: nameParts[0],
+                    lastName: nameParts.slice(1).join(' ')
+                };
+            }
+        }
+
+        // Priority 4: Fallback to Email if available
+        // Try mapped email field first, then common Pipedrive email columns
+        const email = data.email?.trim() ||
+            rawData['Email - Work']?.trim() ||
+            rawData['Email']?.trim() ||
+            rawData['e-mail']?.trim();
+
+        if (email) {
+            // Use the part before @ as the first name, or the whole email
+            const nameFromEmail = email.split('@')[0] || email;
+            return { firstName: nameFromEmail, lastName: '' };
+        }
+
+        // Fallback: return empty strings (will fail validation)
+        return { firstName: '', lastName: '' };
+    }
+
+    /**
+     * Parse emails from import data - handles Pipedrive CSV format
+     */
+    private parseEmails(data: PersonImportData): PersonEmail[] {
+        const emails: PersonEmail[] = [];
+        const seenEmails = new Set<string>();
+
+        // Helper function to add email if valid and unique
+        const addEmail = (emailStr: string | undefined, label: EmailLabel) => {
+            if (!emailStr) return;
+
+            // Split by comma or semicolon for multiple emails
+            const emailList = emailStr.split(/[,;]/).map(e => e.trim()).filter(e => e.length > 0);
+
+            for (const email of emailList) {
+                const normalized = email.toLowerCase();
+                if (this.isValidEmail(normalized) && !seenEmails.has(normalized)) {
+                    emails.push({ email: normalized, label });
+                    seenEmails.add(normalized);
                 }
-            });
+            }
+        };
+
+        // Parse standard email field
+        if (data.email?.trim()) {
+            addEmail(data.email, 'work');
         }
+
+        // Parse emails field (comma-separated)
+        if (data.emails?.trim()) {
+            addEmail(data.emails, 'work');
+        }
+
+        // Parse Pipedrive-style email fields
+        const rawData = data as any;
+        addEmail(rawData['Email - Work'], 'work');
+        addEmail(rawData['Email - Home'], 'home');
+        addEmail(rawData['Email - Other'], 'other');
 
         return emails;
     }
 
     /**
-     * Parse phones from import data
+     * Parse phones from import data - handles Pipedrive CSV format
      */
-    private parsePhones(data: PersonImportData): { number: string; type: string }[] {
-        const phones: { number: string; type: string }[] = [];
+    private parsePhones(data: PersonImportData): PersonPhone[] {
+        const phones: PersonPhone[] = [];
+        const seenPhones = new Set<string>();
 
-        if (data.phone?.trim()) {
-            phones.push({ number: this.normalizePhone(data.phone), type: 'work' as PhoneType });
-        }
+        // Helper function to add phone if valid and unique
+        const addPhone = (phoneStr: string | undefined, type: PhoneType) => {
+            if (!phoneStr) return;
 
-        if (data.phones?.trim()) {
-            const phoneList = data.phones.split(/[,;]/).map(p => p.trim()).filter(Boolean);
-            phoneList.forEach(phone => {
+            // Split by comma or semicolon for multiple phones
+            const phoneList = phoneStr.split(/[,;]/).map(p => p.trim()).filter(p => p.length > 0);
+
+            for (const phone of phoneList) {
                 const normalized = this.normalizePhone(phone);
-                if (!phones.some(p => p.number === normalized)) {
-                    phones.push({ number: normalized, type: 'work' as PhoneType });
+                if (this.isValidPhone(normalized) && !seenPhones.has(normalized)) {
+                    phones.push({ number: normalized, type });
+                    seenPhones.add(normalized);
                 }
-            });
+            }
+        };
+
+        // Parse standard phone field
+        if (data.phone?.trim()) {
+            addPhone(data.phone, 'work');
         }
+
+        // Parse phones field (comma-separated)
+        if (data.phones?.trim()) {
+            addPhone(data.phones, 'work');
+        }
+
+        // Parse Pipedrive-style phone fields
+        const rawData = data as any;
+        addPhone(rawData['Phone - Work'], 'work');
+        addPhone(rawData['Phone - Home'], 'home');
+        addPhone(rawData['Phone - Mobile'], 'mobile');
+        addPhone(rawData['Phone - Other'], 'other');
 
         return phones;
     }
@@ -263,8 +370,10 @@ export class PersonProcessor {
     private async updateExistingPerson(
         personId: number,
         data: PersonImportData,
-        emails: { email: string; label: string }[],
-        phones: { number: string; type: string }[]
+        emails: PersonEmail[],
+        phones: PersonPhone[],
+        firstName: string,
+        lastName: string
     ): Promise<ProcessResult> {
         let organizationId: number | undefined;
         if (data.organizationName?.trim()) {
@@ -272,12 +381,11 @@ export class PersonProcessor {
         }
 
         await this.personModel.update(personId, {
-            firstName: data.firstName.trim(),
-            lastName: data.lastName.trim(),
-            emails: emails as any,
-            phones: phones as any,
+            firstName: firstName.trim(),
+            lastName: lastName?.trim() || '',
+            emails,
+            phones,
             organizationId,
-            country: data.country?.trim(),
         });
 
         return { status: 'updated', id: personId };
@@ -306,14 +414,54 @@ export class PersonProcessor {
      */
     static getFieldDefinitions(): { name: string; type: string; required: boolean; aliases: string[] }[] {
         return [
-            { name: 'firstName', type: 'string', required: true, aliases: ['first name', 'firstname', 'first', 'given name', 'forename'] },
-            { name: 'lastName', type: 'string', required: true, aliases: ['last name', 'lastname', 'last', 'surname', 'family name'] },
-            { name: 'email', type: 'string', required: true, aliases: ['email', 'e-mail', 'email address', 'mail', 'primary email'] },
-            { name: 'emails', type: 'string', required: false, aliases: ['emails', 'all emails', 'other emails'] },
-            { name: 'phone', type: 'string', required: false, aliases: ['phone', 'telephone', 'mobile', 'cell', 'phone number', 'primary phone'] },
-            { name: 'phones', type: 'string', required: false, aliases: ['phones', 'all phones', 'other phones'] },
-            { name: 'organizationName', type: 'string', required: false, aliases: ['organization', 'organisation', 'company', 'company name', 'org', 'employer'] },
-            { name: 'country', type: 'string', required: false, aliases: ['country', 'nation', 'country name'] },
+            {
+                name: 'firstName',
+                type: 'string',
+                required: true,
+                aliases: ['first name', 'firstname', 'first', 'given name', 'forename', 'First name']
+            },
+            {
+                name: 'lastName',
+                type: 'string',
+                required: false,  // Optional - many contacts have only first name
+                aliases: ['last name', 'lastname', 'last', 'surname', 'family name', 'Last name']
+            },
+            {
+                name: 'name',
+                type: 'string',
+                required: false,
+                aliases: ['Name', 'name', 'full name', 'fullname', 'Full Name']
+            },
+            {
+                name: 'email',
+                type: 'string',
+                required: false,  // Changed to optional - contacts may have only phone numbers
+                aliases: ['email', 'e-mail', 'email address', 'mail', 'primary email', 'Email - Work', 'Email - Home', 'Email - Other']
+            },
+            {
+                name: 'emails',
+                type: 'string',
+                required: false,
+                aliases: ['emails', 'all emails', 'other emails']
+            },
+            {
+                name: 'phone',
+                type: 'string',
+                required: false,
+                aliases: ['phone', 'telephone', 'mobile', 'cell', 'phone number', 'primary phone', 'Phone - Work', 'Phone - Home', 'Phone - Mobile', 'Phone - Other']
+            },
+            {
+                name: 'phones',
+                type: 'string',
+                required: false,
+                aliases: ['phones', 'all phones', 'other phones']
+            },
+            {
+                name: 'organizationName',
+                type: 'string',
+                required: false,
+                aliases: ['organization', 'organisation', 'company', 'company name', 'org', 'employer', 'Organization']
+            },
         ];
     }
 

@@ -15,6 +15,7 @@ import { ImportModel } from '../models/Import';
 import { FileParserService } from './fileParserService';
 import { PersonProcessor } from './processors/personProcessor';
 import { OrganizationProcessor } from './processors/organizationProcessor';
+import { DealProcessor } from './processors/dealProcessor';
 
 const UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'imports');
 
@@ -36,6 +37,7 @@ export class ImportService {
         this.processors = new Map<ImportEntityType, any>([
             ['person', new PersonProcessor()],
             ['organization', new OrganizationProcessor()],
+            ['deal', new DealProcessor()],
         ] as [ImportEntityType, any][]);
     }
 
@@ -521,6 +523,8 @@ export class ImportService {
                 return PersonProcessor.getFieldDefinitions() as FieldDefinition[];
             case 'organization':
                 return OrganizationProcessor.getFieldDefinitions() as FieldDefinition[];
+            case 'deal':
+                return DealProcessor.getFieldDefinitions() as FieldDefinition[];
             default:
                 return [];
         }
@@ -653,6 +657,11 @@ export class ImportService {
             sampleData = [
                 ['Acme Corporation', 'Global manufacturing company', 'Manufacturing', 'https://acme.com', 'contact@acme.com', '', '+1234567890', '', '123 Main St', 'New York', 'NY', 'USA', '10001', '5000000', '500', 'https://linkedin.com/company/acme'],
                 ['Tech Industries', 'Software development company', 'Technology', 'https://tech.io', 'info@tech.io', '', '+0987654321', '', '456 Tech Ave', 'San Francisco', 'CA', 'USA', '94102', '10000000', '200', ''],
+            ];
+        } else if (entityType === 'deal') {
+            sampleData = [
+                ['Acme Corp Deal', '50000', 'USD', 'Sales Pipeline', 'Negotiation', 'John Doe', 'Acme Corp', 'Open', '75', '2026-03-15', '', '', '', 'Large enterprise deal', 'Referral'],
+                ['Tech Inc Deal', '25000', 'USD', 'Sales Pipeline', 'Proposal', 'Jane Smith', 'Tech Inc', 'Open', '50', '2026-02-28', '', '', '', 'Mid-market opportunity', 'Website'],
             ];
         }
 

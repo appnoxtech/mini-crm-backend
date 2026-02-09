@@ -24,16 +24,16 @@ const phoneSchema = z.object({
 
 export const createPersonSchema = z.object({
     firstName: z.string().min(1, 'First name is required').max(100, 'First name is too long'),
-    lastName: z.string().min(1, 'Last name is required').max(100, 'Last name is too long'),
-    emails: z.array(emailSchema).min(1, 'At least one email is required'),
+    lastName: z.string().max(100, 'Last name is too long').optional().default(''),
+    emails: z.array(emailSchema).optional().default([]),
     phones: z.array(phoneSchema).optional().default([]),
     organizationId: z.number().int().positive().optional()
 });
 
 export const updatePersonSchema = z.object({
     firstName: z.string().min(1, 'First name is required').max(100, 'First name is too long').optional(),
-    lastName: z.string().min(1, 'Last name is required').max(100, 'Last name is too long').optional(),
-    emails: z.array(emailSchema).min(1, 'At least one email is required').optional(),
+    lastName: z.string().max(100, 'Last name is too long').optional(),
+    emails: z.array(emailSchema).optional(),
     phones: z.array(phoneSchema).optional(),
     organizationId: z.number().int().positive().optional()
 });
