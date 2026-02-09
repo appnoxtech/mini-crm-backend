@@ -1659,7 +1659,7 @@ export class EmailConnectorService {
   }
 
   injectTracking(htmlBody: string, emailId: string): string {
-    const trackingUrl = `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/emails/track/open/${emailId}`;
+    const trackingUrl = `${process.env.TRACKING_BASE_URL}/api/emails/track/open/${emailId}`;
     const trackingPixel = `<img src="${trackingUrl}" width="1" height="1" style="display:none;" />`;
 
     if (htmlBody.includes('</body>')) {
