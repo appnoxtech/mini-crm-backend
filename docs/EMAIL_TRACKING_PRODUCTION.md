@@ -38,7 +38,7 @@ TRACKING_BASE_URL=https://api.yourdomain.com
 | Email Sent From | Recommended Tracking URL |
 |-----------------|-------------------------|
 | `@appnox.ai` | `https://api.appnox.ai` or `https://track.appnox.ai` |
-| `@engineersarmy.com` | `https://api.engineersarmy.com` |
+| `@pipeclose.com` | `https://api.pipeclose.com` |
 
 ### Step 2: Verify Routes Are Accessible
 
