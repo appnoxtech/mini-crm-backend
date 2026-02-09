@@ -40,6 +40,10 @@ export class SummarizationSchedulerService {
                         subject: `Thread ${threadId}`
                     });
                 } catch (error: any) {
+                    if (error.message.includes('Redis queue is not available')) {
+                        console.warn('⚠️ Skipping summarization - Redis not available');
+                        return; // Exit early if Redis is not available
+                    }
                     if (!error.message.includes('already exists')) {
                         console.error(`Failed to queue thread ${threadId}:`, error.message);
                     }

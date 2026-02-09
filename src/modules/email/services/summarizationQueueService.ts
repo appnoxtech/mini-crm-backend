@@ -22,24 +22,36 @@ interface SummaryData {
 }
 
 export class SummarizationQueueService {
-    private queue: Queue.Queue<SummarizationJobData>;
+    private queue: Queue.Queue<SummarizationJobData> | null = null;
+    private redisAvailable: boolean = false;
 
     constructor(_dbPath?: string) {
-        this.queue = new Queue<SummarizationJobData>('email-summarization', REDIS_URL, {
-            defaultJobOptions: {
-                attempts: 3,
-                backoff: { type: 'exponential', delay: 5000 },
-                removeOnComplete: 100,
-                removeOnFail: false,
-                timeout: 300000
-            }
-        });
+        try {
+            this.queue = new Queue<SummarizationJobData>('email-summarization', REDIS_URL, {
+                defaultJobOptions: {
+                    attempts: 3,
+                    backoff: { type: 'exponential', delay: 5000 },
+                    removeOnComplete: 100,
+                    removeOnFail: false,
+                    timeout: 300000
+                }
+            });
 
-        this.setupQueueProcessor();
-        this.setupEventListeners();
+            this.setupQueueProcessor();
+            this.setupEventListeners();
+            this.redisAvailable = true;
+            console.log('✅ Redis queue initialized successfully');
+        } catch (error: any) {
+            console.warn('⚠️ Redis not available - email summarization queue disabled:', error.message);
+            this.redisAvailable = false;
+        }
     }
 
     private setupQueueProcessor(): void {
+        if (!this.queue) {
+            console.warn('Queue is not initialized, cannot set up processor.');
+            return;
+        }
         this.queue.process(MAX_CONCURRENT_JOBS, async (job: Job<SummarizationJobData>) => {
             const { threadId } = job.data;
             const startTime = Date.now();
@@ -83,17 +95,24 @@ export class SummarizationQueueService {
     }
 
     private setupEventListeners(): void {
+        if (!this.queue) return;
         this.queue.on('failed', (job, err) => console.error(`❌ [Queue] Job ${job?.id} failed:`, err.message));
         this.queue.on('error', (error) => console.error('❌ [Queue] Queue error:', error));
     }
 
     async addToQueue(data: SummarizationJobData, options?: JobOptions): Promise<Job<SummarizationJobData>> {
+        if (!this.queue) {
+            throw new Error('Redis queue is not available');
+        }
         const jobOptions: JobOptions = { jobId: `thread-${data.threadId}`, removeOnComplete: true, ...options };
         await this.updateSummaryStatus(data.threadId, 'queued');
         return await this.queue.add(data, jobOptions);
     }
 
     async getQueueStats() {
+        if (!this.queue) {
+            return { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 };
+        }
         const [waiting, active, completed, failed, delayed] = await Promise.all([
             this.queue.getWaitingCount(),
             this.queue.getActiveCount(),
@@ -165,6 +184,7 @@ export class SummarizationQueueService {
      * Get job status from Bull queue
      */
     async getJobStatus(jobId: string) {
+        if (!this.queue) return null;
         const job = await this.queue.getJob(jobId);
         if (!job) return null;
 
@@ -261,7 +281,9 @@ export class SummarizationQueueService {
     }
 
     async close() {
-        await this.queue.close();
+        if (this.queue) {
+            await this.queue.close();
+        }
     }
 }
 
