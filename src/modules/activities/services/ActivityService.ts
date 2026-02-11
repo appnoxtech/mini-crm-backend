@@ -51,10 +51,18 @@ export class ActivityService {
         location?: string;
         videoCallLink?: string;
         assignedUserIds?: number[];
+        isDone?: boolean;
     }) {
-        // Validation
         const start = new Date(data.startAt);
         const end = new Date(data.endAt);
+
+        // Date Validation: Must be current date or future
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+        if (start < startOfToday) {
+            throw new Error('Activity date cannot be in the past');
+        }
 
         if (end <= start) {
             throw new Error('End time must be after start time');
@@ -74,7 +82,7 @@ export class ActivityService {
             ...data,
             type: data.type || 'meeting',
             createdBy: userId,
-            isDone: false,
+            isDone: data.isDone || false,
             assignedUserIds: data.assignedUserIds || [],
             priority: data.priority || 'medium',
             status: data.status || 'busy'
@@ -115,11 +123,21 @@ export class ActivityService {
             throw new Error('Unauthorized to update this activity');
         }
 
-        // Validate time if changing
         if (updates.startAt || updates.endAt) {
-            const newStart = updates.startAt || activity.startAt;
-            const newEnd = updates.endAt || activity.endAt;
-            if (new Date(newEnd) <= new Date(newStart)) {
+            const newStartStr = updates.startAt || activity.startAt;
+            const newEndStr = updates.endAt || activity.endAt;
+            const newStart = new Date(newStartStr);
+            const newEnd = new Date(newEndStr);
+
+            // Date Validation: Must be current date or future
+            const now = new Date();
+            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+            if (newStart < startOfToday) {
+                throw new Error('Activity date cannot be in the past');
+            }
+
+            if (newEnd <= newStart) {
                 throw new Error('End time must be after start time');
             }
 
@@ -127,7 +145,7 @@ export class ActivityService {
                 (updates.startAt || updates.endAt)) {
                 const userIdsToCheck = [activity.createdBy, ...(activity.assignedUserIds as number[])];
                 // Exclude current activity from self-overlap
-                const conflicts = await this.model.findOverlapping(newStart, newEnd, userIdsToCheck);
+                const conflicts = await this.model.findOverlapping(newStartStr as string, newEndStr as string, userIdsToCheck);
                 const validConflicts = conflicts.filter(c => c.id !== activityId);
 
                 if (validConflicts.length > 0) {

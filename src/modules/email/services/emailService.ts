@@ -269,6 +269,7 @@ export class EmailService {
     // --- END INTERNAL NOTIFICATION LOGIC ---
 
     // Create history entry if dealId is provided
+    console.log(`[EmailService] Detected dealId: ${emailData.dealId}, activityModel present: ${!!this.activityModel}`);
     if (emailData.dealId && this.activityModel) {
       try {
         await this.activityModel.create({
@@ -283,7 +284,16 @@ export class EmailService {
             from: email.from,
             to: email.to,
             subject: email.subject,
-            body: email.body
+            body: email.body,
+            cc: email.cc,
+            bcc: email.bcc,
+            htmlBody: email.htmlBody,
+            attachments: email.attachments?.map(att => ({
+              filename: att.filename,
+              url: att.url || '',
+              size: att.size,
+              mimeType: att.contentType
+            }))
           },
           organization: emailData.to.join(', '),
           participants: [],

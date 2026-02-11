@@ -23,6 +23,7 @@ export function createActivityRoutes(controller: ActivityController): Router {
     // User-level activity routes
     router.get('/my-activities', (req, res) => controller.getActivitiesForUser(req, res));
     router.get('/upcoming-activities', (req, res) => controller.getUpcomingActivities(req, res));
+    router.get('/search', (req: Request, res: Response) => controller.searchActivities(req as any, res));
 
     router.post('/upload/:dealId', fileUploadMiddleware, (req: Request, res: Response) => controller.uploadActivityFiles(req, res));
 

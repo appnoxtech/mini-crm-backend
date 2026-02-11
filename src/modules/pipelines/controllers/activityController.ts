@@ -215,6 +215,34 @@ export class ActivityController {
         }
     }
 
+    async searchActivities(req: AuthenticatedRequest, res: Response): Promise<void> {
+        try {
+            if (!req.user) {
+                return ResponseHandler.unauthorized(res, 'User not authenticated');
+            }
+
+            const { query, dealId } = req.query;
+
+            if (!query) {
+                return ResponseHandler.validationError(res, 'Search query is required');
+            }
+
+            const activities = await this.activityService.searchActivities(
+                req.user.id,
+                query as string,
+                dealId ? Number(dealId) : undefined
+            );
+
+            if (activities.length === 0) {
+                return ResponseHandler.success(res, { activities: [], message: 'No deal activities were found' }, 'No results match your search');
+            }
+
+            return ResponseHandler.success(res, { activities }, 'Activities searched successfully');
+        } catch (error: any) {
+            console.error('Error searching deal activities:', error);
+            return ResponseHandler.internalError(res, 'Failed to search deal activities');
+        }
+    }
 
     async uploadActivityFiles(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {

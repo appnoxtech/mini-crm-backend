@@ -19,8 +19,17 @@ export interface DealActivity extends BaseEntity {
     email?: {
         from: string;
         to: string[];
+        cc?: string[];
+        bcc?: string[];
         subject: string;
         body: string;
+        htmlBody?: string;
+        attachments?: {
+            filename: string;
+            url: string;
+            size?: number;
+            mimeType?: string;
+        }[];
     }
     files?: {
         url: string;
@@ -202,6 +211,28 @@ export class DealActivityModel {
 
         return results.map((r: any) => this.formatActivity(r));
     }
+
+    async search(userId: number, query: string, dealId?: number): Promise<DealActivity[]> {
+        const where: any = {
+            userId,
+            OR: [
+                { subject: { contains: query, mode: 'insensitive' } },
+                { note: { contains: query, mode: 'insensitive' } }
+            ]
+        };
+
+        if (dealId) {
+            where.dealId = dealId;
+        }
+
+        const results = await prisma.dealActivity.findMany({
+            where,
+            orderBy: { createdAt: 'desc' }
+        });
+
+        return results.map((r: any) => this.formatActivity(r));
+    }
+
 
     async update(
         id: number,

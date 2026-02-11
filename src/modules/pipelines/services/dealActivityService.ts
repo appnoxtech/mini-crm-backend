@@ -97,8 +97,39 @@ export class DealActivityService {
     }
 
 
-    async getDealHistory(dealId: number, limit?: number): Promise<DealHistory[]> {
-        return this.dealHistoryModel.findByDealId(dealId, limit);
+    async getDealHistory(dealId: number, limit?: number): Promise<{ activities: any[] }> {
+        // Fetch both history (audit logs) and activities (user actions)
+        const [history, activities] = await Promise.all([
+            this.dealHistoryModel.findByDealId(dealId, limit),
+            this.activityModel.findByDealId(dealId, { limit })
+        ]);
+
+        // Combine and map to common structure
+        const combined = [
+            ...history.map(h => ({
+                ...h,
+                type: 'history', // Mark as history/audit log
+                at: h.createdAt
+            })),
+            ...activities.map(a => ({
+                ...a,
+                type: a.activityType || 'activity',
+                at: a.createdAt,
+                // Ensure note/subject is available as 'text' or similar if needed by frontend
+                text: a.note || a.subject || a.label
+            }))
+        ];
+
+        // Sort by date descending (newest first)
+        const sorted = combined.sort((a, b) =>
+            new Date(b.at).getTime() - new Date(a.at).getTime()
+        );
+
+        if (limit) {
+            return { activities: sorted.slice(0, limit) };
+        }
+
+        return { activities: sorted };
     }
 
     async deleteActivity(id: number, userId: number): Promise<boolean> {
@@ -113,6 +144,10 @@ export class DealActivityService {
 
     async getUpcomingActivities(userId: number, days: number = 7): Promise<DealActivity[]> {
         return this.activityModel.getUpcomingActivities(userId, days);
+    }
+
+    async searchActivities(userId: number, query: string, dealId?: number): Promise<DealActivity[]> {
+        return this.activityModel.search(userId, query, dealId);
     }
 
     async createFileActivity(dealId: number, userId: number, files: any[]): Promise<DealActivity> {

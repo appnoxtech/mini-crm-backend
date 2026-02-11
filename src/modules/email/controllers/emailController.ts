@@ -158,6 +158,7 @@ export class EmailController {
         return ResponseHandler.unauthorized(res, "User not authenticated");
       }
 
+      console.log("[EmailController] Received sendEmail payload:", JSON.stringify(req.body, null, 2));
       const { to, cc, bcc, subject, body, htmlBody, attachments, dealId, email, from, provider, smtpConfig, enableTracking } =
         (req.body as any) || {};
 

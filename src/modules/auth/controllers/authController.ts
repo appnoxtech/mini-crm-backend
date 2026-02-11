@@ -169,7 +169,7 @@ export class AuthController {
       const success = await this.authService.changePassword(req.user.id, currentPassword, newPassword);
 
       if (!success) {
-        return ResponseHandler.validationError(res, 'Current password is incorrect');
+        return ResponseHandler.badRequest(res, 'Incorrect current password');
       }
       return ResponseHandler.success(res, null, 'Password updated successfully');
     } catch (error) {
