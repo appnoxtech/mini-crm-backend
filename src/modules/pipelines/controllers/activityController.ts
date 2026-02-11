@@ -221,15 +221,16 @@ export class ActivityController {
                 return ResponseHandler.unauthorized(res, 'User not authenticated');
             }
 
-            const { query, dealId } = req.query;
+            const { query, title, dealId } = req.query;
+            const searchTerms = (title || query) as string;
 
-            if (!query) {
-                return ResponseHandler.validationError(res, 'Search query is required');
+            if (!searchTerms) {
+                return ResponseHandler.validationError(res, 'Search title is required');
             }
 
             const activities = await this.activityService.searchActivities(
                 req.user.id,
-                query as string,
+                searchTerms,
                 dealId ? Number(dealId) : undefined
             );
 
