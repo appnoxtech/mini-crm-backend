@@ -648,6 +648,148 @@ export class EmailModel {
     return rows.map((row: any) => this.mapRowToEmail(row));
   }
 
+  /**
+   * Get threaded email conversations for a deal.
+   * 1. Finds all emails directly linked to the deal
+   * 2. Collects their threadIds
+   * 3. Fetches ALL emails in those threads (catches replies not directly tagged)
+   * 4. Groups them into thread objects with metadata
+   */
+  async getThreadedEmailsForDeal(dealId: string): Promise<{
+    threads: Array<{
+      threadId: string;
+      subject: string;
+      participants: string[];
+      messageCount: number;
+      unreadCount: number;
+      latestMessageAt: Date;
+      firstMessageAt: Date;
+      snippet: string;
+      messages: Email[];
+    }>;
+    totalThreads: number;
+    totalMessages: number;
+  }> {
+    // Step 1: Get all emails directly linked to this deal
+    const dealEmails = await prisma.email.findMany({
+      where: {
+        dealIds: {
+          array_contains: dealId
+        }
+      },
+      include: { content: true },
+      orderBy: { sentAt: 'asc' }
+    });
+
+    // Step 2: Collect unique threadIds from deal emails
+    const threadIds = new Set<string>();
+    const standaloneEmails: Email[] = [];
+
+    for (const email of dealEmails) {
+      if (email.threadId) {
+        threadIds.add(email.threadId);
+      } else {
+        // Emails without threadId are standalone (not part of a thread)
+        standaloneEmails.push(this.mapRowToEmail(email));
+      }
+    }
+
+    // Step 3: Fetch ALL emails in those threads (including replies not directly tagged with dealId)
+    let threadEmails: any[] = [];
+    if (threadIds.size > 0) {
+      threadEmails = await prisma.email.findMany({
+        where: {
+          threadId: { in: Array.from(threadIds) }
+        },
+        include: { content: true },
+        orderBy: { sentAt: 'asc' }
+      });
+    }
+
+    // Step 4: Group emails by threadId
+    const threadMap = new Map<string, Email[]>();
+
+    for (const row of threadEmails) {
+      const email = this.mapRowToEmail(row);
+      const tid = email.threadId!;
+      if (!threadMap.has(tid)) {
+        threadMap.set(tid, []);
+      }
+      threadMap.get(tid)!.push(email);
+    }
+
+    // Step 5: Also create "threads" for standalone emails (1 message each)
+    for (const email of standaloneEmails) {
+      const pseudoThreadId = `standalone-${email.id}`;
+      threadMap.set(pseudoThreadId, [email]);
+    }
+
+    // Step 6: Build thread objects with metadata
+    const threads = Array.from(threadMap.entries()).map(([threadId, messages]) => {
+      const sortedMessages = messages.sort(
+        (a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime()
+      );
+
+      // Collect all unique participants
+      const participantSet = new Set<string>();
+      for (const msg of sortedMessages) {
+        participantSet.add(msg.from);
+        msg.to?.forEach(t => participantSet.add(t));
+      }
+
+      const latestMessage = sortedMessages[sortedMessages.length - 1]!;
+      const firstMessage = sortedMessages[0]!;
+      const unreadCount = sortedMessages.filter(m => !m.isRead).length;
+
+      return {
+        threadId,
+        subject: firstMessage?.subject || '(No Subject)',
+        participants: Array.from(participantSet),
+        messageCount: sortedMessages.length,
+        unreadCount,
+        latestMessageAt: latestMessage?.sentAt ?? new Date(),
+        firstMessageAt: firstMessage?.sentAt ?? new Date(),
+        snippet: latestMessage?.snippet || latestMessage?.body?.substring(0, 200) || '',
+        messages: sortedMessages,
+      };
+    });
+
+    // Sort threads by latest message (newest first)
+    threads.sort(
+      (a, b) => new Date(b.latestMessageAt).getTime() - new Date(a.latestMessageAt).getTime()
+    );
+
+    const totalMessages = threads.reduce((sum, t) => sum + t.messageCount, 0);
+
+    return {
+      threads,
+      totalThreads: threads.length,
+      totalMessages,
+    };
+  }
+
+  /**
+   * Find dealIds linked to emails in a specific thread.
+   * Used to auto-link reply emails to the same deals.
+   */
+  async findDealIdsByThreadId(threadId: string): Promise<string[]> {
+    const rows = await prisma.email.findMany({
+      where: {
+        threadId,
+        NOT: { dealIds: { equals: Prisma.DbNull } }
+      },
+      select: { dealIds: true }
+    });
+
+    const dealIdSet = new Set<string>();
+    for (const row of rows) {
+      const ids = (row.dealIds as string[]) || [];
+      ids.forEach(id => dealIdSet.add(id));
+    }
+
+    return Array.from(dealIdSet);
+  }
+
   async getEmailsByAddress(address: string): Promise<Email[]> {
     const rows = await prisma.email.findMany({
       where: {

@@ -41,6 +41,7 @@ export function createEmailRoutes(
   // Email retrieval for CRM entities
   router.get('/contacts/:contactId/emails', (req: any, res) => emailController.getEmailsForContact(req, res));
   router.get('/deals/:dealId/emails', (req: any, res) => emailController.getEmailsForDeal(req, res));
+  router.get('/deals/:dealId/threads', (req: any, res) => emailController.getThreadedEmailsForDeal(req, res));
 
   // Email account management
   router.get('/accounts', (req: any, res) => emailController.getEmailAccounts(req, res));

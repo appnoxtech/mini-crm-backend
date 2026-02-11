@@ -159,7 +159,7 @@ export class EmailController {
       }
 
       console.log("[EmailController] Received sendEmail payload:", JSON.stringify(req.body, null, 2));
-      const { to, cc, bcc, subject, body, htmlBody, attachments, dealId, email, from, provider, smtpConfig, enableTracking } =
+      const { to, cc, bcc, subject, body, htmlBody, attachments, dealId, threadId, email, from, provider, smtpConfig, enableTracking } =
         (req.body as any) || {};
 
       if (!to || !subject || !body) {
@@ -264,6 +264,7 @@ export class EmailController {
         htmlBody,
         attachments,
         dealId: dealId ? Number(dealId) : undefined,
+        threadId: threadId ? String(threadId) : undefined,
         enableTracking: !!enableTracking,
       });
 
@@ -439,6 +440,36 @@ export class EmailController {
 
       return ResponseHandler.internalError(res, "Failed to fetch emails");
 
+    }
+  }
+
+  /**
+   * Get threaded email conversations for a deal.
+   * Returns emails grouped by thread with full conversation context,
+   * including reply emails that may not be directly tagged with the dealId.
+   */
+  async getThreadedEmailsForDeal(
+    req: AuthenticatedRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      if (!req.user) {
+        return ResponseHandler.unauthorized(res, "User not authenticated");
+      }
+
+      const { dealId } = (req as any).params;
+
+      if (!dealId) {
+        return ResponseHandler.validationError(res, "Deal ID is required");
+      }
+
+      const threadedEmails = await this.emailService.getThreadedEmailsForDeal(dealId);
+
+      return ResponseHandler.success(res, threadedEmails, "Threaded emails fetched successfully");
+
+    } catch (error: any) {
+      console.error("Error fetching threaded emails for deal:", error);
+      return ResponseHandler.internalError(res, "Failed to fetch threaded emails");
     }
   }
 

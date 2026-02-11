@@ -144,6 +144,7 @@ export class EmailService {
       htmlBody?: string;
       attachments?: EmailAttachment[];
       dealId?: number;
+      threadId?: string;
       enableTracking?: boolean;
     },
     options?: { skipSave?: boolean }
@@ -186,6 +187,7 @@ export class EmailService {
     const email: Email = {
       id: emailId,
       messageId,
+      threadId: emailData.threadId || messageId, // Use provided threadId or default to messageId
       accountId: account.id,
       from: account.email,
       to: emailData.to,
@@ -519,6 +521,20 @@ export class EmailService {
         const { contactIds, dealIds, accountEntityIds } =
           await this.matchEmailWithCRMEntities(parsed);
 
+        // Auto-link to deals via threadId: if this email belongs to a thread
+        // where another email is already linked to a deal, inherit those deal associations
+        if (parsed.threadId && dealIds.length === 0) {
+          try {
+            const threadDealIds = await this.emailModel.findDealIdsByThreadId(parsed.threadId);
+            if (threadDealIds.length > 0) {
+              dealIds.push(...threadDealIds);
+              console.log(`[EmailSync] Auto-linked email ${parsed.messageId} to deals [${threadDealIds.join(', ')}] via threadId ${parsed.threadId}`);
+            }
+          } catch (err) {
+            console.error('[EmailSync] Error auto-linking email to deals via threadId:', err);
+          }
+        }
+
         const isIncoming = this.determineEmailDirection(parsed, account, raw);
         const uniqueEmailId = `${account.id}-${parsed.messageId}`;
 
@@ -715,6 +731,20 @@ export class EmailService {
     // Match with CRM entities
     const { contactIds, dealIds, accountEntityIds } =
       await this.matchEmailWithCRMEntities(parsed);
+
+    // Auto-link to deals via threadId: if this email belongs to a thread
+    // where another email is already linked to a deal, inherit those deal associations
+    if (parsed.threadId && dealIds.length === 0) {
+      try {
+        const threadDealIds = await this.emailModel.findDealIdsByThreadId(parsed.threadId);
+        if (threadDealIds.length > 0) {
+          dealIds.push(...threadDealIds);
+          console.log(`[EmailSync] Auto-linked email ${parsed.messageId} to deals [${threadDealIds.join(', ')}] via threadId ${parsed.threadId}`);
+        }
+      } catch (err) {
+        console.error('[EmailSync] Error auto-linking email to deals via threadId:', err);
+      }
+    }
 
     // Determine if email is incoming or outgoing
     const isIncoming = this.determineEmailDirection(parsed, account, rawEmail);
@@ -1261,6 +1291,22 @@ export class EmailService {
 
   async getEmailsForDeal(dealId: string): Promise<Email[]> {
     return await this.emailModel.getEmailsForDeal(dealId);
+  }
+
+  /**
+   * Get threaded email conversations for a deal.
+   * Returns emails grouped by thread with full conversation context.
+   */
+  async getThreadedEmailsForDeal(dealId: string) {
+    return await this.emailModel.getThreadedEmailsForDeal(dealId);
+  }
+
+  /**
+   * Find dealIds linked to emails in a specific thread.
+   * Used to auto-link reply emails to the same deals.
+   */
+  async findDealIdsByThreadId(threadId: string): Promise<string[]> {
+    return await this.emailModel.findDealIdsByThreadId(threadId);
   }
 
   async getEmailAccountByUserId(userId: string): Promise<EmailAccount | null> {
