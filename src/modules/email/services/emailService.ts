@@ -1,3 +1,4 @@
+import { prisma } from '../../../shared/prisma';
 import { EmailModel } from "../models/emailModel";
 import { EmailConnectorService } from "./emailConnectorService";
 import { Email, EmailAccount, EmailAttachment } from "../models/types";
@@ -584,8 +585,45 @@ export class EmailService {
       if (emailsToCreate.length > 0) {
         console.log(`[EmailSync] Bulk inserting ${emailsToCreate.length} new emails`);
         await this.emailModel.bulkCreateEmails(emailsToCreate);
-        
-        // Step 7.1: Auto-link new emails to deals (async, don't block sync)
+
+        // Step 7.1: Create activity records for emails matched/linked to deals
+        // This ensures they show up correctly in the "History" tab
+        if (this.activityModel) {
+          console.log(`[EmailSync] Creating activity records for ${emailsToCreate.filter(e => e.dealIds && e.dealIds.length > 0).length} emails`);
+          for (const email of emailsToCreate) {
+            if (email.dealIds && email.dealIds.length > 0) {
+              for (const dealId of email.dealIds) {
+                try {
+                  await this.activityModel.create({
+                    dealId: Number(dealId),
+                    userId: Number(account.userId),
+                    activityType: 'mail',
+                    subject: email.subject,
+                    label: email.isIncoming ? 'incoming' : 'outgoing',
+                    priority: 'none',
+                    busyFree: 'free',
+                    email: {
+                      from: email.from,
+                      to: email.to,
+                      subject: email.subject,
+                      body: email.body,
+                      htmlBody: email.htmlBody,
+                      threadId: email.threadId,
+                      messageId: email.messageId // Include messageId for reference
+                    },
+                    organization: email.isIncoming ? email.from : email.to.join(', '),
+                    isDone: true,
+                    completedAt: (email.isIncoming ? email.receivedAt : email.sentAt)?.toISOString() || new Date().toISOString()
+                  });
+                } catch (error) {
+                  console.error(`[EmailSync] Failed to create activity for email ${email.id} on deal ${dealId}:`, error);
+                }
+              }
+            }
+          }
+        }
+
+        // Step 7.2: Auto-link new emails to deals via contact matching (async, don't block sync)
         this.autoLinkEmailsToDeals(emailsToCreate).catch(err => {
           console.error('[EmailSync] Failed to auto-link emails to deals:', err);
         });
@@ -809,7 +847,9 @@ export class EmailService {
               to: email.to,
               subject: email.subject,
               body: email.body,
-              threadId: email.threadId
+              htmlBody: email.htmlBody,
+              threadId: email.threadId,
+              messageId: email.messageId
             },
             organization: isIncoming ? email.from : email.to.join(', '),
             isDone: true,
@@ -824,6 +864,13 @@ export class EmailService {
     // Notify user about new incoming email OR self-sent email appearing in Inbox
     if (this.notificationService && (isIncoming || email.folder === 'INBOX')) {
       this.notificationService.notifyNewEmail(account.userId, email);
+    }
+
+    // Link to deals in junction table and update isLinkedToDeal flag
+    if (dealIds.length > 0) {
+      this.autoLinkEmailsToDeals([email]).catch(err => {
+        console.error(`[Email] Failed to trigger auto-link for email ${email.id}:`, err);
+      });
     }
 
     return { id: email.id, isNew: true };
@@ -2340,10 +2387,19 @@ export class EmailService {
   private async autoLinkEmailsToDeals(emails: Email[]): Promise<void> {
     try {
       const { emailDealLinkingService } = require('../../pipelines/services/emailDealLinkingService');
-      
+
       console.log(`[AutoLink] Processing ${emails.length} new emails for deal linking`);
-      
-      // Extract unique email addresses from the new emails
+
+      const dealIdSet = new Set<string>();
+
+      // 1. Collect deals from already identified dealIds (e.g. via thread inheritance)
+      for (const email of emails) {
+        if (email.dealIds && Array.isArray(email.dealIds)) {
+          email.dealIds.forEach(id => dealIdSet.add(id));
+        }
+      }
+
+      // 2. Extract unique email addresses to find additional matching deals
       const emailAddresses = new Set<string>();
       for (const email of emails) {
         if (email.from) emailAddresses.add(email.from.toLowerCase());
@@ -2354,68 +2410,63 @@ export class EmailService {
           email.cc.forEach((addr: string) => emailAddresses.add(addr.toLowerCase()));
         }
       }
-      
-      if (emailAddresses.size === 0) {
-        console.log('[AutoLink] No email addresses found to match');
-        return;
-      }
-      
-      // Find deals that have contacts with these email addresses
-      const { PrismaClient } = require('@prisma/client');
-      const prisma = new PrismaClient();
-      
-      const deals = await prisma.deal.findMany({
-        where: {
-          OR: [
-            {
-              person: {
-                userEmails: {
-                  some: {
-                    email: {
-                      in: Array.from(emailAddresses)
+
+      if (emailAddresses.size > 0) {
+        const matchingDeals = await prisma.deal.findMany({
+          where: {
+            OR: [
+              {
+                person: {
+                  userEmails: {
+                    some: {
+                      email: {
+                        in: Array.from(emailAddresses)
+                      }
                     }
                   }
                 }
-              }
-            },
-            {
-              person: {
-                emails: {
-                  path: '$[*].email',
-                  array_contains: Array.from(emailAddresses)
+              },
+              {
+                person: {
+                  OR: Array.from(emailAddresses).map(addr => ({
+                    emails: {
+                      array_contains: [{ email: addr }]
+                    }
+                  }))
                 }
               }
-            }
-          ]
-        },
-        select: { id: true }
-      });
-      
-      if (deals.length === 0) {
+            ],
+            status: 'open'
+          },
+          select: { id: true }
+        });
+
+        matchingDeals.forEach(d => dealIdSet.add(d.id.toString()));
+      }
+
+      if (dealIdSet.size === 0) {
         console.log('[AutoLink] No matching deals found');
-        await prisma.$disconnect();
         return;
       }
-      
-      console.log(`[AutoLink] Found ${deals.length} deals to potentially link`);
-      
+
+      console.log(`[AutoLink] Found ${dealIdSet.size} deals to potentially link`);
+
       // Link emails to each matching deal
       let totalLinked = 0;
-      for (const deal of deals) {
+      for (const dealId of Array.from(dealIdSet)) {
         try {
-          const result = await emailDealLinkingService.linkEmailsToDeal(deal.id, {
+          const result = await emailDealLinkingService.linkEmailsToDeal(Number(dealId), {
             useContactMatching: true,
-            useDomainMatching: false, // Only use contact matching for real-time linking
+            useDomainMatching: false,
             useSubjectMatching: false
           });
           totalLinked += result.linksCreated;
         } catch (error) {
-          console.error(`[AutoLink] Failed to link emails to deal ${deal.id}:`, error);
+          console.error(`[AutoLink] Failed to link emails to deal ${dealId}:`, error);
         }
       }
-      
-      console.log(`[AutoLink] Successfully linked ${totalLinked} emails to ${deals.length} deals`);
-      await prisma.$disconnect();
+
+      console.log(`[AutoLink] Successfully linked ${totalLinked} emails to ${dealIdSet.size} deals`);
     } catch (error) {
       console.error('[AutoLink] Error in auto-linking process:', error);
     }

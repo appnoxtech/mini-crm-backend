@@ -9,7 +9,7 @@ import { AuthenticatedRequest } from "../../../shared/types";
 import { EmailAccount } from "../models/types";
 import { EmailModel } from "../models/emailModel";
 import { summarizeThreadWithVLLM } from "../../../shared/utils/summarizer";
-import { ResponseHandler } from "../../../shared/responses/responses";
+import { ResponseHandler, ErrorCodes } from "../../../shared/responses/responses";
 import { DealHistoryModel, DealHistory } from "../../pipelines/models/DealHistory";
 import { QuotaValidationService } from "../services/quotaValidationService";
 
@@ -155,7 +155,8 @@ export class EmailController {
   async sendEmail(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       if (!req.user) {
-        return ResponseHandler.unauthorized(res, "User not authenticated");
+        ResponseHandler.unauthorized(res, "User not authenticated");
+        return;
       }
 
       console.log("[EmailController] Received sendEmail payload:", JSON.stringify(req.body, null, 2));
@@ -163,7 +164,8 @@ export class EmailController {
         (req.body as any) || {};
 
       if (!to || !subject || !body) {
-        return ResponseHandler.error(res, "Missing required fields: to, subject, body", 400);
+        ResponseHandler.error(res, "Missing required fields: to, subject, body", 400);
+        return;
       }
 
       let emailAccount: EmailAccount | null = null;
@@ -186,11 +188,12 @@ export class EmailController {
         // If no account is found and no SMTP config is provided, we must error out
         // to prevent silent fallback to a different account (sender mismatch)
         if (!emailAccount && !smtpConfig) {
-          return ResponseHandler.error(
+          ResponseHandler.error(
             res,
             `Email account "${targetEmail}" is not connected to your CRM. Please connect it in Settings > Email Setup before sending.`,
             404
           );
+          return;
         }
       } else {
         // No explicit account provided, try user's default email account
@@ -257,7 +260,8 @@ export class EmailController {
       }
 
       if (!emailAccount) {
-        return ResponseHandler.notFound(res, "No email account configured OR Please connect your email account first");
+        ResponseHandler.notFound(res, "No email account configured OR Please connect your email account first");
+        return;
       }
 
       // Validate and refresh OAuth tokens if needed (only for stored OAuth accounts)
@@ -271,11 +275,12 @@ export class EmailController {
           await this.validateAndRefreshTokens(emailAccount);
         } catch (error: any) {
           console.error("Token validation failed:", error);
-          return ResponseHandler.error(
+          ResponseHandler.error(
             res,
             `Your ${emailAccount.provider} account needs to be re-connected. Please go to email settings and reconnect your account.`,
             401
           );
+          return;
         }
       }
 
@@ -292,9 +297,9 @@ export class EmailController {
         enableTracking: !!enableTracking,
       });
 
-      return ResponseHandler.success(res, "Email sent successfully", messageId);
+      ResponseHandler.success(res, "Email sent successfully", messageId);
     } catch (error: any) {
-      console.error("Email send failed:", error);
+      console.error("[EmailController] Email send failed:", error);
 
       // Check for specific error types and provide appropriate responses
       if (
@@ -304,14 +309,23 @@ export class EmailController {
         error.message.includes("invalid_grant")
       ) {
         res.status(401).json({
+          success: false,
           error: "Email account needs re-authorization",
-          details: error.message,
+          message: error.message,
           requiresReauth: true,
           action:
             "Please go to the email setup page and reconnect your email account.",
         });
+        return;
       } else {
-        return ResponseHandler.internalError(res, "Failed to send email");
+        // Return the actual error message if possible to help with debugging
+        ResponseHandler.error(
+          res,
+          error.message || "Failed to send email",
+          error.statusCode || 500,
+          ErrorCodes.EXTERNAL_SERVICE_ERROR
+        );
+        return;
       }
     }
   }

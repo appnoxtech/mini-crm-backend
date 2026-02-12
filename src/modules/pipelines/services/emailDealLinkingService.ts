@@ -153,49 +153,42 @@ export class EmailDealLinkingService {
 
         const emailAddresses = contactEmails.map(ce => ce.email);
 
-        // Find emails where from/to/cc matches any contact email
-        const matchingEmails = await prisma.email.findMany({
+        // Find all emails in the date range - we filter in JS for better reliability across different DB formats
+        const candidateEmails = await prisma.email.findMany({
             where: {
-                AND: [
-                    {
-                        OR: [
-                            { from: { in: emailAddresses, mode: 'insensitive' } },
-                            // For JSON fields, we need to use raw SQL for contains check
-                            // This is a simplified version - in production you might want to use raw queries
-                        ],
-                    },
-                    {
-                        OR: [
-                            { sentAt: { gte: startDate, lte: endDate } },
-                            { receivedAt: { gte: startDate, lte: endDate } },
-                        ],
-                    },
+                OR: [
+                    { sentAt: { gte: startDate, lte: endDate } },
+                    { receivedAt: { gte: startDate, lte: endDate } },
                 ],
             },
             select: { id: true, from: true, to: true, cc: true },
         });
 
-        // Additional filtering for to/cc JSON fields
+        // Additional filtering in JS
         const results: EmailMatchResult[] = [];
 
-        for (const email of matchingEmails) {
+        for (const email of candidateEmails) {
             let isMatch = false;
 
-            // Check from field
-            if (emailAddresses.some(addr => email.from.toLowerCase() === addr)) {
+            // Check from field (exact and insensitive)
+            if (emailAddresses.some(addr => email.from.toLowerCase().includes(addr.toLowerCase()))) {
                 isMatch = true;
             }
 
-            // Check to field (JSON array)
-            const toEmails = this.extractEmails(email.to);
-            if (toEmails.some(to => emailAddresses.some(addr => to.toLowerCase() === addr))) {
-                isMatch = true;
+            if (!isMatch) {
+                // Check to field (JSON array)
+                const toEmails = this.extractEmails(email.to);
+                if (toEmails.some(to => emailAddresses.some(addr => to.toLowerCase() === addr.toLowerCase()))) {
+                    isMatch = true;
+                }
             }
 
-            // Check cc field (JSON array)
-            const ccEmails = this.extractEmails(email.cc);
-            if (ccEmails.some(cc => emailAddresses.some(addr => cc.toLowerCase() === addr))) {
-                isMatch = true;
+            if (!isMatch) {
+                // Check cc field (JSON array)
+                const ccEmails = this.extractEmails(email.cc);
+                if (ccEmails.some(cc => emailAddresses.some(addr => cc.toLowerCase() === addr.toLowerCase()))) {
+                    isMatch = true;
+                }
             }
 
             if (isMatch) {
@@ -357,7 +350,38 @@ export class EmailDealLinkingService {
         const allMatches = new Map<string, EmailMatchResult>();
 
         try {
-            // Rule 1: Contact-based matching (highest priority)
+            // Rule 0: Thread-based matching (Highest priority, perfectly accurate for replies)
+            // If any email in a thread is linked to this deal, all emails in that thread should be linked
+            const existingLinks = await prisma.dealEmail.findMany({
+                where: { dealId },
+                include: { email: { select: { threadId: true } } }
+            });
+
+            const threadIds = new Set<string>();
+            existingLinks.forEach(link => {
+                if (link.email?.threadId) threadIds.add(link.email.threadId);
+            });
+
+            if (threadIds.size > 0) {
+                const threadMatches = await prisma.email.findMany({
+                    where: {
+                        threadId: { in: Array.from(threadIds) },
+                        id: { notIn: existingLinks.map(l => l.emailId) }
+                    },
+                    select: { id: true }
+                });
+
+                threadMatches.forEach(email => {
+                    allMatches.set(email.id, {
+                        emailId: email.id,
+                        confidenceScore: 100,
+                        linkedMethod: 'auto_contact' // Reuse existing enum or could add 'auto_thread'
+                    });
+                });
+                console.log(`[EmailLink] Found ${threadMatches.length} emails through thread identification`);
+            }
+
+            // Rule 1: Contact-based matching (High priority)
             if (useContactMatching) {
                 const contactEmails = await this.getContactEmailsForDeal(dealId);
                 if (contactEmails.length > 0) {
@@ -440,11 +464,73 @@ export class EmailDealLinkingService {
                         },
                     });
 
-                    // Update email flag
-                    await prisma.email.update({
+                    // Update email flag and dealIds array
+                    const email = await prisma.email.findUnique({
                         where: { id: match.emailId },
-                        data: { isLinkedToDeal: true },
+                        select: { dealIds: true, subject: true, from: true, to: true, body: true, htmlBody: true, threadId: true, sentAt: true, receivedAt: true, isIncoming: true, accountId: true }
                     });
+
+                    if (email) {
+                        const currentDealIds = (email.dealIds as string[]) || [];
+                        if (!currentDealIds.includes(dealId.toString())) {
+                            currentDealIds.push(dealId.toString());
+                        }
+
+                        await prisma.email.update({
+                            where: { id: match.emailId },
+                            data: {
+                                isLinkedToDeal: true,
+                                dealIds: currentDealIds,
+                                updatedAt: new Date()
+                            },
+                        });
+
+                        // Create activity if not exists
+                        const dealActivities = await prisma.dealActivity.findMany({
+                            where: {
+                                dealId: dealId,
+                                activityType: 'mail',
+                            }
+                        });
+
+                        const messageId = match.emailId.includes('-') ? match.emailId.split('-').slice(1).join('-') : match.emailId;
+                        const activityExists = dealActivities.some((a: any) => {
+                            const eData = a.email;
+                            return eData && eData.messageId === messageId;
+                        });
+
+                        if (!activityExists) {
+                            // Get account to find userId
+                            const account = await prisma.emailAccount.findUnique({
+                                where: { id: email.accountId },
+                                select: { userId: true }
+                            });
+
+                            await prisma.dealActivity.create({
+                                data: {
+                                    dealId: dealId,
+                                    userId: account?.userId || 1,
+                                    activityType: 'mail',
+                                    subject: email.subject,
+                                    label: email.isIncoming ? 'incoming' : 'outgoing',
+                                    priority: 'none',
+                                    busyFree: 'free',
+                                    email: {
+                                        from: email.from,
+                                        to: email.to || [],
+                                        subject: email.subject,
+                                        body: email.body,
+                                        htmlBody: email.htmlBody,
+                                        threadId: email.threadId,
+                                        messageId: (match.emailId.includes('-') ? match.emailId.split('-').slice(1).join('-') : match.emailId)
+                                    } as any,
+                                    organization: email.isIncoming ? email.from : (Array.isArray(email.to) ? (email.to as string[]).join(', ') : String(email.to)),
+                                    isDone: true,
+                                    completedAt: email.receivedAt || email.sentAt || new Date(),
+                                }
+                            });
+                        }
+                    }
 
                     linksCreated++;
                 } catch (error) {

@@ -31,8 +31,10 @@ async function syncAllDealEmails() {
         const result = await emailDealLinkingService.bulkLinkEmails(userId, {
             useContactMatching: true,
             useDomainMatching: true,
-            useSubjectMatching: false, // Disabled by default to avoid false positives
-        });
+            useSubjectMatching: false,
+            daysBefore: 30, // Search 30 days before deal creation
+            daysAfter: 30,  // Search 30 days after last activity
+        } as any);
 
         console.log('\n' + '='.repeat(60));
         console.log('✅ Bulk Sync Complete!');

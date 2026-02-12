@@ -603,8 +603,63 @@ export class EmailModel {
   }
 
   async findContactsByEmails(emails: string[]): Promise<Contact[]> {
-    // Mock implementation
-    return [];
+    if (!emails || emails.length === 0) return [];
+
+    // Search in PersonEmail table (normalized emails)
+    const personEmails = await prisma.personEmail.findMany({
+      where: {
+        email: {
+          in: emails.map(e => e.toLowerCase()),
+          mode: 'insensitive'
+        }
+      },
+      include: {
+        person: true
+      }
+    });
+
+    // Also check the JSON field 'emails' in Person table for any missing matches
+    const personsWithJsonEmails = await prisma.person.findMany({
+      where: {
+        OR: emails.map(email => ({
+          emails: {
+            array_contains: [{ email: email.toLowerCase() }]
+          }
+        }))
+      }
+    });
+
+    // Combine and map to the local Contact type
+    const contactsMap = new Map<string, Contact>();
+
+    personEmails.forEach(pe => {
+      if (pe.person) {
+        contactsMap.set(pe.person.id.toString(), {
+          id: pe.person.id.toString(),
+          email: pe.email,
+          firstName: pe.person.firstName,
+          lastName: pe.person.lastName || '',
+          createdAt: pe.person.createdAt,
+          updatedAt: pe.person.updatedAt
+        });
+      }
+    });
+
+    personsWithJsonEmails.forEach(p => {
+      const idStr = p.id.toString();
+      if (!contactsMap.has(idStr)) {
+        contactsMap.set(idStr, {
+          id: idStr,
+          email: emails.find(e => JSON.stringify(p.emails).toLowerCase().includes(e.toLowerCase())) || '',
+          firstName: p.firstName,
+          lastName: p.lastName || '',
+          createdAt: p.createdAt,
+          updatedAt: p.updatedAt
+        });
+      }
+    });
+
+    return Array.from(contactsMap.values());
   }
 
   async saveThreadSummary(threadId: string, summary: string): Promise<void> {
@@ -644,8 +699,26 @@ export class EmailModel {
   }
 
   async findDealsByContactIds(contactIds: string[]): Promise<Deal[]> {
-    // Mock implementation
-    return [];
+    if (!contactIds || contactIds.length === 0) return [];
+
+    const deals = await prisma.deal.findMany({
+      where: {
+        personId: {
+          in: contactIds.map(id => parseInt(id)).filter(id => !isNaN(id))
+        },
+        status: 'open' // Only match with open deals by default
+      }
+    });
+
+    return deals.map(d => ({
+      id: d.id.toString(),
+      title: d.title,
+      value: d.value ? Number(d.value) : 0,
+      stage: d.stageId.toString(),
+      contactIds: d.personId ? [d.personId.toString()] : [],
+      createdAt: d.createdAt,
+      updatedAt: d.updatedAt
+    }));
   }
 
   async getEmailsForContact(contactId: string): Promise<Email[]> {
@@ -803,18 +876,38 @@ export class EmailModel {
    * Used to auto-link reply emails to the same deals.
    */
   async findDealIdsByThreadId(threadId: string): Promise<string[]> {
+    // 1. Check junction table (most reliable)
+    const dealEmailLinks = await prisma.dealEmail.findMany({
+      where: {
+        email: {
+          threadId: threadId
+        }
+      },
+      select: {
+        dealId: true
+      }
+    });
+
+    const dealIdSet = new Set<string>();
+    dealEmailLinks.forEach(link => dealIdSet.add(link.dealId.toString()));
+
+    // 2. Fallback to denormalized array in Email table
     const rows = await prisma.email.findMany({
       where: {
         threadId,
-        NOT: { dealIds: { equals: Prisma.DbNull } }
+        NOT: {
+          OR: [
+            { dealIds: { equals: Prisma.DbNull } },
+            { dealIds: { equals: [] } }
+          ]
+        }
       },
       select: { dealIds: true }
     });
 
-    const dealIdSet = new Set<string>();
     for (const row of rows) {
       const ids = (row.dealIds as string[]) || [];
-      ids.forEach(id => dealIdSet.add(id));
+      ids.forEach(id => dealIdSet.add(id.toString()));
     }
 
     return Array.from(dealIdSet);
