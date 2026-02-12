@@ -479,6 +479,36 @@ export class EmailModel {
     };
   }
 
+  async getEmailAccountByUserAndEmail(userId: string, email: string): Promise<EmailAccount | null> {
+    const row = await prisma.emailAccount.findFirst({
+      where: {
+        userId: parseInt(userId),
+        email: {
+          equals: email,
+          mode: 'insensitive'
+        },
+        isActive: true
+      }
+    });
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      userId: row.userId.toString(),
+      email: row.email,
+      provider: row.provider as any,
+      accessToken: row.accessToken || undefined,
+      refreshToken: row.refreshToken || undefined,
+      imapConfig: row.imapConfig ? JSON.parse(row.imapConfig as string) : undefined,
+      smtpConfig: row.smtpConfig ? JSON.parse(row.smtpConfig as string) : undefined,
+      isActive: row.isActive,
+      lastSyncAt: row.lastSyncAt || undefined,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
   async createEmailAccount(account: EmailAccount): Promise<EmailAccount> {
     await prisma.emailAccount.create({
       data: {

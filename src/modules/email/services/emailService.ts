@@ -290,6 +290,7 @@ export class EmailService {
             cc: email.cc,
             bcc: email.bcc,
             htmlBody: email.htmlBody,
+            threadId: email.threadId,
             attachments: email.attachments?.map(att => ({
               filename: att.filename,
               url: att.url || '',
@@ -802,7 +803,8 @@ export class EmailService {
               from: email.from,
               to: email.to,
               subject: email.subject,
-              body: email.body
+              body: email.body,
+              threadId: email.threadId
             },
             organization: isIncoming ? email.from : email.to.join(', '),
             isDone: true,

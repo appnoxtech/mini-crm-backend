@@ -24,6 +24,7 @@ export interface DealActivity extends BaseEntity {
         subject: string;
         body: string;
         htmlBody?: string;
+        threadId?: string;
         attachments?: {
             filename: string;
             url: string;

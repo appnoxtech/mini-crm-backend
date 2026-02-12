@@ -1,0 +1,3434 @@
+[
+  {
+    "id": "1-kunal.appnox@gmail.com-1770881391709-ca+c-n3dsb2y57+i2cuw7q5fld7nqaif-nngmezwdgfqgz88gfg@mail.gmail.com",
+    "subject": "testing",
+    "from": "kunal.appnox@gmail.com",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": "19c50c8301fc6b7d",
+    "dealIds": [
+      "5"
+    ],
+    "isIncoming": false,
+    "createdAt": "2026-02-12T07:38:32.834Z"
+  },
+  {
+    "id": "1-kunal.appnox@gmail.com-1770881391709-cak1pw0wfw8yiu3svv=o=ttvdpst95x4_9hpd2kyyidxacvxodq@mail.gmail.com",
+    "subject": "Re: testing",
+    "from": "Govind Singh <govind.appnox@gmail.com>",
+    "to": [
+      "kunal.appnox@gmail.com"
+    ],
+    "threadId": "19c50c8301fc6b7d",
+    "dealIds": [
+      "5"
+    ],
+    "isIncoming": true,
+    "createdAt": "2026-02-12T07:38:32.827Z"
+  },
+  {
+    "id": "e69439e4-80ab-4c69-8986-7e8e091c0893",
+    "subject": "testing",
+    "from": "kunal.appnox@gmail.com",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": "19c50c8301fc6b7d",
+    "dealIds": [
+      "5"
+    ],
+    "isIncoming": false,
+    "createdAt": "2026-02-12T07:37:03.253Z"
+  },
+  {
+    "id": "1-kunal.appnox@gmail.com-1770881391709-ca+c-n3eadhnc+dz+pe4-89uqs+g7qtwcu6ukr8zkgkwdea=wua@mail.gmail.com",
+    "subject": "testing gmail and hostinger from",
+    "from": "kunal.appnox@gmail.com",
+    "to": [
+      "govind.singh@appnox.ai"
+    ],
+    "threadId": "19c50c4af2580a49",
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-12T07:33:19.600Z"
+  },
+  {
+    "id": "f822d517-29df-4645-826c-19875547773b",
+    "subject": "testing gmail and hostinger from",
+    "from": "kunal.appnox@gmail.com",
+    "to": [
+      "govind.singh@appnox.ai"
+    ],
+    "threadId": "19c50c4af2580a49",
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-12T07:33:13.321Z"
+  },
+  {
+    "id": "1-kunal.appnox@gmail.com-1770881391709-b9395700-37b3-2f27-7d28-0b17084fa69f@appnox.ai",
+    "subject": "Reminder: testing live event - in 4 minutes",
+    "from": "CRM System <dev@appnox.ai>",
+    "to": [
+      "kunal.appnox@gmail.com"
+    ],
+    "threadId": "19c2de55c7f67b85",
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-12T07:30:49.710Z"
+  },
+  {
+    "id": "1-kunal.appnox@gmail.com-1770881391709-7b7e47dc-9b19-ed3d-bdba-e810cd3cc07a@appnox.ai",
+    "subject": "testing email tracking notification",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai",
+      "kunal.appnox@gmail.com"
+    ],
+    "threadId": "19c3165ab01bd269",
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-12T07:30:49.703Z"
+  },
+  {
+    "id": "1-kunal.appnox@gmail.com-1770881391709-952b3c93-70f0-eeea-8d60-ed754ee56285@appnox.ai",
+    "subject": "Reminder: event for testing - in 4 minutes",
+    "from": "CRM System <dev@appnox.ai>",
+    "to": [
+      "kunal.appnox@gmail.com"
+    ],
+    "threadId": "19c32e09f6ba2b09",
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-12T07:30:49.697Z"
+  },
+  {
+    "id": "1-kunal.appnox@gmail.com-1770881391709-ca+c-n3e_gk0odwngrs+-zkxc6_kz-f-y1gnjlsjz9-wrsv_c_q@mail.gmail.com",
+    "subject": "testing",
+    "from": "Kunal Sharma <kunal.appnox@gmail.com>",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": "19c50995b1dd7e1c",
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-12T07:30:49.669Z"
+  },
+  {
+    "id": "1-kunal.appnox@gmail.com-1770881391709-6ab7d4e1-9590-6876-7dff-f3c1d267c5a5@appnox.ai",
+    "subject": "Re: testing",
+    "from": "vijay.saud@appnox.ai",
+    "to": [
+      "kunal.appnox@gmail.com"
+    ],
+    "threadId": "19c50995b1dd7e1c",
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-12T07:30:49.663Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-1770878927891406092.1770878927@appnox.ai",
+    "subject": "testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-12T06:49:40.540Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-1770878927891406092.1770878927@appnox.ai",
+    "subject": "testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-12T06:49:11.982Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-1770878927891406092.1770878927@appnox.ai",
+    "subject": "testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-12T06:48:52.628Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-79c68e16-aff7-02d7-4cee-4f8e4426ea43@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T14:32:17.419Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-3c5d680a-7605-84a8-aa39-f56b71111ccf@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T14:32:17.419Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-79c68e16-aff7-02d7-4cee-4f8e4426ea43@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T14:32:17.418Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-3c5d680a-7605-84a8-aa39-f56b71111ccf@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T14:32:17.417Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-3c5d680a-7605-84a8-aa39-f56b71111ccf@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T14:32:16.627Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-79c68e16-aff7-02d7-4cee-4f8e4426ea43@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T14:32:16.627Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-086672ec-651d-d1d6-86f5-d4f724ef4189@appnox.ai",
+    "subject": "testing email thread",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T13:53:53.934Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-086672ec-651d-d1d6-86f5-d4f724ef4189@appnox.ai",
+    "subject": "testing email thread",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T13:53:31.443Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-086672ec-651d-d1d6-86f5-d4f724ef4189@appnox.ai",
+    "subject": "testing email thread",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T13:52:57.567Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-69cd200d-9a95-5dac-a03b-aa35b72d2ec0@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivam.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:52:06.061Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-96f532ac-ba4e-7f91-923b-9eb98a313fb7@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "aman.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:52:06.061Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-d3c59d48-5aee-4f6d-3b40-c50a4bb6c0bc@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:52:06.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-69cd200d-9a95-5dac-a03b-aa35b72d2ec0@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivam.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:51:42.701Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-96f532ac-ba4e-7f91-923b-9eb98a313fb7@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "aman.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:51:42.701Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-d3c59d48-5aee-4f6d-3b40-c50a4bb6c0bc@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:51:42.700Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-96f532ac-ba4e-7f91-923b-9eb98a313fb7@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "aman.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:51:18.863Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-d3c59d48-5aee-4f6d-3b40-c50a4bb6c0bc@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:51:18.863Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-69cd200d-9a95-5dac-a03b-aa35b72d2ec0@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivam.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:51:18.863Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-24b8bcc6-3db6-5f68-2feb-47871b5da151@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T12:50:22.360Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-71768b1e-06e9-5036-2188-ddefd43f5763@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:50:22.360Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-24b8bcc6-3db6-5f68-2feb-47871b5da151@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T12:50:22.355Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-71768b1e-06e9-5036-2188-ddefd43f5763@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:50:22.355Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-71768b1e-06e9-5036-2188-ddefd43f5763@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:50:22.274Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-24b8bcc6-3db6-5f68-2feb-47871b5da151@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T12:50:22.274Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-b1f7f552-5355-bbf3-1079-f0f7e4ab0dcf@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivang.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:49:27.493Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-b1f7f552-5355-bbf3-1079-f0f7e4ab0dcf@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivang.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:49:07.372Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-b1f7f552-5355-bbf3-1079-f0f7e4ab0dcf@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivang.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:48:38.462Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-dd48fe6d-62da-4e8e-8aed-122ce1d6ee28@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:47:52.161Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-57051805-9914-dbd4-069a-d0832a186de5@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T12:47:52.161Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-dd48fe6d-62da-4e8e-8aed-122ce1d6ee28@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:47:52.120Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-57051805-9914-dbd4-069a-d0832a186de5@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T12:47:52.120Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-572e8b12-158f-964e-2772-f9e23bd38a82@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "devbisht.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:47:52.120Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-dd48fe6d-62da-4e8e-8aed-122ce1d6ee28@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:47:42.626Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-57051805-9914-dbd4-069a-d0832a186de5@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T12:47:42.626Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-572e8b12-158f-964e-2772-f9e23bd38a82@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "devbisht.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:47:42.626Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-572e8b12-158f-964e-2772-f9e23bd38a82@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "devbisht.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:47:22.206Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-bf0578d5-f538-8332-cd98-8b99ee620609@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivam.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:45:59.785Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-edc24a9c-106f-424a-b29b-30249bffca64@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "aman.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:45:59.785Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-c2136e96-6b26-c470-c421-5fc1dfd54004@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:45:59.784Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-edc24a9c-106f-424a-b29b-30249bffca64@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "aman.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:45:37.439Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-bf0578d5-f538-8332-cd98-8b99ee620609@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivam.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:45:37.439Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-c2136e96-6b26-c470-c421-5fc1dfd54004@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:45:37.438Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-edc24a9c-106f-424a-b29b-30249bffca64@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "aman.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:45:10.801Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-bf0578d5-f538-8332-cd98-8b99ee620609@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivam.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:45:10.800Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-c2136e96-6b26-c470-c421-5fc1dfd54004@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:45:10.800Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-7bae08d6-8c2f-5c52-9d1b-d40dd0bea95d@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:44:22.800Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-34ea6786-dfcb-5611-c826-c18c815e2f91@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "devbisht.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:44:22.800Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-c1c3ee6f-df0f-8b89-600a-77797ea15251@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivang.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:44:22.800Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-077454af-e7d6-b48a-23a2-ba634abde3fb@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T12:44:22.800Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-7bae08d6-8c2f-5c52-9d1b-d40dd0bea95d@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:44:22.799Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-34ea6786-dfcb-5611-c826-c18c815e2f91@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "devbisht.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:44:22.799Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-c1c3ee6f-df0f-8b89-600a-77797ea15251@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivang.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:44:22.798Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-077454af-e7d6-b48a-23a2-ba634abde3fb@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T12:44:22.798Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-077454af-e7d6-b48a-23a2-ba634abde3fb@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T12:44:21.559Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-c1c3ee6f-df0f-8b89-600a-77797ea15251@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivang.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:44:21.559Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-7bae08d6-8c2f-5c52-9d1b-d40dd0bea95d@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:44:21.559Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-34ea6786-dfcb-5611-c826-c18c815e2f91@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "devbisht.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:44:21.559Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-8115d645-c8c2-c0dd-82b8-795d0d5f3869@appnox.ai",
+    "subject": "testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:37:18.099Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-8115d645-c8c2-c0dd-82b8-795d0d5f3869@appnox.ai",
+    "subject": "testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:36:51.839Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-8115d645-c8c2-c0dd-82b8-795d0d5f3869@appnox.ai",
+    "subject": "testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T12:36:17.379Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-ed8d1610-4084-82c3-d36d-61bbfd4775fb@appnox.ai",
+    "subject": "testing",
+    "from": "dev.bisht@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T11:03:18.545Z"
+  },
+  {
+    "id": "59d9f1a0-a481-4f1d-93c9-1a2773a43458",
+    "subject": "testing",
+    "from": "dev.bisht@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T11:02:59.183Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-015a9e40-f653-70ff-4a4c-ed8be9a5e7d4@appnox.ai",
+    "subject": "testing linking deal",
+    "from": "dev.bisht@appnox.ai",
+    "to": [
+      "devbisht.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T10:27:43.636Z"
+  },
+  {
+    "id": "94ea5f21-9b0a-49d1-ac0b-fadb2fadfbee",
+    "subject": "testing linking deal",
+    "from": "dev.bisht@appnox.ai",
+    "to": [
+      "devbisht.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [
+      "4"
+    ],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T10:27:31.480Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-5579cdcf-31dd-389c-c6dd-c058ad9af9e2@appnox.ai",
+    "subject": "testing",
+    "from": "dev.bisht@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T07:27:59.945Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-ae693e52-9388-f6a6-4aff-f1496e84639e@appnox.ai",
+    "subject": "testing",
+    "from": "dev.bisht@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T07:27:59.945Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-937b98e7-ba09-cf57-dfc7-6dd008123405@appnox.ai",
+    "subject": "testing",
+    "from": "dev.bisht@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T07:27:59.945Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-8a7f6514-17fe-0478-bab6-d13aec0c431e@appnox.ai",
+    "subject": "testing",
+    "from": "dev.bisht@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T07:27:59.945Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-a477ac25-2a3c-7d27-da31-b0f111c39fe2@appnox.ai",
+    "subject": "testing draft mail",
+    "from": "dev.bisht@appnox.ai",
+    "to": [
+      "devbisht.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T07:27:59.945Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-483de24c-61cf-d0b3-8a66-9f1b33ea926d@appnox.ai",
+    "subject": "testing draft 2",
+    "from": "dev.bisht@appnox.ai",
+    "to": [
+      "devbisht.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T07:27:59.945Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-509a70fa-27a6-30d6-ed9a-91ba00d4eec4@appnox.ai",
+    "subject": "Re: testing drafts",
+    "from": "dev.bisht@appnox.ai",
+    "to": [
+      "devbisht.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T07:27:59.945Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-831fb87e-96e1-969c-d5d9-bbbf3a6090b2@appnox.ai",
+    "subject": "testing draft api",
+    "from": "dev.bisht@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T07:27:59.945Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-89fe6430-5ead-34ad-9f11-26def6885d90@appnox.ai",
+    "subject": "testing the notification",
+    "from": "dev.bisht@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T07:27:59.945Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-9bfb21e6-1fa0-4137-d66b-32c1fe7e0ba5@appnox.ai",
+    "subject": "testing toast",
+    "from": "dev.bisht@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T07:27:59.945Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-11d3d457-248c-9f0d-d5fe-4a49551d6607@appnox.ai",
+    "subject": "testing #69",
+    "from": "dev.bisht@appnox.ai",
+    "to": [
+      "vijay.saud@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T07:27:59.945Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-ca+9neewn-bdmj+d3f5w8mccfe6qjdzdnarh0f+ity0sxoksqhg@mail.gmail.com",
+    "subject": "Re: testing 33",
+    "from": "\"Dev Bisht\" <devbisht.appnox@gmail.com>",
+    "to": [
+      "dev.bisht@appnox.ai"
+    ],
+    "threadId": "<56b1c7c1-ff37-0208-ec9e-4b4d5a7c08e2@appnox.ai>",
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T07:27:59.944Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-cadmhveaxr7zpjzerhn7uxvyuet7oqfrxo=pf_pzl7h2cfugagw@mail.gmail.com",
+    "subject": "Testing dev",
+    "from": "\"Ashish Rai\" <ashishappnox1@gmail.com>",
+    "to": [
+      "dev.bisht@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T07:27:59.832Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-ca+9neew2nmdzgfbwsd7-z_2p4aabn7tek69ufu--8bqrkehq5w@mail.gmail.com",
+    "subject": "testing 123",
+    "from": "\"Dev Bisht\" <devbisht.appnox@gmail.com>",
+    "to": [
+      "dev.bisht@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T07:27:59.832Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-ca+9neeug3z0wea=wak_w+jodehftc56wtjb-dhjrdxfs=knvva@mail.gmail.com",
+    "subject": "Testing 222",
+    "from": "\"Dev Bisht\" <devbisht.appnox@gmail.com>",
+    "to": [
+      "dev.bisht@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T07:27:59.832Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-ca+9neexf2vdp3zrass-d1qoqgk8kr4gfd2y_7bu0yykvnpspiw@mail.gmail.com",
+    "subject": "Testing 333",
+    "from": "\"Dev Bisht\" <devbisht.appnox@gmail.com>",
+    "to": [
+      "dev.bisht@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T07:27:59.832Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-d4de93af-3c8c-e797-d058-4d7f578cdfcc@appnox.ai",
+    "subject": "testing",
+    "from": "dev.bisht@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T07:27:50.736Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-f11e135d-dea4-ae10-cb50-3a3d9095e8c4@appnox.ai",
+    "subject": "testing #69",
+    "from": "dev.bisht@appnox.ai",
+    "to": [
+      "vijay.saud@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T07:27:50.733Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-553037c5-2391-948f-c9e5-b631ba9ab71e@appnox.ai",
+    "subject": "testing notification",
+    "from": "dev.bisht@appnox.ai",
+    "to": [
+      "devbisht.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-11T07:27:50.715Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-ca+9neexvte6h83drzhh1meao_w2xu4nokwk9dcyaxvucpx5dfq@mail.gmail.com",
+    "subject": "Re: testing 33",
+    "from": "\"Dev Bisht\" <devbisht.appnox@gmail.com>",
+    "to": [
+      "dev.bisht@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T07:27:43.790Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-ca+9neevbsvtct4xvlczog-d+gkztgy1siw1bmbzpe58223n_4a@mail.gmail.com",
+    "subject": "Re: testing 33",
+    "from": "\"Dev Bisht\" <devbisht.appnox@gmail.com>",
+    "to": [
+      "dev.bisht@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T07:27:43.787Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-cagiannbnm9rc0wiqdtgvwo6x23aydagzk67-et+y5tupquk11g@mail.gmail.com",
+    "subject": "Testing",
+    "from": "\"dev bisht\" <bishtdev030@gmail.com>",
+    "to": [
+      "dev.bisht@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T07:27:43.784Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-1769163958279757704.1769163958@appnox.ai",
+    "subject": "Re: testing 22 files",
+    "from": "vijay.saud@appnox.ai",
+    "to": [
+      "dev.bisht@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T07:27:43.775Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-ca+9neexdnmcpq0bxbx+bl5i8xhcedgxkq-=xpfofcd5m6d9bbg@mail.gmail.com",
+    "subject": "testing noti",
+    "from": "\"Dev Bisht\" <devbisht.appnox@gmail.com>",
+    "to": [
+      "dev.bisht@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T07:27:43.753Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-16343f6a-d730-265e-341b-379240b66658@appnox.ai",
+    "subject": "Re: testing",
+    "from": "vijay.saud@appnox.ai",
+    "to": [
+      "dev.bisht@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T07:27:43.686Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-b854724a-0c4f-ba76-f64b-a8347c1e56ac@appnox.ai",
+    "subject": "file testing",
+    "from": "vijay.saud@appnox.ai",
+    "to": [
+      "dev.bisht@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T07:27:43.646Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-c6b08024-5507-d4db-8616-4b6f04658b72@appnox.ai",
+    "subject": "Ashish Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "dev.bisht@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T07:27:43.582Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-ca+9neew8lqg5+gkvb4mt2xerryvozopxrlgzvujpq6so5yondq@mail.gmail.com",
+    "subject": "testing timing",
+    "from": "\"Dev Bisht\" <devbisht.appnox@gmail.com>",
+    "to": [
+      "dev.bisht@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T07:27:43.578Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-ca+9neevzupo0raf=087--99zrrxymjoja86k3uglqu0wnmk0wa@mail.gmail.com",
+    "subject": "testing mail",
+    "from": "devbisht.appnox@gmail.com",
+    "to": [
+      "dev.bisht@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T07:27:43.244Z"
+  },
+  {
+    "id": "4-dev.bisht@appnox.ai-ca+9neevvic=ag=kwa0++_h+8tumhhzngj+vef2snvlkqax8rcg@mail.gmail.com",
+    "subject": "testing #2",
+    "from": "devbisht.appnox@gmail.com",
+    "to": [
+      "dev.bisht@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T07:27:43.215Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-0fdb19aa-813d-b77e-c4de-e3cc8d4e3b8a@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T05:56:06.703Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-a9b64d12-c364-dfb7-d037-6cab42ab3d3b@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T05:56:06.703Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-0fdb19aa-813d-b77e-c4de-e3cc8d4e3b8a@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T05:55:20.802Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-a9b64d12-c364-dfb7-d037-6cab42ab3d3b@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T05:55:20.802Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-a9b64d12-c364-dfb7-d037-6cab42ab3d3b@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T05:54:36.172Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-0fdb19aa-813d-b77e-c4de-e3cc8d4e3b8a@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-11T05:54:36.172Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-8944a963-1406-bc4c-7862-9f9a83a5a34c@appnox.ai",
+    "subject": "testing,,,",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T07:24:48.293Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-8944a963-1406-bc4c-7862-9f9a83a5a34c@appnox.ai",
+    "subject": "testing,,,",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T07:24:22.707Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-8944a963-1406-bc4c-7862-9f9a83a5a34c@appnox.ai",
+    "subject": "testing,,,",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T07:23:44.596Z"
+  },
+  {
+    "id": "b7595877-c1bd-4478-bbe0-f073728865d8",
+    "subject": "testing,,,",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T07:23:42.013Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-f8c3f75f-eb07-7ee2-383e-c1f3822d40c5@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T07:21:47.546Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-cf332dbc-1646-4162-b067-db5966603265@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivam.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T07:21:47.546Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-17c4cba8-a373-2c10-5ae8-ea38f2b8ff8e@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "aman.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T07:21:47.546Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-f8c3f75f-eb07-7ee2-383e-c1f3822d40c5@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T07:21:23.718Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-cf332dbc-1646-4162-b067-db5966603265@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivam.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T07:21:23.718Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-17c4cba8-a373-2c10-5ae8-ea38f2b8ff8e@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "aman.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T07:21:23.718Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-f8c3f75f-eb07-7ee2-383e-c1f3822d40c5@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T07:20:45.658Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-cf332dbc-1646-4162-b067-db5966603265@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivam.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T07:20:45.658Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-17c4cba8-a373-2c10-5ae8-ea38f2b8ff8e@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "aman.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T07:20:45.658Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-14d03e6e-fb17-fdf9-1c22-7432c705de93@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T07:20:45.658Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-14d03e6e-fb17-fdf9-1c22-7432c705de93@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T07:20:18.138Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-14d03e6e-fb17-fdf9-1c22-7432c705de93@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T07:19:13.471Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-4498c6d8-90d7-40a2-2037-2d5991fb7bce@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivam.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T07:15:02.254Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-4498c6d8-90d7-40a2-2037-2d5991fb7bce@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivam.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T07:14:39.014Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-4498c6d8-90d7-40a2-2037-2d5991fb7bce@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivam.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T07:14:10.123Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-4e8d7cc1-7822-1c7a-b6d2-83b597db9c76@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:41:06.260Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-4cd9b7ca-2db4-f90d-a7ad-9b5435b31e0d@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-10T05:41:06.260Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-4cd9b7ca-2db4-f90d-a7ad-9b5435b31e0d@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-10T05:41:00.619Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-4e8d7cc1-7822-1c7a-b6d2-83b597db9c76@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:41:00.619Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-4e8d7cc1-7822-1c7a-b6d2-83b597db9c76@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:40:43.728Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-4cd9b7ca-2db4-f90d-a7ad-9b5435b31e0d@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-10T05:40:43.728Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-87733653-1f44-0fa3-c2cb-2c4f9337ed3c@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:40:19.386Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-87733653-1f44-0fa3-c2cb-2c4f9337ed3c@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:39:53.161Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-87733653-1f44-0fa3-c2cb-2c4f9337ed3c@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:39:28.246Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-3be4bfdc-0df3-2d3a-7949-0888cdeeea72@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:35:00.119Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-3be4bfdc-0df3-2d3a-7949-0888cdeeea72@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:34:30.853Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-3be4bfdc-0df3-2d3a-7949-0888cdeeea72@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:34:07.097Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-213053ad-2e05-876b-cf95-2fe9ee731d8d@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "aman.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:34:07.097Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-213053ad-2e05-876b-cf95-2fe9ee731d8d@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "aman.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:33:35.531Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-b8916dcd-d108-fb59-6bf0-ee42e647777f@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivam.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:33:03.415Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-213053ad-2e05-876b-cf95-2fe9ee731d8d@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "aman.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:33:03.415Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-b8916dcd-d108-fb59-6bf0-ee42e647777f@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivam.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:32:37.981Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-b8916dcd-d108-fb59-6bf0-ee42e647777f@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivam.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:32:11.421Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-1770269529829571414.1770269529@appnox.ai",
+    "subject": "testing crm",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.mishra@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.560Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-9e82ad43-fd42-b7ae-31bd-6a95cee1d1c5@appnox.ai",
+    "subject": "testing own mail sent",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.497Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-c0993401-bbfc-4161-e129-bd8d143a29ad@appnox.ai",
+    "subject": "testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.mishra@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.490Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-cbe36f12-cc5f-81ed-f6a2-f68d7b0fc858@appnox.ai",
+    "subject": "testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.424Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-1447b4c2-3f3e-06f6-d77d-7b2669d3c0bc@appnox.ai",
+    "subject": "testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.mishra@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.423Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-ffa40b7b-ee13-24b6-9cc0-99ab5dae51ff@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.419Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-4b7f163d-6c6d-d818-9e99-04612c67ffed@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivang.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.417Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-82ac9c3b-eab0-fdc4-e04f-3b561a1fd2ff@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "aman.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.414Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-55acbbd7-adef-1fbd-cb4a-4abc88c3766e@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.408Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-0414c1a7-d921-d4b3-4036-bf24db2a83af@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "devbisht.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.400Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-39ac50e2-786b-b384-7d92-1c4dd18718a4@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivang.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.398Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-a6562235-82b2-edc4-e525-16254abc292d@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.396Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-11619e94-790c-dbaa-2767-ca0234f2f6ae@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.393Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-8166386d-e6fc-bd6f-ea71-b60f48f53ee4@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.381Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-7551c103-31c1-6c9f-08b5-532a2478a358@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.374Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-3a29ce49-7c74-315a-e6a3-58cf863c9b81@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "devbisht.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.372Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-f72ba33b-f550-c96e-06e7-1ac684afc056@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivang.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.370Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-401954d8-97cf-a3cd-eae8-46a72d2665c7@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.368Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-70ae91e0-115c-a173-8d38-64436116f529@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.365Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-fb550a2e-794d-7416-ff5c-195c07082f5f@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivam.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.363Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-3341dcce-f29b-384d-202c-053c0652071b@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "aman.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.358Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-42f126a6-4a5b-58a6-7f16-25900bea7e61@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.350Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-f5f8f941-6d4d-38c2-c36d-3e04a45e5db8@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivam.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.349Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-eb05ebd2-f7c2-35e4-8623-ef1384334ed6@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:20.346Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-1770269751699580814.1770269751@appnox.ai",
+    "subject": "testing draft",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.mishra@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:14.346Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-fef41d0f-eba6-6cff-05fe-485011e64464@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:14.346Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-0ca64885-37c8-03e9-b774-b408ab4e6d30@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:14.346Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-1770015834454361925.1770015834@appnox.ai",
+    "subject": "testing draft",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:14.346Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-38072130-b332-a335-3537-59194a2ba10a@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:14.346Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-a99df51c-0896-183d-c921-f0e5cff4bb7f@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:14.346Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-dae8d197-ae12-0a1c-1993-b3e6e8a1d82b@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "aman.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:14.346Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-ca+9neexo+weksk=+udkrjzraqdef2d1x7tbtnykywd6tq0y9mg@mail.gmail.com",
+    "subject": "Re: CRM Testing",
+    "from": "\"Dev Bisht\" <devbisht.appnox@gmail.com>",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": "<12396a8b-288e-f783-92e4-a01268210843@appnox.ai>",
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-10T05:31:14.345Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-9168b93c-2ec0-4780-a31c-1afca5c3464c@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-10T05:31:11.547Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-d93b1e81-06c6-0d79-1ac7-3d335507358c@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-10T05:31:11.539Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-3ab74370-294d-36e5-14c1-82a1f9bb3334@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-10T05:31:11.537Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-ae726c5b-3430-eb22-71cd-71e1fc45e317@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-10T05:31:11.529Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-d0441d89-42b1-c573-9c1f-93e335aa6ef1@appnox.ai",
+    "subject": "testing own mail sent",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:10.362Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-bb28d061-eff9-d33a-1d1f-2cf0d99dabf9@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-10T05:31:10.352Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-986bc42b-5937-73be-527c-1ff8ac0594e5@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-10T05:31:10.348Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-8b68974b-116e-929d-1864-e21749cf1298@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-10T05:31:10.344Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-3f97355e-49b5-22bd-3204-ff3c22f45308@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-10T05:31:10.326Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-a10ac607-d47d-13c5-62b9-a479581a2723@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:10.322Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-7b7e47dc-9b19-ed3d-bdba-e810cd3cc07a@appnox.ai",
+    "subject": "testing email tracking notification",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai",
+      "kunal.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:10.317Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-b9f5f1a7-b631-0e40-1fda-8c9f96f0efca@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:10.187Z"
+  },
+  {
+    "id": "3-kunal.sharma@appnox.ai-34b928d2-109e-2b38-4188-ba14e910abfd@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-10T05:31:10.171Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-34b928d2-109e-2b38-4188-ba14e910abfd@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-09T13:31:49.661Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-34b928d2-109e-2b38-4188-ba14e910abfd@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-09T13:31:49.550Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-eb05ebd2-f7c2-35e4-8623-ef1384334ed6@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T13:31:49.550Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-eb05ebd2-f7c2-35e4-8623-ef1384334ed6@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T13:31:30.144Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-42f126a6-4a5b-58a6-7f16-25900bea7e61@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:24:43.300Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-3341dcce-f29b-384d-202c-053c0652071b@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "aman.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:24:43.300Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-f5f8f941-6d4d-38c2-c36d-3e04a45e5db8@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivam.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:24:43.300Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-42f126a6-4a5b-58a6-7f16-25900bea7e61@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:24:21.810Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-f5f8f941-6d4d-38c2-c36d-3e04a45e5db8@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivam.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:24:21.810Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-3341dcce-f29b-384d-202c-053c0652071b@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "aman.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:24:21.810Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-0ca64885-37c8-03e9-b774-b408ab4e6d30@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:19:59.815Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-0ca64885-37c8-03e9-b774-b408ab4e6d30@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:19:36.700Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-dae8d197-ae12-0a1c-1993-b3e6e8a1d82b@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "aman.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:18:12.944Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-dae8d197-ae12-0a1c-1993-b3e6e8a1d82b@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "aman.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:17:52.452Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-70ae91e0-115c-a173-8d38-64436116f529@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:12:17.596Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-fb550a2e-794d-7416-ff5c-195c07082f5f@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivam.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:12:17.596Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-401954d8-97cf-a3cd-eae8-46a72d2665c7@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:12:17.596Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-70ae91e0-115c-a173-8d38-64436116f529@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:11:53.087Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-f72ba33b-f550-c96e-06e7-1ac684afc056@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivang.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:11:53.087Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-401954d8-97cf-a3cd-eae8-46a72d2665c7@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:11:53.087Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-fb550a2e-794d-7416-ff5c-195c07082f5f@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivam.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:11:53.087Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-f72ba33b-f550-c96e-06e7-1ac684afc056@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivang.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:11:16.193Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-7551c103-31c1-6c9f-08b5-532a2478a358@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:11:10.262Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-b9f5f1a7-b631-0e40-1fda-8c9f96f0efca@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-09T10:11:10.262Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-3a29ce49-7c74-315a-e6a3-58cf863c9b81@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "devbisht.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:11:10.262Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-3a29ce49-7c74-315a-e6a3-58cf863c9b81@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "devbisht.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:11:10.134Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-7551c103-31c1-6c9f-08b5-532a2478a358@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T10:11:10.134Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-b9f5f1a7-b631-0e40-1fda-8c9f96f0efca@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-09T10:10:52.949Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-8166386d-e6fc-bd6f-ea71-b60f48f53ee4@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T08:46:51.104Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-8166386d-e6fc-bd6f-ea71-b60f48f53ee4@appnox.ai",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-09T08:46:15.637Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<1770269751699580814.1770269751@appnox.ai>",
+    "subject": "testing draft",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.mishra@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<7b7e47dc-9b19-ed3d-bdba-e810cd3cc07a@appnox.ai>",
+    "subject": "testing email tracking notification",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai",
+      "kunal.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<a99df51c-0896-183d-c921-f0e5cff4bb7f@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<38072130-b332-a335-3537-59194a2ba10a@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<fef41d0f-eba6-6cff-05fe-485011e64464@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<1770015834454361925.1770015834@appnox.ai>",
+    "subject": "testing draft",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<11619e94-790c-dbaa-2767-ca0234f2f6ae@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<a6562235-82b2-edc4-e525-16254abc292d@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<39ac50e2-786b-b384-7d92-1c4dd18718a4@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivang.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<0414c1a7-d921-d4b3-4036-bf24db2a83af@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "devbisht.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<55acbbd7-adef-1fbd-cb4a-4abc88c3766e@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<82ac9c3b-eab0-fdc4-e04f-3b561a1fd2ff@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "aman.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<4b7f163d-6c6d-d818-9e99-04612c67ffed@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivang.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<ffa40b7b-ee13-24b6-9cc0-99ab5dae51ff@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<1447b4c2-3f3e-06f6-d77d-7b2669d3c0bc@appnox.ai>",
+    "subject": "testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.mishra@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<cbe36f12-cc5f-81ed-f6a2-f68d7b0fc858@appnox.ai>",
+    "subject": "testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<c0993401-bbfc-4161-e129-bd8d143a29ad@appnox.ai>",
+    "subject": "testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.mishra@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<9e82ad43-fd42-b7ae-31bd-6a95cee1d1c5@appnox.ai>",
+    "subject": "testing own mail sent",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<1770269529829571414.1770269529@appnox.ai>",
+    "subject": "testing crm",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.mishra@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<bb28d061-eff9-d33a-1d1f-2cf0d99dabf9@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<3f97355e-49b5-22bd-3204-ff3c22f45308@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<a10ac607-d47d-13c5-62b9-a479581a2723@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<986bc42b-5937-73be-527c-1ff8ac0594e5@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<8b68974b-116e-929d-1864-e21749cf1298@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<d0441d89-42b1-c573-9c1f-93e335aa6ef1@appnox.ai>",
+    "subject": "testing own mail sent",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T10:01:03.061Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<d93b1e81-06c6-0d79-1ac7-3d335507358c@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T10:01:03.060Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<CA+9NEeXO+weKsk=+udKrjZRaqDef2D1x7TbtNYKYWd6tq0Y9Mg@mail.gmail.com>",
+    "subject": "Re: CRM Testing",
+    "from": "devbisht.appnox@gmail.com",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T10:01:03.060Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<9168b93c-2ec0-4780-a31c-1afca5c3464c@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T10:01:03.060Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<3ab74370-294d-36e5-14c1-82a1f9bb3334@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T10:01:03.060Z"
+  },
+  {
+    "id": "2-kunal.sharma@appnox.ai-<ae726c5b-3430-eb22-71cd-71e1fc45e317@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T10:01:03.060Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<1770269751699580814.1770269751@appnox.ai>",
+    "subject": "testing draft",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.mishra@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T08:57:44.107Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<1770015834454361925.1770015834@appnox.ai>",
+    "subject": "testing draft",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.saud@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T08:57:44.107Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<11619e94-790c-dbaa-2767-ca0234f2f6ae@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T08:57:44.107Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<a6562235-82b2-edc4-e525-16254abc292d@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T08:57:44.107Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<39ac50e2-786b-b384-7d92-1c4dd18718a4@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivang.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T08:57:44.107Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<0414c1a7-d921-d4b3-4036-bf24db2a83af@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "devbisht.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T08:57:44.107Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<55acbbd7-adef-1fbd-cb4a-4abc88c3766e@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T08:57:44.107Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<82ac9c3b-eab0-fdc4-e04f-3b561a1fd2ff@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "aman.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T08:57:44.107Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<4b7f163d-6c6d-d818-9e99-04612c67ffed@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "shivang.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T08:57:44.107Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<ffa40b7b-ee13-24b6-9cc0-99ab5dae51ff@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "govind.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T08:57:44.107Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<cbe36f12-cc5f-81ed-f6a2-f68d7b0fc858@appnox.ai>",
+    "subject": "testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T08:57:44.107Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<1447b4c2-3f3e-06f6-d77d-7b2669d3c0bc@appnox.ai>",
+    "subject": "testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.mishra@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T08:57:44.107Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<c0993401-bbfc-4161-e129-bd8d143a29ad@appnox.ai>",
+    "subject": "testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.mishra@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T08:57:44.107Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<a99df51c-0896-183d-c921-f0e5cff4bb7f@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T08:57:44.107Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<38072130-b332-a335-3537-59194a2ba10a@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "vijay.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T08:57:44.107Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<fef41d0f-eba6-6cff-05fe-485011e64464@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T08:57:44.107Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<9168b93c-2ec0-4780-a31c-1afca5c3464c@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T08:57:44.106Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<d93b1e81-06c6-0d79-1ac7-3d335507358c@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T08:57:44.106Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<9e82ad43-fd42-b7ae-31bd-6a95cee1d1c5@appnox.ai>",
+    "subject": "testing own mail sent",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T08:57:44.106Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<1770269529829571414.1770269529@appnox.ai>",
+    "subject": "testing crm",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "abhijeet.mishra@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": false,
+    "createdAt": "2026-02-06T08:57:44.106Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<986bc42b-5937-73be-527c-1ff8ac0594e5@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T08:57:44.106Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<7b7e47dc-9b19-ed3d-bdba-e810cd3cc07a@appnox.ai>",
+    "subject": "testing email tracking notification",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai",
+      "kunal.appnox@gmail.com"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T08:57:44.106Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<a10ac607-d47d-13c5-62b9-a479581a2723@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T08:57:44.106Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<3f97355e-49b5-22bd-3204-ff3c22f45308@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T08:57:44.106Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<bb28d061-eff9-d33a-1d1f-2cf0d99dabf9@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T08:57:44.106Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<8b68974b-116e-929d-1864-e21749cf1298@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T08:57:44.106Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<d0441d89-42b1-c573-9c1f-93e335aa6ef1@appnox.ai>",
+    "subject": "testing own mail sent",
+    "from": "kunal.sharma@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T08:57:44.106Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<ae726c5b-3430-eb22-71cd-71e1fc45e317@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T08:57:44.106Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<3ab74370-294d-36e5-14c1-82a1f9bb3334@appnox.ai>",
+    "subject": "CRM Testing",
+    "from": "ashish.rai@appnox.ai",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T08:57:44.106Z"
+  },
+  {
+    "id": "1-kunal.sharma@appnox.ai-<CA+9NEeXO+weKsk=+udKrjZRaqDef2D1x7TbtNYKYWd6tq0Y9Mg@mail.gmail.com>",
+    "subject": "Re: CRM Testing",
+    "from": "devbisht.appnox@gmail.com",
+    "to": [
+      "kunal.sharma@appnox.ai"
+    ],
+    "threadId": null,
+    "dealIds": [],
+    "isIncoming": true,
+    "createdAt": "2026-02-06T08:57:44.106Z"
+  }
+]

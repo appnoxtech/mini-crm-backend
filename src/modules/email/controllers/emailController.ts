@@ -169,22 +169,46 @@ export class EmailController {
       let emailAccount: EmailAccount | null = null;
       const userId = req.user.id.toString();
 
-      // 1. Determine which email address to use as the base for account resolution
-      const targetEmail = from ?? email ?? req.user.email;
-      const accountId = `${userId}-${targetEmail}`;
+      // Helper to extract email from "Name <email@domain.com>"
+      const extractEmail = (addr: string): string => {
+        const match = addr.match(/<([^>]+)>/);
+        return (match && match[1]) ? match[1].toLowerCase() : addr.trim().toLowerCase();
+      };
 
-      // 2. Try to find the specific account for this user and email
-      emailAccount = await this.emailService.getEmailModel().getEmailAccountById(accountId);
+      // 1. Determine which email address to use for account resolution
+      const targetInput = from ?? email;
+      const targetEmail = targetInput ? extractEmail(targetInput) : null;
 
-      // 3. Fallback: if no specific account found, use the user's first connected account
-      if (!emailAccount) {
-        emailAccount = await this.emailService.getEmailAccountByUserId(userId);
+      if (targetEmail) {
+        // If an explicit email was provided, we try to find that specific account
+        emailAccount = await this.emailService.getEmailModel().getEmailAccountByUserAndEmail(userId, targetEmail);
+
+        // If no account is found and no SMTP config is provided, we must error out
+        // to prevent silent fallback to a different account (sender mismatch)
+        if (!emailAccount && !smtpConfig) {
+          return ResponseHandler.error(
+            res,
+            `Email account "${targetEmail}" is not connected to your CRM. Please connect it in Settings > Email Setup before sending.`,
+            404
+          );
+        }
+      } else {
+        // No explicit account provided, try user's default email account
+        const userEmail = req.user.email;
+        emailAccount = await this.emailService.getEmailModel().getEmailAccountByUserAndEmail(userId, userEmail);
+
+        // Ultimate fallback: first connected account for this user
+        if (!emailAccount) {
+          emailAccount = await this.emailService.getEmailAccountByUserId(userId);
+        }
       }
 
       // 4. Handle SMTP Configuration (Direct update or override)
       if (smtpConfig) {
         const providerName = provider || (emailAccount ? emailAccount.provider : 'custom');
         const providerDefaults = getProviderDefaults(providerName);
+        const resolvedEmail = targetEmail || emailAccount?.email || req.user.email;
+        const accountIdToUse = emailAccount?.id || `${userId}-${resolvedEmail}`;
 
         // Merge provided config with existing account config (to preserve username/password if missing in request)
         const finalSmtpConfig = {
@@ -209,9 +233,9 @@ export class EmailController {
         }
 
         const accountData: EmailAccount = {
-          id: accountId,
+          id: accountIdToUse,
           userId,
-          email: targetEmail,
+          email: resolvedEmail,
           provider: providerName,
           isActive: true,
           smtpConfig: finalSmtpConfig,
@@ -221,10 +245,10 @@ export class EmailController {
         };
 
         // Check if this specific account exists in DB to decide between update and create
-        const dbAccount = await this.emailService.getEmailModel().getEmailAccountById(accountId);
+        const dbAccount = await this.emailService.getEmailModel().getEmailAccountById(accountIdToUse);
         if (dbAccount) {
           accountData.createdAt = dbAccount.createdAt;
-          await this.emailService.updateEmailAccount(accountId, accountData);
+          await this.emailService.updateEmailAccount(accountIdToUse, accountData);
         } else {
           await this.emailService.createEmailAccount(accountData);
         }

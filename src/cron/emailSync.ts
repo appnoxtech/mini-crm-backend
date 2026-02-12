@@ -5,14 +5,16 @@ import { EmailConnectorService } from '../modules/email/services/emailConnectorS
 import { EmailService } from '../modules/email/services/emailService';
 import { OAuthService } from '../modules/email/services/oauthService';
 import { RealTimeNotificationService } from '../modules/email/services/realTimeNotificationService';
+import { DealActivityModel } from '../modules/pipelines/models/DealActivity';
 
 export function startEmailSyncJob(
     notificationService?: RealTimeNotificationService
 ) {
     const emailModel = new EmailModel();
+    const dealActivityModel = new DealActivityModel();
     const oauthService = new OAuthService();
     const connectorService = new EmailConnectorService(oauthService);
-    const emailService = new EmailService(emailModel, connectorService, notificationService);
+    const emailService = new EmailService(emailModel, connectorService, notificationService, dealActivityModel);
 
     // Concurrency lock
     let isSyncRunning = false;
