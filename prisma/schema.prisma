@@ -35,6 +35,8 @@ model User {
   labels            Label[]
   leads             Lead[]
   pipelines         Pipeline[]
+  verifiedDealEmails DealEmail[]    @relation("DealEmailVerifiedBy")
+  triggeredEmailLinkLogs EmailLinkLog[] @relation("EmailLinkLogTriggeredBy")
 
   @@map("users")
 }
@@ -78,7 +80,7 @@ model Email {
   from             String               @map("from_address")
   to               Json                 @map("to_addresses")
   cc               Json?                @map("cc_addresses")
-  bcc              Json?                @map("bcc_addresses")
+  bcc               Json?                @map("bcc_addresses")
   subject          String
   body             String
   htmlBody         String?
@@ -101,12 +103,15 @@ model Email {
   lastClickedAt    DateTime?
   lastOpenedAt     DateTime?
   opens            Int                  @default(0)
+  isLinkedToDeal   Boolean              @default(false)
   trackingEvents   EmailTrackingEvent[]
   account          EmailAccount         @relation(fields: [accountId], references: [id])
   content          EmailContent         @relation(fields: [messageId], references: [messageId])
+  dealLinks        DealEmail[]
 
   @@unique([messageId, accountId])
   @@index([accountId, sentAt(sort: Desc)])
+  @@index([isLinkedToDeal])
   @@map("emails")
 }
 
@@ -257,46 +262,51 @@ model PipelineStage {
 }
 
 model Deal {
-  id                Int            @id @default(autoincrement())
-  title             String
-  value             Float?         @default(0)
-  currency          String?        @default("USD")
-  pipelineId        Int
-  stageId           Int
-  email             Json?
-  phone             Json?
-  description       String?
-  expectedCloseDate DateTime?
-  actualCloseDate   DateTime?
-  probability       Int            @default(0)
-  userId            Int
-  assignedTo        Int?
-  status            String?        @default("OPEN")
-  lostReason        String?
-  lastActivityAt    DateTime?
-  isRotten          Boolean        @default(false)
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
-  deletedAt         DateTime?
-  archivedAt        DateTime?
-  personId          Int?
-  organizationId    Int?
-  source            String?
-  labelIds          Json?
-  customFields      Json?
-  ownerIds          Json?
-  isVisibleToAll    Boolean        @default(true)
-  calls             Call[]
-  activities        DealActivity[]
-  history           DealHistory[]
-  assignedUser      User?          @relation("DealAssigned", fields: [assignedTo], references: [id])
-  organization      Organization?  @relation(fields: [organizationId], references: [id])
-  person            Person?        @relation(fields: [personId], references: [id])
-  pipeline          Pipeline       @relation(fields: [pipelineId], references: [id])
-  stage             PipelineStage  @relation(fields: [stageId], references: [id])
-  user              User           @relation("DealOwner", fields: [userId], references: [id], onDelete: Cascade)
-  products          Product[]
+  id                   Int            @id @default(autoincrement())
+  title                String
+  value                Float?         @default(0)
+  currency             String?        @default("USD")
+  pipelineId           Int
+  stageId              Int
+  email                Json?
+  phone                Json?
+  description          String?
+  expectedCloseDate    DateTime?
+  actualCloseDate      DateTime?
+  probability          Int            @default(0)
+  userId               Int
+  assignedTo           Int?
+  status               String?        @default("OPEN")
+  lostReason           String?
+  lastActivityAt       DateTime?
+  isRotten             Boolean        @default(false)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  deletedAt            DateTime?
+  archivedAt           DateTime?
+  personId             Int?
+  organizationId       Int?
+  source               String?
+  labelIds             Json?
+  customFields         Json?
+  ownerIds             Json?
+  isVisibleToAll       Boolean        @default(true)
+  emailSyncStatus      String?        @default("not_synced")
+  emailLastSyncedAt    DateTime?
+  linkedEmailsCount    Int            @default(0)
+  calls                Call[]
+  activities           DealActivity[]
+  history              DealHistory[]
+  assignedUser         User?          @relation("DealAssigned", fields: [assignedTo], references: [id])
+  organization         Organization?  @relation(fields: [organizationId], references: [id])
+  person               Person?        @relation(fields: [personId], references: [id])
+  pipeline             Pipeline       @relation(fields: [pipelineId], references: [id])
+  stage                PipelineStage  @relation(fields: [stageId], references: [id])
+  user                 User           @relation("DealOwner", fields: [userId], references: [id], onDelete: Cascade)
+  products             Product[]
+  emailLinks           DealEmail[]
 
+  @@index([emailSyncStatus])
   @@map("deals")
 }
 
@@ -321,6 +331,47 @@ model DealHistory {
 
   @@map("deal_history")
 }
+
+model DealEmail {
+  id                Int      @id @default(autoincrement())
+  dealId            Int      @map("deal_id")
+  emailId           String   @map("email_id")
+  linkedAt          DateTime @default(now()) @map("linked_at")
+  linkedMethod      String   @map("linked_method")
+  confidenceScore   Int?     @map("confidence_score")
+  isVerified        Boolean  @default(false) @map("is_verified")
+  verifiedByUserId  Int?     @map("verified_by_user_id")
+  verifiedAt        DateTime? @map("verified_at")
+  deal              Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  email             Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  verifiedBy        User?    @relation("DealEmailVerifiedBy", fields: [verifiedByUserId], references: [id])
+
+  @@unique([dealId, emailId])
+  @@index([dealId])
+  @@index([emailId])
+  @@index([isVerified])
+  @@index([linkedMethod])
+  @@map("deal_emails")
+}
+
+model EmailLinkLog {
+  id                Int       @id @default(autoincrement())
+  operationType     String    @map("operation_type")
+  dealsProcessed    Int       @default(0) @map("deals_processed")
+  linksCreated      Int       @default(0) @map("links_created")
+  startedAt         DateTime  @map("started_at")
+  completedAt       DateTime? @map("completed_at")
+  status            String    @default("pending")
+  errorMessage      String?   @map("error_message")
+  triggeredByUserId Int?      @map("triggered_by_user_id")
+  metadata          Json?
+  triggeredBy       User?     @relation("EmailLinkLogTriggeredBy", fields: [triggeredByUserId], references: [id])
+
+  @@index([status])
+  @@index([startedAt(sort: Desc)])
+  @@map("email_link_log")
+}
+
 
 model Product {
   id          Int       @id @default(autoincrement())

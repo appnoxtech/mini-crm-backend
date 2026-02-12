@@ -202,13 +202,9 @@ export class ActivityController {
 
             const { dealId } = req.params;
 
-            const dealHistory = await this.activityService.getDealHistory(Number(dealId));
+            const result = await this.activityService.getDealHistory(Number(dealId));
 
-            if (!dealHistory) {
-                return ResponseHandler.notFound(res, 'Deal history not found');
-            }
-
-            return ResponseHandler.success(res, dealHistory, 'Deal history fetched successfully');
+            return ResponseHandler.success(res, result, 'Deal history fetched successfully');
         } catch (error: any) {
             console.error('Error fetching deal history:', error);
             return ResponseHandler.internalError(res, 'Failed to fetch deal history');

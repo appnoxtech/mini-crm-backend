@@ -583,6 +583,11 @@ export class EmailService {
       if (emailsToCreate.length > 0) {
         console.log(`[EmailSync] Bulk inserting ${emailsToCreate.length} new emails`);
         await this.emailModel.bulkCreateEmails(emailsToCreate);
+        
+        // Step 7.1: Auto-link new emails to deals (async, don't block sync)
+        this.autoLinkEmailsToDeals(emailsToCreate).catch(err => {
+          console.error('[EmailSync] Failed to auto-link emails to deals:', err);
+        });
       }
 
       // Step 8: Batch update existing emails
@@ -2324,6 +2329,94 @@ export class EmailService {
     // Implement spam logic if needed, for now just a placeholder
     console.log(`Marking email ${emailId} as spam for user ${userId}`);
     return true;
+  }
+
+  /**
+   * Auto-link new emails to deals based on contact email matching
+   * This runs asynchronously after emails are synced to avoid blocking the sync process
+   */
+  private async autoLinkEmailsToDeals(emails: Email[]): Promise<void> {
+    try {
+      const { emailDealLinkingService } = require('../../pipelines/services/emailDealLinkingService');
+      
+      console.log(`[AutoLink] Processing ${emails.length} new emails for deal linking`);
+      
+      // Extract unique email addresses from the new emails
+      const emailAddresses = new Set<string>();
+      for (const email of emails) {
+        if (email.from) emailAddresses.add(email.from.toLowerCase());
+        if (email.to) {
+          email.to.forEach((addr: string) => emailAddresses.add(addr.toLowerCase()));
+        }
+        if (email.cc) {
+          email.cc.forEach((addr: string) => emailAddresses.add(addr.toLowerCase()));
+        }
+      }
+      
+      if (emailAddresses.size === 0) {
+        console.log('[AutoLink] No email addresses found to match');
+        return;
+      }
+      
+      // Find deals that have contacts with these email addresses
+      const { PrismaClient } = require('@prisma/client');
+      const prisma = new PrismaClient();
+      
+      const deals = await prisma.deal.findMany({
+        where: {
+          OR: [
+            {
+              person: {
+                userEmails: {
+                  some: {
+                    email: {
+                      in: Array.from(emailAddresses)
+                    }
+                  }
+                }
+              }
+            },
+            {
+              person: {
+                emails: {
+                  path: '$[*].email',
+                  array_contains: Array.from(emailAddresses)
+                }
+              }
+            }
+          ]
+        },
+        select: { id: true }
+      });
+      
+      if (deals.length === 0) {
+        console.log('[AutoLink] No matching deals found');
+        await prisma.$disconnect();
+        return;
+      }
+      
+      console.log(`[AutoLink] Found ${deals.length} deals to potentially link`);
+      
+      // Link emails to each matching deal
+      let totalLinked = 0;
+      for (const deal of deals) {
+        try {
+          const result = await emailDealLinkingService.linkEmailsToDeal(deal.id, {
+            useContactMatching: true,
+            useDomainMatching: false, // Only use contact matching for real-time linking
+            useSubjectMatching: false
+          });
+          totalLinked += result.linksCreated;
+        } catch (error) {
+          console.error(`[AutoLink] Failed to link emails to deal ${deal.id}:`, error);
+        }
+      }
+      
+      console.log(`[AutoLink] Successfully linked ${totalLinked} emails to ${deals.length} deals`);
+      await prisma.$disconnect();
+    } catch (error) {
+      console.error('[AutoLink] Error in auto-linking process:', error);
+    }
   }
 
   async unmarkEmailAsSpam(emailId: string, userId: string): Promise<boolean> {

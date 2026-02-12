@@ -94,6 +94,7 @@ import { createPersonRoutes } from './modules/management/persons/routes/personRo
 import { createLabelRoutes } from './modules/pipelines/routes/labelRoutes';
 import { createProfileRoutes } from './modules/management/persons/routes/profileRoutes';
 import { createEmailWebhookRoutes } from './modules/email/routes/emailWebhookRoutes';
+import dealEmailRoutes from './modules/pipelines/routes/dealEmailRoutes';
 
 // Import summarization module
 import { SummarizationController } from './modules/email/controllers/summarizationController';
@@ -315,6 +316,7 @@ app.use('/api/import', createImportRoutes(importController));
 app.use('/api/ai', createSuggestionRoutes(suggestionController, aiConfigController));
 app.use('/api/webhooks/email', createEmailWebhookRoutes());
 app.use('/api/calendar', createCalendarRoutes(calendarController, reminderCalendarController, notificationCalendarController));
+app.use('/api', dealEmailRoutes); // Email-deal linking routes
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
