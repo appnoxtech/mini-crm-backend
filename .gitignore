@@ -112,3 +112,5 @@ Thumbs.db
 *.md
 *.csv
 *.txt
+
+*.sql

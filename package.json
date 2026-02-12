@@ -7,7 +7,9 @@
     "build": "tsc",
     "dev": "nodemon --watch src --ext ts --exec \"node --max-old-space-size=4096 -r ts-node/register src/server.ts\"",
     "start": "node dist/server.js",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "check-email-links": "ts-node scripts/checkEmailLinking.ts",
+    "sync-deal-emails": "ts-node scripts/syncDealEmails.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.971.0",
@@ -22,6 +24,7 @@
     "bull": "^4.16.4",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
+    "csv-parse": "^6.1.0",
     "dotenv": "^16.6.1",
     "express": "^4.21.2",
     "express-fileupload": "^1.5.2",
