@@ -1,7 +1,7 @@
 import cron, { ScheduledTask } from 'node-cron';
 import { SummarizationQueueService, getSummarizationQueueService } from './summarizationQueueService';
 
-const SUMMARIZATION_CRON = process.env.SUMMARIZATION_CRON || '*/30 * * * *';
+const SUMMARIZATION_CRON = process.env.SUMMARIZATION_CRON || '0 2 * * *';
 const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || '50');
 
 export class SummarizationSchedulerService {

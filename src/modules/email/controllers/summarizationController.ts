@@ -124,10 +124,12 @@ export class SummarizationController {
     /**
      * Get thread summary with enhanced data
      * Checks both Redis queue service and RunPod async service
+     * If no summary exists, fetches on-demand from RunPod
      */
     async getEnhancedThreadSummary(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
             const { threadId } = req.params;
+            const { forceRefresh } = req.query;
 
             if (!threadId) {
                 return ResponseHandler.validationError(res, 'Thread ID is required');
@@ -141,13 +143,69 @@ export class SummarizationController {
                 summary = await this.runpodService.getThreadSummary(threadId);
             }
 
-            if (!summary) {
-                return ResponseHandler.notFound(res, 'No summary available');
+            // Check if we need to fetch on-demand:
+            // 1. No summary exists
+            // 2. Summary text is empty (job was submitted but never completed)
+            // 3. User wants force refresh
+            const hasSummaryText = summary?.summary?.trim();
+            const needsOnDemandFetch = !summary ||
+                !hasSummaryText ||
+                forceRefresh === 'true';
+
+            if (needsOnDemandFetch) {
+                console.log(`[OnDemand] Fetching summary for thread ${threadId} (reason: ${!summary ? 'no summary' : !summary.summary?.trim() ? 'empty text' : summary.status === 'pending' ? 'pending status' : 'force refresh'})`);
+
+                const emails = await this.emailModel.getEmailsForThread(threadId);
+
+                if (emails.length === 0) {
+                    return ResponseHandler.notFound(res, 'Thread not found or has no emails');
+                }
+
+                const threadText = emails
+                    .map(e => `${e.from}: ${e.body}`)
+                    .join('\n');
+
+                try {
+                    const summaryText = await summarizeThreadWithVLLM(threadText);
+                    console.log(`[OnDemand] ✅ Got summary for thread ${threadId}`);
+
+                    // Save to DB for future requests
+                    await this.emailModel.saveThreadSummary(threadId, summaryText);
+
+                    // Return the on-demand summary
+                    const data = {
+                        thread: {
+                            id: threadId,
+                            summarized: true
+                        },
+                        summary: {
+                            text: summaryText,
+                            keyPoints: [],
+                            actionItems: [],
+                            sentiment: null,
+                            participants: emails.map(e => e.from).filter((v, i, a) => a.indexOf(v) === i),
+                            processingTime: null,
+                            modelVersion: 'runpod-ondemand',
+                            lastSummarizedAt: new Date()
+                        },
+                        status: 'completed',
+                        jobStatus: null,
+                        runpodJobId: null,
+                        onDemand: true
+                    };
+
+                    return ResponseHandler.success(res, data, 'Summary fetched on-demand');
+                } catch (error: any) {
+                    console.error(`[OnDemand] ❌ Failed to fetch summary for thread ${threadId}:`, error.message);
+                    return ResponseHandler.internalError(res, `Failed to fetch summary: ${error.message}`);
+                }
             }
 
             // Normalize status codes
-            const normalizedStatus = this.normalizeStatus(summary.status);
-            const isCompleted = normalizedStatus === 'completed';
+            // If summary text exists, treat as completed regardless of stored status
+            const summaryTextExists = !!summary.summary?.trim();
+            const normalizedStatus = summaryTextExists ? 'completed' : this.normalizeStatus(summary.status);
+            const isCompleted = summaryTextExists || normalizedStatus === 'completed';
 
             // If summary is in progress, try to get job status
             let jobStatus = null;

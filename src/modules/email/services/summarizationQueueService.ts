@@ -76,6 +76,9 @@ export class SummarizationQueueService {
                 const summaryData = await this.callRunPodSummarization(emailContent, emails);
                 const participants = this.extractParticipants(emails);
 
+                console.log(`✅ [Queue] Successfully summarized thread ${threadId}`);
+                console.log(`Summary preview: ${summaryData.summary.substring(0, 100)}...`);
+
                 await this.saveEnhancedSummary(threadId, {
                     ...summaryData,
                     participants,
@@ -88,6 +91,7 @@ export class SummarizationQueueService {
                 return { success: true, threadId, processingTime: Date.now() - startTime };
             } catch (error: any) {
                 console.error(`❌ [Queue] Failed thread ${threadId}:`, error.message);
+                console.error(`❌ [Queue] Error stack:`, error.stack);
                 await this.updateSummaryStatus(threadId, 'failed', job.id?.toString());
                 throw error;
             }
@@ -254,29 +258,44 @@ export class SummarizationQueueService {
     }
 
     private async callRunPodSummarization(emailContent: string, emails: any[]): Promise<SummaryData> {
+        console.log('Email content:>>>>>>>>>>>>>>>> ', emailContent);
+        console.log('Emails: ', emails);
+
         try {
             const res = await fetch(RUNPOD_API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
                 body: JSON.stringify({ input: { email_content: emailContent } })
             });
-            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+            console.log('res>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> ', res);
+
+            if (!res.ok) {
+                const errorText = await res.text();
+                console.error(`❌ RunPod API error! Status: ${res.status}, Response: ${errorText}`);
+                throw new Error(`HTTP error! status: ${res.status}, response: ${errorText}`);
+            }
+            
             const data = await res.json() as any;
+            console.log('RunPod API response data:', JSON.stringify(data, null, 2));
+            
             const output = data.output;
-            if (!output) throw new Error('No output from RunPod');
+            if (!output) {
+                console.error('❌ No output field in RunPod response:', data);
+                throw new Error('No output from RunPod');
+            }
+            
+            console.log('✅ Successfully received summary from RunPod:', output.summary?.substring(0, 100));
+            
             return {
                 summary: output.summary || '',
                 keyPoints: output.keyPoints || [],
                 actionItems: output.actionItems || [],
                 sentiment: output.sentiment || 'neutral'
             };
-        } catch (error) {
-            return {
-                summary: `Email thread about: ${emails[0]?.subject || 'Unknown'}`,
-                keyPoints: [],
-                actionItems: [],
-                sentiment: 'neutral'
-            };
+        } catch (error: any) {
+            console.error('❌ RunPod summarization failed:', error.message);
+            console.error('❌ Falling back to subject line as summary');
+            throw error;
         }
     }
 

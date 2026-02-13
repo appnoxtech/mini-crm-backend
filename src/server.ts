@@ -138,6 +138,11 @@ import { ActivityService as SchedulerActivityService } from './modules/activitie
 import { ActivityController as SchedulerActivityController } from './modules/activities/controllers/ActivityController';
 import { createActivityRoutes as createSchedulerRoutes } from './modules/activities/routes/activityRoutes';
 
+// Import Slack integration module
+import { createSlackRoutes, initializeCRMEventHandler, startSlackWorker } from './modules/integrations/slack';
+import { isSlackConfigured } from './config/slack.config';
+import { isRedisConfigured } from './config/redis.config';
+
 
 
 const app = express();
@@ -318,6 +323,9 @@ app.use('/api/webhooks/email', createEmailWebhookRoutes());
 app.use('/api/calendar', createCalendarRoutes(calendarController, reminderCalendarController, notificationCalendarController));
 app.use('/api', dealEmailRoutes); // Email-deal linking routes
 
+// Slack integration routes
+app.use('/api/integrations/slack', createSlackRoutes());
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
@@ -391,6 +399,24 @@ startEmailSyncJob(notificationService);
 startReminderProcessor(notificationDispatcherService);
 startTrashCleanupJob();
 
+// Initialize Slack integration
+if (isSlackConfigured()) {
+  console.log('🔗 Slack integration configured');
+  initializeCRMEventHandler();
+
+  if (isRedisConfigured()) {
+    startSlackWorker().then(() => {
+      console.log('📨 Slack message worker started');
+    }).catch(error => {
+      console.warn('⚠️ Slack worker failed to start:', error.message);
+    });
+  } else {
+    console.log('ℹ️ Redis not configured - Slack messages will be sent synchronously');
+  }
+} else {
+  console.log('ℹ️ Slack integration not configured');
+}
+
 // Helper function to get all active email accounts via EmailModel
 const getActiveEmailAccounts = async () => {
   return await emailModel.getAllActiveAccounts();
@@ -408,16 +434,16 @@ if (process.env.GMAIL_PUBSUB_TOPIC) {
   });
 }
 
-// Optional: Start Redis-based queue if available
+// Start Redis-based queue scheduler (daily at 2 AM) if available
 try {
   const summarizationScheduler = startSummarizationScheduler();
-  console.log('📧 Summarization scheduler started');
+  console.log('📧 Queue-based summarization scheduler started (daily at 2:00 AM)');
 
   process.on('SIGTERM', () => {
     summarizationScheduler.stop();
   });
 } catch (error) {
-  console.log('ℹ️ Redis not available - summarization scheduler skipped');
+  console.log('ℹ️ Redis not available - queue-based scheduler skipped');
 }
 
 // Graceful shutdown handler

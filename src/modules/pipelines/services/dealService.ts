@@ -6,6 +6,7 @@ import { Pipeline, PipelineModel } from '../models/Pipeline';
 import { PipelineStageModel } from '../models/PipelineStage';
 import { Person, PersonModel } from '../../management/persons/models/Person';
 import { Organization, OrganizationModel } from '../../management/organisations/models/Organization';
+import { eventBus } from '../../../infrastructure/event-bus';
 
 type ContactField = {
     value: string;
@@ -194,6 +195,25 @@ export class DealService {
             eventType: `created deal ${deal.title}`,
             description: `Created deal ${deal.title}`,
             createdAt: nowStr
+        });
+
+        // Emit deal.created event for Slack notifications
+        eventBus.publish({
+            type: 'deal.created',
+            tenantId: String(userId),
+            timestamp: new Date(),
+            userId,
+            payload: {
+                dealId: deal.id,
+                title: deal.title,
+                value: deal.value || null,
+                currency: deal.currency || null,
+                pipelineId: deal.pipelineId,
+                stageId: deal.stageId,
+                stageName: stage.name,
+                personName: person?.firstName || undefined,
+                organizationName: organization?.name || undefined,
+            },
         });
 
         return {
@@ -441,6 +461,20 @@ export class DealService {
                 description: `Deal won in stage: ${data.title}`,
                 createdAt: now
             });
+
+            // Emit deal.won event for Slack notifications
+            eventBus.publish({
+                type: 'deal.won',
+                tenantId: String(userId),
+                timestamp: new Date(),
+                userId,
+                payload: {
+                    dealId: data.id,
+                    title: data.title,
+                    value: data.value || null,
+                    currency: data.currency || null,
+                },
+            });
         }
         return data;
     }
@@ -462,6 +496,20 @@ export class DealService {
                 toStageId: data.stageId,
                 description: `Deal lost in stage: ${data.title}`,
                 createdAt: now
+            });
+
+            // Emit deal.lost event for Slack notifications
+            eventBus.publish({
+                type: 'deal.lost',
+                tenantId: String(userId),
+                timestamp: new Date(),
+                userId,
+                payload: {
+                    dealId: data.id,
+                    title: data.title,
+                    value: data.value || null,
+                    lostReason: info.reason,
+                },
             });
         }
         return data;
@@ -531,6 +579,21 @@ export class DealService {
                 toStageId: toStageIdNum,
                 description: note || `Moved from ${fromStage?.name} to ${toStage.name}`,
                 createdAt: nowStr
+            });
+
+            // Emit deal.stage_changed event for Slack notifications
+            eventBus.publish({
+                type: 'deal.stage_changed',
+                tenantId: String(userId),
+                timestamp: new Date(),
+                userId,
+                payload: {
+                    dealId,
+                    title: deal.title,
+                    fromStage: fromStage?.name || 'Unknown',
+                    toStage: toStage.name,
+                    value: deal.value || null,
+                },
             });
 
             return {

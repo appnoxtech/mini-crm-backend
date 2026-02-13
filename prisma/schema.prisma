@@ -887,3 +887,25 @@ model StructuredKBVersion {
   @@unique([kbId, version])
   @@map("structured_kb_versions")
 }
+
+model TenantIntegration {
+  id                 String   @id @default(uuid())
+  tenantId           String   @map("tenant_id")
+  provider           String   @default("slack")
+  workspaceId        String?  @map("workspace_id")
+  workspaceName      String?  @map("workspace_name")
+  botTokenEncrypted  String?  @map("bot_token_encrypted")
+  defaultChannelId   String?  @map("default_channel_id")
+  defaultChannelName String?  @map("default_channel_name")
+  isActive           Boolean  @default(true) @map("is_active")
+  installedByUserId  Int?     @map("installed_by_user_id")
+  metadata           Json?
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, provider])
+  @@index([tenantId])
+  @@index([provider])
+  @@index([isActive])
+  @@map("tenant_integrations")
+}
