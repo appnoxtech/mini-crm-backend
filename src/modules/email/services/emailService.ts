@@ -184,11 +184,13 @@ export class EmailService {
       return messageId;
     }
 
+    const normalizedMessageId = this.normalizeMessageId(messageId);
+
     // Create email record in database using the pre-generated ID
     const email: Email = {
       id: emailId,
-      messageId,
-      threadId: emailData.threadId || messageId, // Use provided threadId or default to messageId
+      messageId: normalizedMessageId,
+      threadId: emailData.threadId ? this.normalizeMessageId(emailData.threadId) : normalizedMessageId,
       accountId: account.id,
       from: account.email,
       to: emailData.to,
@@ -486,6 +488,14 @@ export class EmailService {
               needsUpdate = true;
             }
 
+            // Update threadId if provider has a better one (e.g. hex instead of messageId)
+            if (parsed.threadId && existing.threadId !== parsed.threadId) {
+              if (existing.threadId === existing.messageId || !existing.threadId) {
+                updates.threadId = parsed.threadId;
+                needsUpdate = true;
+              }
+            }
+
             // Body repair: if existing email has no body but we just parsed one, update it
             const existingHasBody = (existing.body && existing.body !== "" && existing.body !== "Error parsing email content." && existing.body !== "[object Uint8Array]");
             const parsedHasBody = (parsed.body && parsed.body !== "");
@@ -531,6 +541,22 @@ export class EmailService {
             if (threadDealIds.length > 0) {
               dealIds.push(...threadDealIds);
               console.log(`[EmailSync] Auto-linked email ${parsed.messageId} to deals [${threadDealIds.join(', ')}] via threadId ${parsed.threadId}`);
+            } else {
+              // Fallback 1: Check if the threadId corresponds to a parent message ID (common in IMAP/Standard threading)
+              // parsed.threadId is derived from In-Reply-To/References which are Message-IDs
+              const parentEmailByThread = await this.emailModel.findEmailByMessageId(parsed.threadId, account.id);
+              if (parentEmailByThread && parentEmailByThread.dealIds && parentEmailByThread.dealIds.length > 0) {
+                dealIds.push(...parentEmailByThread.dealIds);
+                console.log(`[EmailSync] Auto-linked email ${parsed.messageId} to deals [${parentEmailByThread.dealIds.join(', ')}] via parent messageId (threadId) ${parsed.threadId}`);
+              }
+              // Fallback 2: Check explicit inReplyTo field if present (e.g. from parseGmailMessage)
+              else if ((parsed as any).inReplyTo) {
+                const parentEmailByReplyTo = await this.emailModel.findEmailByMessageId((parsed as any).inReplyTo, account.id);
+                if (parentEmailByReplyTo && parentEmailByReplyTo.dealIds && parentEmailByReplyTo.dealIds.length > 0) {
+                  dealIds.push(...parentEmailByReplyTo.dealIds);
+                  console.log(`[EmailSync] Auto-linked email ${parsed.messageId} to deals [${parentEmailByReplyTo.dealIds.join(', ')}] via explicit inReplyTo ${(parsed as any).inReplyTo}`);
+                }
+              }
             }
           } catch (err) {
             console.error('[EmailSync] Error auto-linking email to deals via threadId:', err);
@@ -560,7 +586,7 @@ export class EmailService {
         };
 
         // Add optional fields
-        if (parsed.threadId) email.threadId = parsed.threadId;
+        email.threadId = parsed.threadId || parsed.messageId;
         if (parsed.cc) email.cc = parsed.cc;
         if (parsed.bcc) email.bcc = parsed.bcc;
         if (parsed.htmlBody) email.htmlBody = parsed.htmlBody;
@@ -759,6 +785,13 @@ export class EmailService {
         await this.emailModel.markEmailAsRead(existing.id, account.userId, !!parsed.isRead);
       }
 
+      // Update threadId if provider has a better one
+      if (parsed.threadId && existing.threadId !== parsed.threadId) {
+        if (existing.threadId === existing.messageId || !existing.threadId) {
+          await this.emailModel.updateEmail(existing.id, { threadId: parsed.threadId });
+        }
+      }
+
       return { id: existing.id, isNew: false };
     }
 
@@ -784,6 +817,21 @@ export class EmailService {
         if (threadDealIds.length > 0) {
           dealIds.push(...threadDealIds);
           console.log(`[EmailSync] Auto-linked email ${parsed.messageId} to deals [${threadDealIds.join(', ')}] via threadId ${parsed.threadId}`);
+        } else {
+          // Fallback 1: Check if the threadId corresponds to a parent message ID
+          const parentEmailByThread = await this.emailModel.findEmailByMessageId(parsed.threadId, account.id);
+          if (parentEmailByThread && parentEmailByThread.dealIds && parentEmailByThread.dealIds.length > 0) {
+            dealIds.push(...parentEmailByThread.dealIds);
+            console.log(`[EmailSync] Auto-linked email ${parsed.messageId} to deals [${parentEmailByThread.dealIds.join(', ')}] via parent messageId ${parsed.threadId}`);
+          }
+          // Fallback 2: Check explicit inReplyTo field if present
+          else if ((parsed as any).inReplyTo) {
+            const parentEmailByReplyTo = await this.emailModel.findEmailByMessageId((parsed as any).inReplyTo, account.id);
+            if (parentEmailByReplyTo && parentEmailByReplyTo.dealIds && parentEmailByReplyTo.dealIds.length > 0) {
+              dealIds.push(...parentEmailByReplyTo.dealIds);
+              console.log(`[EmailSync] Auto-linked email ${parsed.messageId} to deals [${parentEmailByReplyTo.dealIds.join(', ')}] via explicit inReplyTo ${(parsed as any).inReplyTo}`);
+            }
+          }
         }
       } catch (err) {
         console.error('[EmailSync] Error auto-linking email to deals via threadId:', err);
@@ -817,7 +865,7 @@ export class EmailService {
     };
 
     // Handle optional properties
-    if (parsed.threadId) email.threadId = parsed.threadId;
+    email.threadId = parsed.threadId || parsed.messageId;
     if (parsed.cc) email.cc = parsed.cc;
     if (parsed.bcc) email.bcc = parsed.bcc;
     if (parsed.htmlBody) email.htmlBody = parsed.htmlBody;
@@ -1036,6 +1084,7 @@ export class EmailService {
       messageId: this.normalizeMessageId(headers["message-id"] || message.id),
       providerId: message.id,
       threadId: message.threadId,
+      inReplyTo: headers["in-reply-to"] ? this.normalizeMessageId(headers["in-reply-to"]) : undefined,
       from: headers["from"],
       to: (headers["to"] || "")
         .split(",")
@@ -1201,8 +1250,27 @@ export class EmailService {
     const subject = parsed.subject || message.envelope?.subject || "";
     const date = parsed.date || message.envelope?.date;
 
-    // Extract threadId from In-Reply-To or References header (similar to Gmail's threadId)
-    const threadId = parsed.inReplyTo || (parsed.references && parsed.references[0]) || undefined;
+    // Extract threadId from In-Reply-To or References header
+    // Ideally use References[0] as the Root ID. If missing, use In-Reply-To.
+    let threadIdRaw: string | undefined;
+    if (Array.isArray(parsed.references) && parsed.references.length > 0) {
+      threadIdRaw = parsed.references[0];
+    } else if (typeof parsed.references === 'string' && parsed.references.trim().length > 0) {
+      threadIdRaw = parsed.references.trim().split(/\s+/)[0];
+    } else {
+      threadIdRaw = parsed.inReplyTo;
+    }
+
+    // Calculate Message-ID early to use as fallback threadId for root messages
+    const finalMessageId = this.normalizeMessageId(parsed.messageId || message.envelope?.messageId || `msg_${Date.now()}`);
+
+    // For root messages (no references/in-reply-to), use the message's own ID as the thread ID
+    // This ensures that future replies (which will point to this ID) will be grouped with it
+    if (!threadIdRaw) {
+      threadIdRaw = finalMessageId; // Already normalized technically, but normalizeMessageId handles it
+    }
+
+    const threadId = this.normalizeMessageId(threadIdRaw);
 
     // Determine isRead from flags - check if \Seen flag is present
     // If flags exist and has the \Seen flag, email is read; otherwise unread
@@ -1216,7 +1284,7 @@ export class EmailService {
     }
 
     return {
-      messageId: this.normalizeMessageId(parsed.messageId || message.envelope?.messageId || `msg_${Date.now()}`),
+      messageId: finalMessageId,
       threadId: threadId,
       from: from,
       to: to,
