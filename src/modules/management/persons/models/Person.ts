@@ -18,6 +18,7 @@ export interface PersonPhone {
 
 export interface Person extends BaseEntity {
     firstName: string;
+    companyId: number;
     lastName: string;
     emails: PersonEmail[];
     phones: PersonPhone[];
@@ -28,6 +29,7 @@ export interface Person extends BaseEntity {
 
 export interface CreatePersonData {
     firstName: string;
+    companyId: number;
     lastName: string;
     emails: PersonEmail[];
     phones?: PersonPhone[];
@@ -47,11 +49,14 @@ export class PersonModel {
 
     initialize(): void { }
 
-    async findExistingEmail(emails: string[], excludePersonId?: number): Promise<{ email: string; personId: number } | null> {
+    async findExistingEmail(emails: string[], companyId: number, excludePersonId?: number): Promise<{ email: string; personId: number } | null> {
         const result = await prisma.personEmail.findFirst({
             where: {
                 email: { in: emails.map(e => e.toLowerCase()) },
-                person: { deletedAt: null },
+                person: {
+                    companyId,
+                    deletedAt: null
+                },
                 ...(excludePersonId && { personId: { not: excludePersonId } })
             }
         });
@@ -59,11 +64,14 @@ export class PersonModel {
         return result ? { email: result.email, personId: result.personId } : null;
     }
 
-    async findExistingPhone(phones: string[], excludePersonId?: number): Promise<{ phone: string; personId: number } | null> {
+    async findExistingPhone(phones: string[], companyId: number, excludePersonId?: number): Promise<{ phone: string; personId: number } | null> {
         const result = await prisma.personPhone.findFirst({
             where: {
                 phone: { in: phones },
-                person: { deletedAt: null },
+                person: {
+                    companyId,
+                    deletedAt: null
+                },
                 ...(excludePersonId && { personId: { not: excludePersonId } })
             }
         });
@@ -75,6 +83,7 @@ export class PersonModel {
         const person = await prisma.person.create({
             data: {
                 firstName: data.firstName,
+                companyId: data.companyId,
                 lastName: data.lastName || '',
                 emails: (data.emails as any) || (Prisma as any).JsonNull,
                 phones: (data.phones as any) || (Prisma as any).JsonNull,
@@ -95,22 +104,23 @@ export class PersonModel {
         return this.mapPrismaPersonToPerson(person);
     }
 
-
-
-    async findById(id: number, includeDeleted: boolean = false): Promise<Person | null> {
-        const person = await prisma.person.findUnique({
-            where: { id },
+    async findById(id: number, companyId: number, includeDeleted: boolean = false): Promise<Person | null> {
+        const person = await prisma.person.findFirst({
+            where: { id, companyId },
             include: { organization: true }
         });
         if (!person || (!includeDeleted && person.deletedAt)) return null;
         return this.mapPrismaPersonToPerson(person);
     }
 
-    async findByEmail(email: string): Promise<Person | null> {
+    async findByEmail(email: string, companyId: number): Promise<Person | null> {
         const personEmail = await prisma.personEmail.findFirst({
             where: {
                 email: email.toLowerCase(),
-                person: { deletedAt: null }
+                person: {
+                    companyId,
+                    deletedAt: null
+                }
             },
             include: { person: true }
         });
@@ -118,13 +128,14 @@ export class PersonModel {
     }
 
     async findAll(options: {
+        companyId: number;
         search?: string;
         organizationId?: number;
         limit?: number;
         offset?: number;
         includeDeleted?: boolean;
-    } = {}): Promise<{ persons: Person[]; count: number }> {
-        const where: any = {};
+    }): Promise<{ persons: Person[]; count: number }> {
+        const where: any = { companyId: options.companyId };
 
         if (!options.includeDeleted) {
             where.deletedAt = null;
@@ -158,10 +169,11 @@ export class PersonModel {
         };
     }
 
-    async findByorganizationId(organizationId: number, includeDeleted: boolean = false): Promise<Person[]> {
+    async findByorganizationId(organizationId: number, companyId: number, includeDeleted: boolean = false): Promise<Person[]> {
         const rows = await prisma.person.findMany({
             where: {
                 organizationId,
+                companyId,
                 ...(!includeDeleted && { deletedAt: null })
             },
             orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
@@ -169,7 +181,7 @@ export class PersonModel {
         return rows.map((r: any) => this.mapPrismaPersonToPerson(r));
     }
 
-    async update(id: number, data: UpdatePersonData): Promise<Person | null> {
+    async update(id: number, companyId: number, data: UpdatePersonData): Promise<Person | null> {
         try {
             const updated = await prisma.$transaction(async (tx: any) => {
                 const updateData: any = {
@@ -182,7 +194,12 @@ export class PersonModel {
                 };
 
                 if (data.emails !== undefined) {
-                    await tx.personEmail.deleteMany({ where: { personId: id } });
+                    await tx.personEmail.deleteMany({
+                        where: {
+                            personId: id,
+                            person: { companyId }
+                        }
+                    });
                     if (data.emails.length > 0) {
                         updateData.userEmails = {
                             create: data.emails.map(e => ({ email: e.email.toLowerCase() }))
@@ -191,7 +208,12 @@ export class PersonModel {
                 }
 
                 if (data.phones !== undefined) {
-                    await tx.personPhone.deleteMany({ where: { personId: id } });
+                    await tx.personPhone.deleteMany({
+                        where: {
+                            personId: id,
+                            person: { companyId }
+                        }
+                    });
                     if (data.phones.length > 0) {
                         updateData.userPhones = {
                             create: data.phones.map(p => ({ phone: p.number }))
@@ -200,7 +222,7 @@ export class PersonModel {
                 }
 
                 return tx.person.update({
-                    where: { id },
+                    where: { id, companyId },
                     data: updateData,
                     include: { organization: true }
                 });
@@ -212,13 +234,11 @@ export class PersonModel {
         }
     }
 
-
-
-    async restore(id: number): Promise<Person | null> {
+    async restore(id: number, companyId: number): Promise<Person | null> {
         try {
             const person = await prisma.$transaction(async (tx: any) => {
                 const p = await tx.person.update({
-                    where: { id },
+                    where: { id, companyId },
                     data: { deletedAt: null },
                     include: { organization: true }
                 });
@@ -245,10 +265,10 @@ export class PersonModel {
         }
     }
 
-    async hardDelete(id: number): Promise<boolean> {
+    async hardDelete(id: number, companyId: number): Promise<boolean> {
         try {
             await prisma.person.delete({
-                where: { id }
+                where: { id, companyId }
             });
             return true;
         } catch (error) {
@@ -256,10 +276,10 @@ export class PersonModel {
         }
     }
 
-    async softDelete(id: number): Promise<boolean> {
+    async softDelete(id: number, companyId: number): Promise<boolean> {
         try {
             await prisma.person.update({
-                where: { id },
+                where: { id, companyId },
                 data: { deletedAt: new Date() }
             });
             return true;
@@ -268,9 +288,10 @@ export class PersonModel {
         }
     }
 
-    async searchByPersonName(search: string): Promise<Person[]> {
+    async searchByPersonName(search: string, companyId: number): Promise<Person[]> {
         const persons = await prisma.person.findMany({
             where: {
+                companyId,
                 deletedAt: null,
                 OR: [
                     { firstName: { contains: search, mode: 'insensitive' } },
@@ -286,6 +307,7 @@ export class PersonModel {
     private mapPrismaPersonToPerson(p: any): Person {
         return {
             id: p.id,
+            companyId: p.companyId,
             firstName: p.firstName,
             lastName: p.lastName,
             emails: (p.emails as any[]) || [],
@@ -294,7 +316,6 @@ export class PersonModel {
             organization: p.organization ? {
                 id: p.organization.id,
                 name: p.organization.name,
-                // map other fields if needed
             } as any : undefined,
 
             createdAt: p.createdAt.toISOString(),
@@ -303,3 +324,4 @@ export class PersonModel {
         };
     }
 }
+

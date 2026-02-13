@@ -3,6 +3,7 @@ import { BaseEntity } from '../../../shared/types';
 import { Prisma } from '@prisma/client';
 
 export interface Pipeline extends BaseEntity {
+    companyId: number;
     name: string;
     description?: string;
     userId: number;
@@ -32,6 +33,7 @@ export class PipelineModel {
             // Unset for any user who is an owner of this pipeline
             await prisma.pipeline.updateMany({
                 where: {
+                    companyId: data.companyId,
                     ownerIds: {
                         path: ['$'],
                         array_contains: data.ownerIds
@@ -45,6 +47,7 @@ export class PipelineModel {
 
         const pipeline = await prisma.pipeline.create({
             data: {
+                companyId: data.companyId,
                 name: data.name,
                 description: data.description || null,
                 userId: data.ownerIds[0] || 0,
@@ -59,9 +62,10 @@ export class PipelineModel {
         return this.mapPrismaPipelineToPipeline(pipeline);
     }
 
-    async findAccessiblePipelines(userId: number): Promise<Pipeline[]> {
+    async findAccessiblePipelines(userId: number, companyId: number): Promise<Pipeline[]> {
         const rows = await prisma.pipeline.findMany({
             where: {
+                companyId,
                 OR: [
                     { userId },
                     {
@@ -76,9 +80,12 @@ export class PipelineModel {
         return rows.map((r: any) => this.mapPrismaPipelineToPipeline(r));
     }
 
-    async findById(pipelineId: number, userId: number): Promise<Pipeline | null> {
-        const result = await prisma.pipeline.findUnique({
-            where: { id: pipelineId }
+    async findById(pipelineId: number, companyId: number, userId: number): Promise<Pipeline | null> {
+        const result = await prisma.pipeline.findFirst({
+            where: {
+                id: pipelineId,
+                companyId
+            }
         });
 
         if (!result) return null;
@@ -89,9 +96,9 @@ export class PipelineModel {
         return this.mapPrismaPipelineToPipeline(result);
     }
 
-    async canUserAccessPipeline(pipelineId: number, userId: number): Promise<boolean> {
-        const pipeline = await prisma.pipeline.findUnique({
-            where: { id: pipelineId },
+    async canUserAccessPipeline(pipelineId: number, companyId: number, userId: number): Promise<boolean> {
+        const pipeline = await prisma.pipeline.findFirst({
+            where: { id: pipelineId, companyId },
             select: { ownerIds: true, userId: true }
         });
 
@@ -101,9 +108,9 @@ export class PipelineModel {
         return pipeline.userId === userId || ownerIds.includes(userId);
     }
 
-    async addOwnersToPipeline(pipelineId: number, dealOwnerIds: number[]): Promise<void> {
-        const pipeline = await prisma.pipeline.findUnique({
-            where: { id: pipelineId },
+    async addOwnersToPipeline(pipelineId: number, companyId: number, dealOwnerIds: number[]): Promise<void> {
+        const pipeline = await prisma.pipeline.findFirst({
+            where: { id: pipelineId, companyId },
             select: { ownerIds: true }
         });
 
@@ -111,7 +118,7 @@ export class PipelineModel {
         const mergedOwners = Array.from(new Set([...existingOwners, ...dealOwnerIds]));
 
         await prisma.pipeline.update({
-            where: { id: pipelineId },
+            where: { id: pipelineId, companyId },
             data: {
                 ownerIds: mergedOwners as any,
                 updatedAt: new Date()
@@ -119,9 +126,9 @@ export class PipelineModel {
         });
     }
 
-    async recalculatePipelineOwners(pipelineId: number): Promise<void> {
+    async recalculatePipelineOwners(pipelineId: number, companyId: number): Promise<void> {
         const deals = await prisma.deal.findMany({
-            where: { pipelineId, deletedAt: null },
+            where: { pipelineId, companyId, deletedAt: null },
             select: { ownerIds: true }
         });
 
@@ -132,7 +139,7 @@ export class PipelineModel {
         }
 
         await prisma.pipeline.update({
-            where: { id: pipelineId },
+            where: { id: pipelineId, companyId },
             data: {
                 ownerIds: Array.from(ownerSet) as any,
                 updatedAt: new Date()
@@ -140,9 +147,10 @@ export class PipelineModel {
         });
     }
 
-    async searchByPipelineName(name: string): Promise<searchResult[]> {
+    async searchByPipelineName(name: string, companyId: number): Promise<searchResult[]> {
         const results = await prisma.pipeline.findMany({
             where: {
+                companyId,
                 name: { contains: name, mode: 'insensitive' }
             }
         });
@@ -156,13 +164,13 @@ export class PipelineModel {
         }));
     }
 
-    async findByUserId(userId: number, includeInactive: boolean = false): Promise<Pipeline[]> {
-        const pipelines = await this.findAccessiblePipelines(userId);
+    async findByUserId(userId: number, companyId: number, includeInactive: boolean = false): Promise<Pipeline[]> {
+        const pipelines = await this.findAccessiblePipelines(userId, companyId);
         return pipelines.filter(p => includeInactive || p.isActive);
     }
 
-    async update(id: number, userId: number, data: Partial<Omit<Pipeline, 'id' | 'createdAt' | 'updatedAt' | 'ownerIds'>>): Promise<Pipeline | null> {
-        const pipeline = await this.findById(id, userId);
+    async update(id: number, companyId: number, userId: number, data: Partial<Omit<Pipeline, 'id' | 'createdAt' | 'updatedAt' | 'ownerIds'>>): Promise<Pipeline | null> {
+        const pipeline = await this.findById(id, companyId, userId);
         if (!pipeline) return null;
 
         const updateData: any = {};
@@ -173,6 +181,7 @@ export class PipelineModel {
             if (data.isDefault) {
                 await prisma.pipeline.updateMany({
                     where: {
+                        companyId: pipeline.companyId,
                         ownerIds: {
                             array_contains: pipeline.ownerIds
                         }
@@ -191,31 +200,31 @@ export class PipelineModel {
         if (Object.keys(updateData).length === 0) return pipeline;
 
         const updated = await prisma.pipeline.update({
-            where: { id },
+            where: { id, companyId },
             data: updateData
         });
 
         return this.mapPrismaPipelineToPipeline(updated);
     }
 
-    async delete(id: number, userId: number): Promise<boolean> {
-        const pipeline = await this.findById(id, userId);
+    async delete(id: number, companyId: number, userId: number): Promise<boolean> {
+        const pipeline = await this.findById(id, companyId, userId);
         if (!pipeline) return false;
 
         const dealCount = await prisma.deal.count({
-            where: { pipelineId: id, deletedAt: null }
+            where: { pipelineId: id, companyId, deletedAt: null }
         });
         if (dealCount > 0) {
             throw new Error('Cannot delete pipeline with existing deals');
         }
 
         await prisma.pipeline.delete({
-            where: { id }
+            where: { id, companyId }
         });
         return true;
     }
 
-    async getStats(pipelineId: number): Promise<{
+    async getStats(pipelineId: number, companyId: number): Promise<{
         totalDeals: number;
         totalValue: number;
         wonDeals: number;
@@ -225,7 +234,7 @@ export class PipelineModel {
     }> {
         const stats = await prisma.deal.groupBy({
             by: ['status'],
-            where: { pipelineId, deletedAt: null },
+            where: { pipelineId, companyId, deletedAt: null },
             _count: { _all: true },
             _sum: { value: true }
         });
@@ -259,6 +268,7 @@ export class PipelineModel {
     private mapPrismaPipelineToPipeline(p: any): Pipeline {
         return {
             id: p.id,
+            companyId: p.companyId,
             name: p.name,
             description: p.description || undefined,
             userId: p.userId,

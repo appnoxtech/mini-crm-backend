@@ -5,46 +5,80 @@ import { UserModel } from '../models/User';
 import { ResponseHandler, ErrorCodes } from '../../../shared/responses/responses';
 import { EmailModel } from '../../email/models/emailModel';
 import { OAuthService } from '../../email/services/oauthService';
+import { CompanyModel } from '../../companies/models/company';
 
 export class AuthController {
   private authService: AuthService;
   private userModel: UserModel;
   private emailModel: EmailModel;
   private oauthService: OAuthService;
+  private companyModel: CompanyModel;
 
-  constructor(authService: AuthService, userModel: UserModel) {
+  constructor(authService: AuthService, userModel: UserModel, companyModel: CompanyModel) {
     this.authService = authService;
     this.userModel = userModel;
     this.emailModel = new EmailModel();
     this.oauthService = new OAuthService();
+    this.companyModel = companyModel;
   }
 
   async register(req: Request, res: Response): Promise<void> {
     try {
-      const { name, email, password, role = 'user' } = req.body as any;
+      const { companyData, userData } = req.body;
+      console.log('Registering with:', { companyData, userData });
 
-      if (!name || !email || !password) {
-        return ResponseHandler.validationError(res, 'Missing required fields: name, email, password');
+      if (!userData) {
+        return ResponseHandler.validationError(res, 'Missing userData');
+      }
+      if (!companyData) {
+        return ResponseHandler.validationError(res, 'Missing companyData');
+      }
+
+      const { name, email, password, phone, role = 'admin' } = userData;
+
+
+      if (!name || !email || !password || !phone) {
+        return ResponseHandler.validationError(res, 'Missing required fields: name, email, password, phone');
+      }
+
+
+      // Strip owner/creator IDs if provided, we'll set them later
+      const { ownerUserId, createdByUserId, ...restCompanyData } = companyData;
+
+      // step 1. create company
+      const company = await this.companyModel.create(restCompanyData as any);
+      if (!company) {
+        return ResponseHandler.error(res, "Failed to create company", 500);
       }
 
       // Check if user already exists
       const existingUser = await this.userModel.findByEmail(email);
 
       if (existingUser) {
+        // delete created company
+        await this.companyModel.delete(company.id);
         return ResponseHandler.conflict(res, 'User already exists', { email });
       }
 
       // Create user using auth service
-      const user = await this.authService.createUser(email, name, password, role);
+      const user = await this.authService.createUser(email, name, password, phone, role, company.id);
 
       if (!user) {
+        // Cleanup company if user creation fails
+        await this.companyModel.delete(company.id);
         return ResponseHandler.error(res, "Failed to create user", 500);
       }
+
+      // Step 3. Update company owner with the newly created user's ID
+      await this.companyModel.update(company.id, {
+        ownerUserId: user.id,
+        createdByUserId: user.id
+      });
 
       return ResponseHandler.created(res, user, 'User Registered Successfully');
     } catch (error: any) {
       console.error('Registration error:', error);
-      return ResponseHandler.internalError(res, 'Registration failed');
+      return ResponseHandler.internalError(res, error.message || 'Registration failed');
     }
   }
 
@@ -66,7 +100,7 @@ export class AuthController {
       let emailSetupStatus = 'not_setup';
 
       try {
-        const existingAccount = await this.emailModel.getEmailAccountByUserId(user.id.toString());
+        const existingAccount = await this.emailModel.getEmailAccountByUserId(user.id.toString(), user.companyId);
 
         if (existingAccount) {
           emailAccount = {
@@ -108,7 +142,7 @@ export class AuthController {
         return ResponseHandler.forbidden(res, 'User not authenticated');
       }
 
-      const user = await this.authService.getProfile(tokenUser.id);
+      const user = await this.authService.getProfile(tokenUser.id, tokenUser.companyId);
       if (!user) {
         return ResponseHandler.notFound(res, 'User not found');
       }
@@ -147,7 +181,7 @@ export class AuthController {
         return ResponseHandler.validationError(res, 'No valid updates provided');
       }
 
-      const updatedUser = await this.authService.updateUser(req.user.id, updates);
+      const updatedUser = await this.authService.updateUser(req.user.id, req.user.companyId, updates);
       if (!updatedUser) {
         return ResponseHandler.notFound(res, 'User not found');
       }
@@ -166,7 +200,7 @@ export class AuthController {
       }
 
       const { currentPassword, newPassword } = req.body as any;
-      const success = await this.authService.changePassword(req.user.id, currentPassword, newPassword);
+      const success = await this.authService.changePassword(req.user.id, req.user.companyId, currentPassword, newPassword);
 
       if (!success) {
         return ResponseHandler.validationError(res, 'Current password is incorrect');
@@ -185,7 +219,7 @@ export class AuthController {
       }
 
       const { role } = req.body as any;
-      const success = await this.authService.changeAccountRole(req.user.id, role);
+      const success = await this.authService.changeAccountRole(req.user.id, role, req.user.companyId);
 
       if (!success) {
         return ResponseHandler.error(res, 'Failed to change account role');
@@ -272,7 +306,7 @@ export class AuthController {
       }
 
       const search = typeof req.query.search === 'string' ? req.query.search : '';
-      const users = await this.authService.searchByPersonName(search);
+      const users = await this.authService.searchByPersonName(search, req.user.companyId);
 
       return ResponseHandler.success(res, users, "Successfully Searched");
     } catch (error) {

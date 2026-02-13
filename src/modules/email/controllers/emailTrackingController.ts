@@ -32,7 +32,7 @@ export class EmailTrackingController {
 
         try {
             // Get email details first
-            const email = await this.emailModel.findEmailById(emailId);
+            const email = await this.emailModel.findEmailByIdGlobal(emailId);
 
             if (!email) {
                 console.warn(`⚠️ [TRACKING] Email not found for emailId: ${emailId}`);
@@ -52,17 +52,18 @@ export class EmailTrackingController {
             console.log(`✉️ [TRACKING] Found email with accountId: ${email.accountId}`);
 
             // Get the email account to find the userId
-            const emailAccount = await this.emailModel.getEmailAccountById(email.accountId);
+            const emailAccount = await this.emailModel.getEmailAccountById(email.accountId, email.companyId);
 
             if (emailAccount) {
                 console.log(`👤 [TRACKING] Found email account for userId: ${emailAccount.userId}`);
 
                 // Increment the counter
-                await this.emailModel.incrementOpens(emailId);
+                await this.emailModel.incrementOpens(emailId, email.companyId);
 
                 // Log the event with more metadata if needed
                 await this.emailModel.logTrackingEvent({
                     emailId,
+                    companyId: email.companyId,
                     type: 'open',
                     ipAddress,
                     userAgent
@@ -128,19 +129,20 @@ export class EmailTrackingController {
 
         try {
             // Get email details first
-            const email = await this.emailModel.findEmailById(emailId);
+            const email = await this.emailModel.findEmailByIdGlobal(emailId);
 
             if (email) {
                 // Get the email account to find the userId
-                const emailAccount = await this.emailModel.getEmailAccountById(email.accountId);
+                const emailAccount = await this.emailModel.getEmailAccountById(email.accountId, email.companyId);
 
                 if (emailAccount) {
                     // Increment the counter
-                    await this.emailModel.incrementClicks(emailId);
+                    await this.emailModel.incrementClicks(emailId, email.companyId);
 
                     // Log the event
                     await this.emailModel.logTrackingEvent({
                         emailId,
+                        companyId: email.companyId,
                         type: 'click',
                         ipAddress,
                         userAgent,

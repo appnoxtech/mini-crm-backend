@@ -49,7 +49,7 @@ export class SuggestionOrchestratorService {
         let contextObject: any = null;
 
         if (messageId && !threadId) {
-            const emailRecord = await this.emailModel.findEmailByMessageId(messageId);
+            const emailRecord = await this.emailModel.findEmailByMessageId(messageId, request.companyId!);
             if (emailRecord) {
                 if (emailRecord.threadId) {
                     threadId = emailRecord.threadId;
@@ -71,7 +71,7 @@ export class SuggestionOrchestratorService {
         }
 
         if (threadId) {
-            emails = await this.emailModel.getEmailsForThread(threadId);
+            emails = await this.emailModel.getEmailsForThread(threadId, request.companyId!);
             if (emails.length > 0) {
                 const lastEmail = emails[emails.length - 1];
                 if (!dealId && lastEmail.dealIds && lastEmail.dealIds.length > 0) {
@@ -85,31 +85,31 @@ export class SuggestionOrchestratorService {
 
         if (dealId) {
             if (emails.length === 0) {
-                emails = await this.emailModel.getEmailsForDeal(dealId.toString());
+                emails = await this.emailModel.getEmailsForDeal(dealId.toString(), request.companyId!);
             }
-            contextObject = await this.dealModel.findById(dealId);
+            contextObject = await this.dealModel.findById(dealId, request.companyId!);
         } else if (personId) {
             if (emails.length === 0) {
-                emails = await this.emailModel.getEmailsForContact(personId.toString());
+                emails = await this.emailModel.getEmailsForContact(personId.toString(), request.companyId!);
             }
-            contextObject = await this.personModel.findById(personId);
+            contextObject = await this.personModel.findById(personId, request.companyId!);
         } else if ((threadId || messageId) && emails.length > 0) {
             const lastEmail = emails[emails.length - 1];
             const senderEmail = lastEmail.from.includes('<') ? lastEmail.from.split('<')[1].replace('>', '') : lastEmail.from;
-            contextObject = await this.personModel.findByEmail(senderEmail);
+            contextObject = await this.personModel.findByEmail(senderEmail, request.companyId!);
             if (!contextObject) {
                 contextObject = { firstName: senderEmail.split('@')[0], lastName: '', emails: [{ email: senderEmail, label: 'work' }] };
             }
         } else if (email) {
-            contextObject = await this.personModel.findByEmail(email);
+            contextObject = await this.personModel.findByEmail(email, request.companyId!);
             if (contextObject) {
                 personId = contextObject.id;
                 if (personId) {
-                    emails = await this.emailModel.getEmailsForContact(personId.toString());
+                    emails = await this.emailModel.getEmailsForContact(personId.toString(), request.companyId!);
                 }
             } else {
                 contextObject = { firstName: email.split('@')[0], lastName: '', emails: [{ email, label: 'work' }] };
-                emails = await this.emailModel.getEmailsByAddress(email);
+                emails = await this.emailModel.getEmailsByAddress(email, request.companyId!);
             }
         }
 
@@ -138,7 +138,7 @@ export class SuggestionOrchestratorService {
                 confidence: 1.0
             };
 
-            const kb = await this.structuredKBModel.getKB();
+            const kb = await this.structuredKBModel.getKB(request.companyId!);
             tiers = (kb?.category_9_pricing?.tiers || []).map((t: any) => ({
                 id: t.id,
                 name: t.name,
@@ -225,7 +225,7 @@ export class SuggestionOrchestratorService {
             const recentActivity = emails.slice(-5).map(e => ({ type: 'email', date: e.sentAt, subject: e.subject }));
             inference = await inferenceService.inferNextEmailNeed(profile, recentActivity);
 
-            const kb = await this.structuredKBModel.getKB();
+            const kb = await this.structuredKBModel.getKB(request.companyId!);
             const kbPricing = kb?.category_9_pricing;
 
             tiers = (kbPricing?.tiers || []).map((t: any) => ({
@@ -290,7 +290,7 @@ export class SuggestionOrchestratorService {
         ].filter(Boolean);
 
         if (searchTerms.length > 0) {
-            const kbItems = await this.knowledgeBaseModel.findRelevantContext(searchTerms);
+            const kbItems = await this.knowledgeBaseModel.findRelevantContext(searchTerms, request.companyId!);
             knowledgeBaseContext = kbItems.map((item: any) => item.content);
         }
 
@@ -320,7 +320,8 @@ export class SuggestionOrchestratorService {
 
             structuredKBContext = await this.structuredKBService.buildIntentBasedContext(
                 requiredCategories,
-                requiredFields
+                requiredFields,
+                request.companyId!
             );
 
             if (structuredKBContext) {
@@ -356,6 +357,7 @@ export class SuggestionOrchestratorService {
         const qa = await qualityAssuranceService.verifyDraft(draft.subject, draft.body, { profile, inference });
 
         const suggestionId = await this.suggestionModel.createSuggestion({
+            companyId: request.companyId!,
             dealId: dealId || undefined,
             personId: personId || (contextObject && 'id' in contextObject ? contextObject.id : undefined),
             subjectLine: draft.subject,
@@ -369,15 +371,15 @@ export class SuggestionOrchestratorService {
             createdAt: new Date()
         });
 
-        const fullSuggestion = await this.suggestionModel.findById(suggestionId);
+        const fullSuggestion = await this.suggestionModel.findById(suggestionId, request.companyId!);
         return fullSuggestion;
     }
 
-    async getSuggestionsForDeal(dealId: number): Promise<EmailSuggestion[]> {
-        return this.suggestionModel.findByDealId(dealId);
+    async getSuggestionsForDeal(dealId: number, companyId: number): Promise<EmailSuggestion[]> {
+        return this.suggestionModel.findByDealId(dealId, companyId);
     }
 
-    async getSuggestionsForPerson(personId: number): Promise<EmailSuggestion[]> {
-        return this.suggestionModel.findByPersonId(personId);
+    async getSuggestionsForPerson(personId: number, companyId: number): Promise<EmailSuggestion[]> {
+        return this.suggestionModel.findByPersonId(personId, companyId);
     }
 }

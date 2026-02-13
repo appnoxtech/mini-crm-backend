@@ -2,6 +2,7 @@ import { prisma } from '../../../shared/prisma';
 
 export interface KnowledgeBaseItem {
     id: number;
+    companyId: number;
     category: string;
     topic: string;
     content: string;
@@ -19,6 +20,7 @@ export class KnowledgeBaseModel {
     private mapPrismaToItem(row: any): KnowledgeBaseItem {
         return {
             id: row.id,
+            companyId: row.companyId,
             category: row.category,
             topic: row.topic,
             content: row.content,
@@ -27,9 +29,10 @@ export class KnowledgeBaseModel {
         };
     }
 
-    async addItem(data: Omit<KnowledgeBaseItem, 'id' | 'updated_at'>): Promise<number> {
+    async addItem(data: Omit<KnowledgeBaseItem, 'id' | 'updated_at'> & { companyId: number }): Promise<number> {
         const item = await prisma.knowledgeBase.create({
             data: {
+                companyId: data.companyId,
                 category: data.category,
                 topic: data.topic,
                 content: data.content,
@@ -39,20 +42,20 @@ export class KnowledgeBaseModel {
         return item.id;
     }
 
-    async getAllItems(): Promise<KnowledgeBaseItem[]> {
+    async getAllItems(companyId: number): Promise<KnowledgeBaseItem[]> {
         const rows = await prisma.knowledgeBase.findMany({
+            where: { companyId },
             orderBy: { category: 'asc' }
         });
         return rows.map((row: any) => this.mapPrismaToItem(row));
     }
 
-    async findRelevantContext(keywords: string[]): Promise<KnowledgeBaseItem[]> {
+    async findRelevantContext(keywords: string[], companyId: number): Promise<KnowledgeBaseItem[]> {
         if (keywords.length === 0) return [];
 
-        // Simple keyword matching for now. 
-        // In a real scenario, this would use full-text search or vector search.
         const rows = await prisma.knowledgeBase.findMany({
             where: {
+                companyId,
                 OR: keywords.map(kw => ({
                     OR: [
                         { topic: { contains: kw, mode: 'insensitive' } },
@@ -66,22 +69,22 @@ export class KnowledgeBaseModel {
         return rows.map((row: any) => this.mapPrismaToItem(row));
     }
 
-    async updateItem(id: string, data: Partial<KnowledgeBaseItem>): Promise<void> {
+    async updateItem(id: string, companyId: number, data: Partial<KnowledgeBaseItem>): Promise<void> {
         const updateData: any = {};
         if (data.category) updateData.category = data.category;
         if (data.topic) updateData.topic = data.topic;
         if (data.content) updateData.content = data.content;
         if (data.keywords) updateData.keywords = data.keywords;
 
-        await prisma.knowledgeBase.update({
-            where: { id: Number(id) },
+        await prisma.knowledgeBase.updateMany({
+            where: { id: Number(id), companyId },
             data: updateData
         });
     }
 
-    async deleteItem(id: string): Promise<void> {
-        await prisma.knowledgeBase.delete({
-            where: { id: Number(id) }
+    async deleteItem(id: string, companyId: number): Promise<void> {
+        await prisma.knowledgeBase.deleteMany({
+            where: { id: Number(id), companyId }
         });
     }
 }

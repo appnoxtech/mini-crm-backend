@@ -3,7 +3,7 @@ import { Label, LabelModel } from '../models/Label';
 export class LabelService {
     constructor(private labelModel: LabelModel) { }
 
-    async createlabel(userId: number, data: Label): Promise<Label> {
+    async createlabel(userId: number, companyId: number, data: Label): Promise<Label> {
         if (!data.value || !data.value.trim()) {
             throw new Error('label value is required');
         }
@@ -21,11 +21,12 @@ export class LabelService {
             pipelineId: data.pipelineId,
             organizationId: data.organizationId,
             personId: data.personId,
+            companyId,
             userId
         });
     }
 
-    async getlabels(userId: number, filters: {
+    async getlabels(userId: number, companyId: number, filters: {
         pipelineId?: number;
         search?: string;
         limit?: number;
@@ -35,7 +36,7 @@ export class LabelService {
         const limit = filters.limit || 20;
         const offset = (page - 1) * limit;
 
-        const result = await this.labelModel.findByUserId(userId, {
+        const result = await this.labelModel.findByUserId(userId, companyId, {
             ...filters,
             limit,
             offset
@@ -53,44 +54,44 @@ export class LabelService {
         };
     }
 
-    async getlabelByPipelineId(pipelineId: number, userId: number): Promise<Label[] | null> {
-        const label = await this.labelModel.findByPipelineId(pipelineId);
+    async getlabelByPipelineId(pipelineId: number, companyId: number, userId: number): Promise<Label[] | null> {
+        const label = await this.labelModel.findByPipelineId(pipelineId, companyId);
         if (!label) {
             return null;
         }
         return label;
     }
 
-    async getlabelByOrganizationId(organizationId: number, userId: number): Promise<Label[] | null> {
-        const label = await this.labelModel.findByOrganizationId(organizationId);
+    async getlabelByOrganizationId(organizationId: number, companyId: number, userId: number): Promise<Label[] | null> {
+        const label = await this.labelModel.findByOrganizationId(organizationId, companyId);
         if (!label) {
             return null;
         }
         return label;
     }
 
-    async getlabelByPersonId(personId: number, userId: number): Promise<Label[] | null> {
-        const label = await this.labelModel.findByPersonId(personId);
+    async getlabelByPersonId(personId: number, companyId: number, userId: number): Promise<Label[] | null> {
+        const label = await this.labelModel.findByPersonId(personId, companyId);
         if (!label) {
             return null;
         }
         return label;
     }
 
-    async updatelabel(labelId: number, data: Partial<Label>): Promise<Label | null> {
-        const label = await this.labelModel.findById(labelId);
+    async updatelabel(labelId: number, companyId: number, data: Partial<Label>): Promise<Label | null> {
+        const label = await this.labelModel.findById(labelId, companyId);
         if (!label) {
             return null;
         }
 
-        return (await this.labelModel.update(labelId, data)) || null;
+        return (await this.labelModel.update(labelId, companyId, data)) || null;
     }
 
-    async deletelabel(labelId: number): Promise<boolean> {
-        const label = await this.labelModel.findById(labelId);
+    async deletelabel(labelId: number, companyId: number): Promise<boolean> {
+        const label = await this.labelModel.findById(labelId, companyId);
         if (!label) {
             return false;
         }
-        return await this.labelModel.delete(labelId);
+        return await this.labelModel.delete(labelId, companyId);
     }
 }

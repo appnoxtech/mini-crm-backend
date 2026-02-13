@@ -4,6 +4,7 @@ import { BaseEntity } from "../../../shared/types";
 export interface Product extends BaseEntity {
     dealId: number,
     userId: number,
+    companyId: number,
     title: string,
     price: number,
     quantity: number,
@@ -26,6 +27,7 @@ export class ProductModel {
             data: {
                 dealId: data.dealId,
                 userId: data.userId,
+                companyId: data.companyId,
                 title: data.title,
                 price: data.price,
                 quantity: data.quantity,
@@ -40,24 +42,30 @@ export class ProductModel {
         return this.mapPrismaProductToProduct(product);
     }
 
-    async findById(id: number): Promise<Product | null> {
-        const product = await prisma.product.findUnique({
-            where: { id }
+    async findById(id: number, companyId?: number): Promise<Product | null> {
+        const product = await prisma.product.findFirst({
+            where: {
+                id,
+                ...(companyId && { companyId })
+            }
         });
         return product ? this.mapPrismaProductToProduct(product) : null;
     }
 
-    async findByDealId(dealId: number): Promise<Product[]> {
+    async findByDealId(dealId: number, companyId: number): Promise<Product[]> {
         const rows = await prisma.product.findMany({
-            where: { dealId }
+            where: { dealId, companyId }
         });
         return rows.map((r: any) => this.mapPrismaProductToProduct(r));
     }
 
-    async update(id: number, data: Partial<Product>): Promise<Product | null> {
+    async update(id: number, companyId: number, data: Partial<Product>): Promise<Product | null> {
         try {
             const updated = await prisma.product.update({
-                where: { id },
+                where: {
+                    id,
+                    companyId
+                },
                 data: {
                     ...(data.userId !== undefined && { userId: data.userId }),
                     ...(data.title !== undefined && { title: data.title }),
@@ -77,10 +85,13 @@ export class ProductModel {
         }
     }
 
-    async delete(id: number): Promise<boolean> {
+    async delete(id: number, companyId: number): Promise<boolean> {
         try {
             await prisma.product.delete({
-                where: { id }
+                where: {
+                    id,
+                    companyId
+                }
             });
             return true;
         } catch (error) {
@@ -93,6 +104,7 @@ export class ProductModel {
             id: p.id,
             dealId: p.dealId,
             userId: p.userId,
+            companyId: p.companyId,
             title: p.title,
             price: p.price,
             quantity: p.quantity,

@@ -10,13 +10,32 @@ export class EmailModel {
 
   initialize(): void { }
 
+  async getCompanyIdForUser(userId: string): Promise<number | null> {
+    const user = await prisma.user.findUnique({
+      where: { id: parseInt(userId) },
+      select: { companyId: true }
+    });
+    return user?.companyId || null;
+  }
+
   async createEmail(email: Email): Promise<Email> {
+    // ⚠️ CRITICAL: Validate companyId is present
+    if (!email.companyId) {
+      throw new Error(`Cannot create email ${email.messageId}: companyId is missing`);
+    }
+
     // 1. Save or update unique content
-    // Check if we should update existing content (e.g. if it was empty before)
+    // Content is now scoped by companyId
     await prisma.emailContent.upsert({
-      where: { messageId: email.messageId },
+      where: {
+        messageId_companyId: {
+          messageId: email.messageId,
+          companyId: email.companyId
+        }
+      },
       create: {
         messageId: email.messageId,
+        companyId: email.companyId,
         body: email.body || "",
         htmlBody: email.htmlBody || null,
         attachments: (email.attachments as any) || [],
@@ -24,9 +43,6 @@ export class EmailModel {
         updatedAt: email.updatedAt
       },
       update: {
-        // If the new body is not empty but the existing one might be, we could update.
-        // Prisma upsert 'update' doesn't easily support conditional setting based on existing DB value without a query.
-        // However, we can at least ensure we provide the data if we have it.
         ...(email.body ? { body: email.body } : {}),
         ...(email.htmlBody ? { htmlBody: email.htmlBody } : {}),
         ...(email.attachments ? { attachments: (email.attachments as any) } : {}),
@@ -52,6 +68,7 @@ export class EmailModel {
       messageId: email.messageId,
       threadId: email.threadId || null,
       accountId: email.accountId,
+      companyId: email.companyId,
       from: email.from,
       to: (email.to as any) || [],
       cc: (email.cc as any) || [],
@@ -94,18 +111,18 @@ export class EmailModel {
     if (emails.length === 0) return { inserted: 0, skipped: 0 };
 
     try {
-      // 1. Prepare unique content data (deduplicate by messageId)
-      // We use a Map to ensure only one record per messageId, preferring the one with a body if available
+      // 1. Prepare unique content data (deduplicate by messageId AND companyId)
       const contentMap = new Map<string, any>();
       for (const email of emails) {
-        const existing = contentMap.get(email.messageId);
-        // Prefer content that has a body or htmlBody
+        const contentKey = `${email.messageId}:${email.companyId}`;
+        const existing = contentMap.get(contentKey);
         const hasContent = (email.body && email.body.length > 0) || (email.htmlBody && email.htmlBody.length > 0);
         const existingHasContent = existing && ((existing.body && existing.body.length > 0) || (existing.htmlBody && existing.htmlBody.length > 0));
 
         if (!existing || (!existingHasContent && hasContent)) {
-          contentMap.set(email.messageId, {
+          contentMap.set(contentKey, {
             messageId: email.messageId,
+            companyId: email.companyId,
             body: email.body || "",
             htmlBody: email.htmlBody || null,
             attachments: (email.attachments as any) || [],
@@ -135,6 +152,7 @@ export class EmailModel {
           messageId: email.messageId,
           threadId: email.threadId || null,
           accountId: email.accountId,
+          companyId: email.companyId,
           from: email.from,
           to: (email.to as any) || [],
           cc: (email.cc as any) || [],
@@ -160,19 +178,38 @@ export class EmailModel {
         };
       });
 
-      // 3. Find existing content records that might need repair
-      const messageIds = contentData.map(c => c.messageId);
+      // Filter out any entries with missing companyId just in case
+      const validContentData = contentData.filter(c => c.companyId !== undefined && c.companyId !== null);
+      const validEmailData = emailData.filter(e => e.companyId !== undefined && e.companyId !== null);
+
+      if (validContentData.length === 0 && validEmailData.length === 0) {
+        console.warn('[EmailSync] No valid emails to insert - all emails missing companyId');
+        return { inserted: 0, skipped: emails.length };
+      }
+
+      if (validEmailData.length < emailData.length) {
+        console.warn(`[EmailSync] Filtered out ${emailData.length - validEmailData.length} emails with missing companyId`);
+      }
+
+      // 3. Find existing content records
+      // We need to look up by (messageId, companyId) pairs
       const existingContent = await prisma.emailContent.findMany({
-        where: { messageId: { in: messageIds } },
-        select: { messageId: true, body: true }
+        where: {
+          OR: validContentData.map(c => ({
+            messageId: c.messageId,
+            companyId: c.companyId
+          }))
+        },
+        select: { messageId: true, companyId: true, body: true }
       });
 
-      const existingContentMap = new Map(existingContent.map(c => [c.messageId, c]));
+      const existingContentMap = new Map(existingContent.map(c => [`${c.messageId}:${c.companyId}`, c]));
       const contentDataToCreate = [];
       const contentDataToUpdate = [];
 
-      for (const content of contentData) {
-        const existing = existingContentMap.get(content.messageId);
+      for (const content of validContentData) {
+        const contentKey = `${content.messageId}:${content.companyId}`;
+        const existing = existingContentMap.get(contentKey);
         if (!existing) {
           contentDataToCreate.push(content);
         } else {
@@ -187,7 +224,6 @@ export class EmailModel {
       // 4. Build transaction operations
       const operations: any[] = [];
 
-      // Create new content
       if (contentDataToCreate.length > 0) {
         operations.push(prisma.emailContent.createMany({
           data: contentDataToCreate,
@@ -195,10 +231,14 @@ export class EmailModel {
         }));
       }
 
-      // Update/Repair existing content
       for (const content of contentDataToUpdate) {
         operations.push(prisma.emailContent.update({
-          where: { messageId: content.messageId },
+          where: {
+            messageId_companyId: {
+              messageId: content.messageId,
+              companyId: content.companyId
+            }
+          },
           data: {
             body: content.body,
             htmlBody: content.htmlBody,
@@ -208,11 +248,8 @@ export class EmailModel {
         }));
       }
 
-      // Upsert Emails - we use separate upserts if we want to support repair of existing Email table rows
-      // or createMany with skipDuplicates for speed. 
-      // For synchromization, we usually want createMany skipDuplicates: true for new emails.
       operations.push(prisma.email.createMany({
-        data: emailData,
+        data: validEmailData,
         skipDuplicates: true
       }));
 
@@ -237,11 +274,18 @@ export class EmailModel {
     }
   }
 
-  async findContentByMessageId(messageId: string): Promise<EmailContent | null> {
+  async findContentByMessageId(messageId: string, companyId: number): Promise<EmailContent | null> {
     const row = await prisma.emailContent.findUnique({
-      where: { messageId }
+      where: {
+        messageId_companyId: {
+          messageId,
+          companyId
+        }
+      }
     });
+
     if (!row) return null;
+
     return {
       messageId: row.messageId,
       body: row.body,
@@ -252,10 +296,11 @@ export class EmailModel {
     };
   }
 
-  async findEmailByImapUid(accountId: string, folder: string, uid: number): Promise<Email | null> {
+  async findEmailByImapUid(accountId: string, companyId: number, folder: string, uid: number): Promise<Email | null> {
     const row = await prisma.email.findFirst({
       where: {
         accountId,
+        companyId,
         folder,
         uid
       },
@@ -267,10 +312,11 @@ export class EmailModel {
     return this.mapRowToEmail(row);
   }
 
-  async findEmailByProviderId(accountId: string, providerId: string): Promise<Email | null> {
+  async findEmailByProviderId(accountId: string, companyId: number, providerId: string): Promise<Email | null> {
     const row = await prisma.email.findFirst({
       where: {
         accountId,
+        companyId,
         providerId
       },
       include: {
@@ -281,10 +327,11 @@ export class EmailModel {
     return this.mapRowToEmail(row);
   }
 
-  async findEmailByMessageId(messageId: string, accountId?: string): Promise<Email | null> {
+  async findEmailByMessageId(messageId: string, companyId: number, accountId?: string): Promise<Email | null> {
     const row = await prisma.email.findFirst({
       where: {
         messageId,
+        companyId,
         ...(accountId ? { accountId } : {})
       },
       include: {
@@ -300,12 +347,13 @@ export class EmailModel {
    * Batch lookup: Find all existing emails by messageIds for a specific account
    * Returns a Map<messageId, Email> for O(1) lookups
    */
-  async findEmailsByMessageIds(messageIds: string[], accountId: string): Promise<Map<string, Email>> {
+  async findEmailsByMessageIds(messageIds: string[], companyId: number, accountId: string): Promise<Map<string, Email>> {
     if (messageIds.length === 0) return new Map();
 
     const rows = await prisma.email.findMany({
       where: {
         accountId,
+        companyId,
         messageId: { in: messageIds }
       },
       include: {
@@ -324,7 +372,7 @@ export class EmailModel {
    * Batch lookup: Find existing UIDs for IMAP emails
    * Returns a Set of "folder:uid" composite keys for quick lookups
    */
-  async findExistingImapUids(accountId: string, folderUidPairs: { folder: string; uid: number }[]): Promise<Set<string>> {
+  async findExistingImapUids(accountId: string, companyId: number, folderUidPairs: { folder: string; uid: number }[]): Promise<Set<string>> {
     if (folderUidPairs.length === 0) return new Set();
 
     // Group by folder for efficient querying
@@ -343,6 +391,7 @@ export class EmailModel {
       const rows = await prisma.email.findMany({
         where: {
           accountId,
+          companyId,
           folder,
           uid: { in: uids }
         },
@@ -363,12 +412,13 @@ export class EmailModel {
    * Batch lookup: Find existing content by messageIds
    * Returns a Map<messageId, EmailContent> for reusing existing content
    */
-  async findExistingContentByMessageIds(messageIds: string[]): Promise<Map<string, EmailContent>> {
+  async findExistingContentByMessageIds(messageIds: string[], companyId: number): Promise<Map<string, EmailContent>> {
     if (messageIds.length === 0) return new Map();
 
     const rows = await prisma.emailContent.findMany({
       where: {
-        messageId: { in: messageIds }
+        messageId: { in: messageIds },
+        companyId
       }
     });
 
@@ -386,34 +436,25 @@ export class EmailModel {
     return result;
   }
 
-  async getEmailAccountById(id: string): Promise<EmailAccount | null> {
+  async getEmailAccountById(id: string, companyId: number): Promise<EmailAccount | null> {
     // Check cache
     const cached = this.accountCache.get(id);
     if (cached && Date.now() < cached.expires) {
-      return cached.data;
+      if (cached.data.companyId === companyId) {
+        return cached.data;
+      }
     }
 
-    const row = await prisma.emailAccount.findUnique({
-      where: { id }
+    const row = await prisma.emailAccount.findFirst({
+      where: {
+        id,
+        companyId
+      }
     });
 
     if (!row) return null;
 
-    const account: EmailAccount = {
-      id: row.id,
-      userId: row.userId.toString(),
-      email: row.email,
-      provider: row.provider as any,
-      accessToken: row.accessToken || undefined,
-      refreshToken: row.refreshToken || undefined,
-      imapConfig: row.imapConfig ? JSON.parse(row.imapConfig as string) : undefined,
-      smtpConfig: row.smtpConfig ? JSON.parse(row.smtpConfig as string) : undefined,
-      isActive: row.isActive,
-      lastSyncAt: row.lastSyncAt || undefined,
-      lastHistoryId: row.lastHistoryId || undefined,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    };
+    const account = this.mapRowToAccount(row);
 
     // Set cache
     this.accountCache.set(id, {
@@ -424,59 +465,35 @@ export class EmailModel {
     return account;
   }
 
-  async getEmailAccountByUserId(userId: string): Promise<EmailAccount | null> {
+  async getEmailAccountByUserId(userId: string, companyId: number): Promise<EmailAccount | null> {
     const row = await prisma.emailAccount.findFirst({
       where: {
         userId: parseInt(userId),
-        isActive: true
-      }
+        isActive: true,
+        companyId
+      },
     });
 
     if (!row) return null;
 
-    return {
-      id: row.id,
-      userId: row.userId.toString(),
-      email: row.email,
-      provider: row.provider as any,
-      accessToken: row.accessToken || undefined,
-      refreshToken: row.refreshToken || undefined,
-      imapConfig: row.imapConfig ? JSON.parse(row.imapConfig as string) : undefined,
-      smtpConfig: row.smtpConfig ? JSON.parse(row.smtpConfig as string) : undefined,
-      isActive: row.isActive,
-      lastSyncAt: row.lastSyncAt || undefined,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    };
+    return this.mapRowToAccount(row);
   }
 
-  async getEmailAccountByEmail(email: string): Promise<EmailAccount | null> {
+  async getEmailAccountByEmail(email: string, companyId: number): Promise<EmailAccount | null> {
     const row = await prisma.emailAccount.findFirst({
       where: {
         email: {
           equals: email,
           mode: 'insensitive'
         },
-        isActive: true
-      }
+        isActive: true,
+        companyId
+      },
     });
 
     if (!row) return null;
 
-    return {
-      id: row.id,
-      userId: row.userId.toString(),
-      email: row.email,
-      provider: row.provider as any,
-      accessToken: row.accessToken || undefined,
-      refreshToken: row.refreshToken || undefined,
-      imapConfig: row.imapConfig ? JSON.parse(row.imapConfig as string) : undefined,
-      smtpConfig: row.smtpConfig ? JSON.parse(row.smtpConfig as string) : undefined,
-      isActive: row.isActive,
-      lastSyncAt: row.lastSyncAt || undefined,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    };
+    return this.mapRowToAccount(row);
   }
 
   async createEmailAccount(account: EmailAccount): Promise<EmailAccount> {
@@ -484,6 +501,7 @@ export class EmailModel {
       data: {
         id: account.id,
         userId: parseInt(account.userId),
+        companyId: account.companyId,
         email: account.email,
         provider: account.provider,
         accessToken: account.accessToken || null,
@@ -503,6 +521,7 @@ export class EmailModel {
 
   async updateEmailAccount(
     accountId: string,
+    companyId: number,
     updates: Partial<EmailAccount>
   ): Promise<void> {
     const data: any = {};
@@ -520,56 +539,49 @@ export class EmailModel {
 
     if (Object.keys(data).length === 0) return;
 
-    await prisma.emailAccount.update({
-      where: { id: accountId },
+    await prisma.emailAccount.updateMany({
+      where: { id: accountId, companyId },
       data
     });
   }
 
-  async getAllActiveAccounts(): Promise<EmailAccount[]> {
-    const rows = await prisma.emailAccount.findMany({
-      where: { isActive: true }
-    });
-
-    return rows.map((row: any) => ({
-      id: row.id,
-      userId: row.userId.toString(),
-      email: row.email,
-      provider: row.provider as any,
-      accessToken: row.accessToken || undefined,
-      refreshToken: row.refreshToken || undefined,
-      imapConfig: row.imapConfig ? JSON.parse(row.imapConfig as string) : undefined,
-      smtpConfig: row.smtpConfig ? JSON.parse(row.smtpConfig as string) : undefined,
-      isActive: row.isActive,
-      lastSyncAt: row.lastSyncAt || undefined,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    }));
-  }
-
-  async getEmailAccounts(userId: string): Promise<EmailAccount[]> {
+  async getAllActiveAccounts(companyId: number): Promise<EmailAccount[]> {
     const rows = await prisma.emailAccount.findMany({
       where: {
-        userId: parseInt(userId),
-        isActive: true
+        isActive: true,
+        companyId
       },
       orderBy: { createdAt: 'desc' }
     });
 
-    return rows.map((row: any) => ({
-      id: row.id,
-      userId: row.userId.toString(),
-      email: row.email,
-      provider: row.provider as any,
-      accessToken: row.accessToken || undefined,
-      refreshToken: row.refreshToken || undefined,
-      imapConfig: row.imapConfig ? JSON.parse(row.imapConfig as string) : undefined,
-      smtpConfig: row.smtpConfig ? JSON.parse(row.smtpConfig as string) : undefined,
-      isActive: row.isActive,
-      lastSyncAt: row.lastSyncAt || undefined,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    }));
+    return rows.map((row) => this.mapRowToAccount(row));
+  }
+
+  /**
+   * Get ALL active accounts across all companies.
+   * Used only for background sync scheduling (e.g., queue service).
+   */
+  async getAllActiveAccountsGlobal(): Promise<EmailAccount[]> {
+    const rows = await prisma.emailAccount.findMany({
+      where: {
+        isActive: true,
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    return rows.map((row) => this.mapRowToAccount(row));
+  }
+
+  async getEmailAccounts(userId: string, companyId: number): Promise<EmailAccount[]> {
+    const rows = await prisma.emailAccount.findMany({
+      where: {
+        userId: parseInt(userId),
+        companyId
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    return rows.map((row) => this.mapRowToAccount(row));
   }
 
   async findContactsByEmails(emails: string[]): Promise<Contact[]> {
@@ -577,11 +589,12 @@ export class EmailModel {
     return [];
   }
 
-  async saveThreadSummary(threadId: string, summary: string): Promise<void> {
+  async saveThreadSummary(threadId: string, companyId: number, summary: string): Promise<void> {
     await prisma.threadSummary.upsert({
       where: { threadId },
       create: {
         threadId,
+        companyId,
         summary,
         lastSummarizedAt: new Date()
       },
@@ -592,9 +605,9 @@ export class EmailModel {
     });
   }
 
-  async getThreadSummary(threadId: string): Promise<{ summary: string; lastSummarizedAt: Date } | null> {
-    const row = await prisma.threadSummary.findUnique({
-      where: { threadId }
+  async getThreadSummary(threadId: string, companyId: number): Promise<{ summary: string; lastSummarizedAt: Date } | null> {
+    const row = await prisma.threadSummary.findFirst({
+      where: { threadId, companyId }
     });
     if (!row) return null;
     return {
@@ -603,14 +616,26 @@ export class EmailModel {
     };
   }
 
-  async getThreadsNeedingSummary(): Promise<string[]> {
+  async getThreadsNeedingSummary(companyId: number): Promise<string[]> {
     const results = (await prisma.$queryRaw`
       SELECT DISTINCT "threadId" 
       FROM emails 
       WHERE "threadId" IS NOT NULL 
-        AND "threadId" NOT IN (SELECT "threadId" FROM thread_summaries)
+        AND "companyId" = ${companyId}
+        AND "threadId" NOT IN (SELECT "threadId" FROM thread_summaries WHERE "companyId" = ${companyId})
     `) as { threadId: string }[];
     return results.map((r: any) => r.threadId);
+  }
+
+  async getThreadsNeedingSummaryGlobal(limit: number = 50): Promise<{ threadId: string; companyId: number }[]> {
+    const results = (await prisma.$queryRaw`
+      SELECT DISTINCT e."threadId", e."companyId"
+      FROM emails e
+      WHERE e."threadId" IS NOT NULL
+        AND e."threadId" NOT IN (SELECT ts."thread_id" FROM thread_summaries ts)
+      LIMIT ${limit}
+    `) as { threadId: string; companyId: number }[];
+    return results;
   }
 
   async findDealsByContactIds(contactIds: string[]): Promise<Deal[]> {
@@ -618,9 +643,10 @@ export class EmailModel {
     return [];
   }
 
-  async getEmailsForContact(contactId: string): Promise<Email[]> {
+  async getEmailsForContact(contactId: string, companyId: number): Promise<Email[]> {
     const rows = await prisma.email.findMany({
       where: {
+        companyId,
         contactIds: {
           array_contains: contactId
         }
@@ -633,9 +659,10 @@ export class EmailModel {
     return rows.map((row: any) => this.mapRowToEmail(row));
   }
 
-  async getEmailsForDeal(dealId: string): Promise<Email[]> {
+  async getEmailsForDeal(dealId: string, companyId: number): Promise<Email[]> {
     const rows = await prisma.email.findMany({
       where: {
+        companyId,
         dealIds: {
           array_contains: dealId
         }
@@ -648,9 +675,10 @@ export class EmailModel {
     return rows.map((row: any) => this.mapRowToEmail(row));
   }
 
-  async getEmailsByAddress(address: string): Promise<Email[]> {
+  async getEmailsByAddress(address: string, companyId: number): Promise<Email[]> {
     const rows = await prisma.email.findMany({
       where: {
+        companyId,
         OR: [
           { from: address },
           {
@@ -668,9 +696,9 @@ export class EmailModel {
     return rows.map((row: any) => this.mapRowToEmail(row));
   }
 
-  async getEmailsForThread(threadId: string): Promise<Email[]> {
+  async getEmailsForThread(threadId: string, companyId: number): Promise<Email[]> {
     const rows = await prisma.email.findMany({
-      where: { threadId },
+      where: { threadId, companyId },
       include: {
         content: true
       },
@@ -679,9 +707,10 @@ export class EmailModel {
     return rows.map((row: any) => this.mapRowToEmail(row));
   }
 
-  async getAllEmails(options: { limit?: number } = {}): Promise<{ emails: Email[]; total: number }> {
+  async getAllEmails(companyId: number, options: { limit?: number } = {}): Promise<{ emails: Email[]; total: number }> {
     const { limit = 1000 } = options;
     const rows = await prisma.email.findMany({
+      where: { companyId },
       take: limit,
       include: {
         content: true
@@ -693,6 +722,7 @@ export class EmailModel {
 
   async getEmailsForUser(
     userId: string,
+    companyId: number,
     options: {
       limit?: number;
       offset?: number;
@@ -711,7 +741,7 @@ export class EmailModel {
       accountId,
     } = options;
 
-    let rawWhere = `ea."userId" = ${parseInt(userId)}`;
+    let rawWhere = `ea."userId" = ${parseInt(userId)} AND e."companyId" = ${companyId}`;
     if (accountId) rawWhere += ` AND e."accountId" = '${accountId}'`;
 
     if (folder === "inbox") {
@@ -722,7 +752,6 @@ export class EmailModel {
       rawWhere += ` AND (e."labelIds"::text LIKE '%SPAM%' OR e."labelIds"::text LIKE '%JUNK%') AND NOT (e."labelIds"::text LIKE '%TRASH%')`;
     } else if (folder === "drafts" || folder === "drfts") {
       rawWhere += ` AND (e.folder = 'DRAFT' OR e."labelIds"::text LIKE '%DRAFT%') AND (e."labelIds" IS NULL OR NOT (e."labelIds"::text LIKE '%TRASH%'))`;
-
     } else if (folder === "trash") {
       rawWhere += ` AND e."labelIds"::text LIKE '%TRASH%'`;
     } else if (folder === "archive") {
@@ -731,16 +760,13 @@ export class EmailModel {
 
     if (unreadOnly) rawWhere += ` AND e."isRead" = false`;
 
-    // Only join email_contents if we need to search in body
-    const joinContent = search ? 'JOIN email_contents ec ON e."messageId" = ec."messageId"' : '';
+    // JOIN email_contents with companyId scope
+    const joinContent = search ? 'JOIN email_contents ec ON e."messageId" = ec."messageId" AND e."companyId" = ec."companyId"' : '';
 
     if (search) {
-      // If search is active, we need to check matches in body too
       rawWhere += ` AND (e."subject" ILIKE '%${search}%' OR e."from_address" ILIKE '%${search}%' OR ec."body" ILIKE '%${search}%')`;
     }
 
-    // Deduplicate across accounts for the same user if no specific accountId is provided
-    // This handles cases where a user has multiple alias accounts for the same mailbox
     const distinctClause = accountId ? '' : 'DISTINCT ON (e."messageId")';
     const orderByClause = accountId ? 'ORDER BY e."sentAt" DESC' : 'ORDER BY e."messageId", e."sentAt" DESC';
 
@@ -755,11 +781,10 @@ export class EmailModel {
     `)) as { total: bigint }[];
     const total = (totalResults && totalResults.length > 0 && totalResults[0]) ? Number(totalResults[0].total) : 0;
 
-    // We use a subquery to support DISTINCT ON for deduplication while maintaining sentAt ordering
     const rows = (await prisma.$queryRawUnsafe(`
       SELECT * FROM (
         SELECT ${distinctClause} e.*, 
-          (SELECT COUNT(*)::int FROM emails e2 WHERE e2."threadId" = e."threadId" AND e."threadId" IS NOT NULL) as "threadCount"
+          (SELECT COUNT(*)::int FROM emails e2 WHERE e2."threadId" = e."threadId" AND e."threadId" IS NOT NULL AND e2."companyId" = e."companyId") as "threadCount"
         FROM emails e 
         JOIN email_accounts ea ON e."accountId" = ea."id"
         ${joinContent}
@@ -773,7 +798,7 @@ export class EmailModel {
     return { emails: rows.map(r => this.mapRowToEmail(r)), total };
   }
 
-  async getEmailsPaginated(userId: string, options: {
+  async getEmailsPaginated(userId: string, companyId: number, options: {
     page?: number;
     limit?: number;
     folder?: string;
@@ -785,7 +810,7 @@ export class EmailModel {
     const limit = options.limit || 50;
     const offset = (page - 1) * limit;
 
-    const result = await this.getEmailsForUser(userId, {
+    const result = await this.getEmailsForUser(userId, companyId, {
       ...options,
       limit,
       offset
@@ -800,10 +825,11 @@ export class EmailModel {
     };
   }
 
-  async getEmailById(emailId: string, userId: string): Promise<Email | null> {
+  async getEmailById(emailId: string, userId: string, companyId: number): Promise<Email | null> {
     const row = await prisma.email.findFirst({
       where: {
         id: emailId,
+        companyId,
         account: {
           userId: parseInt(userId)
         }
@@ -822,8 +848,21 @@ export class EmailModel {
     return this.mapRowToEmail(row);
   }
 
-  async findEmailById(id: string): Promise<Email | null> {
-    const row = await prisma.email.findUnique({
+  async findEmailById(id: string, companyId: number): Promise<Email | null> {
+    const row = await prisma.email.findFirst({
+      where: { id, companyId },
+      include: { content: true }
+    });
+    if (!row) return null;
+    return this.mapRowToEmail(row);
+  }
+
+  /**
+   * Find email by ID without company scoping.
+   * Used ONLY for public tracking endpoints (pixel/click) where no auth context exists.
+   */
+  async findEmailByIdGlobal(id: string): Promise<Email | null> {
+    const row = await prisma.email.findFirst({
       where: { id },
       include: { content: true }
     });
@@ -831,11 +870,12 @@ export class EmailModel {
     return this.mapRowToEmail(row);
   }
 
-  async markEmailAsRead(emailId: string, userId: string, isRead: boolean): Promise<boolean> {
+  async markEmailAsRead(emailId: string, userId: string, companyId: number, isRead: boolean): Promise<boolean> {
     try {
       const result = await prisma.email.updateMany({
         where: {
           id: emailId,
+          companyId,
           account: {
             userId: parseInt(userId)
           }
@@ -852,8 +892,8 @@ export class EmailModel {
     }
   }
 
-  async archiveEmail(emailId: string, userId: string): Promise<boolean> {
-    const email = await this.getEmailById(emailId, userId);
+  async archiveEmail(emailId: string, userId: string, companyId: number): Promise<boolean> {
+    const email = await this.getEmailById(emailId, userId, companyId);
     if (!email) return false;
 
     let labels = (email.labelIds as string[]) || [];
@@ -866,6 +906,7 @@ export class EmailModel {
       const result = await prisma.email.updateMany({
         where: {
           id: emailId,
+          companyId,
           account: {
             userId: parseInt(userId)
           }
@@ -882,8 +923,8 @@ export class EmailModel {
     }
   }
 
-  async unarchiveEmail(emailId: string, userId: string): Promise<boolean> {
-    const email = await this.getEmailById(emailId, userId);
+  async unarchiveEmail(emailId: string, userId: string, companyId: number): Promise<boolean> {
+    const email = await this.getEmailById(emailId, userId, companyId);
     if (!email) return false;
 
     let labels = (email.labelIds as string[]) || [];
@@ -896,6 +937,7 @@ export class EmailModel {
       const result = await prisma.email.updateMany({
         where: {
           id: emailId,
+          companyId,
           account: {
             userId: parseInt(userId)
           }
@@ -912,8 +954,8 @@ export class EmailModel {
     }
   }
 
-  async trashEmail(emailId: string, userId: string): Promise<boolean> {
-    const email = await this.getEmailById(emailId, userId);
+  async trashEmail(emailId: string, userId: string, companyId: number): Promise<boolean> {
+    const email = await this.getEmailById(emailId, userId, companyId);
     if (!email) return false;
 
     let labels = (email.labelIds as string[]) || [];
@@ -926,6 +968,7 @@ export class EmailModel {
       const result = await prisma.email.updateMany({
         where: {
           id: emailId,
+          companyId,
           account: {
             userId: parseInt(userId)
           }
@@ -942,8 +985,8 @@ export class EmailModel {
     }
   }
 
-  async restoreFromTrash(emailId: string, userId: string): Promise<boolean> {
-    const email = await this.getEmailById(emailId, userId);
+  async restoreFromTrash(emailId: string, userId: string, companyId: number): Promise<boolean> {
+    const email = await this.getEmailById(emailId, userId, companyId);
     if (!email) return false;
 
     let labels = (email.labelIds as string[]) || [];
@@ -965,6 +1008,7 @@ export class EmailModel {
       const result = await prisma.email.updateMany({
         where: {
           id: emailId,
+          companyId,
           account: {
             userId: parseInt(userId)
           }
@@ -982,30 +1026,31 @@ export class EmailModel {
     }
   }
 
-  async deleteEmailPermanently(emailId: string, userId: string): Promise<boolean> {
-    const email = await this.getEmailById(emailId, userId);
+  async deleteEmailPermanently(emailId: string, userId: string, companyId: number): Promise<boolean> {
+    const email = await this.getEmailById(emailId, userId, companyId);
     if (!email) return false;
 
-    await prisma.email.delete({
-      where: { id: emailId }
+    await prisma.email.deleteMany({
+      where: { id: emailId, companyId }
     });
 
     const otherUsage = await prisma.email.count({
-      where: { messageId: email.messageId }
+      where: { messageId: email.messageId, companyId }
     });
 
     if (otherUsage === 0) {
-      await prisma.emailContent.delete({
-        where: { messageId: email.messageId }
+      await prisma.emailContent.deleteMany({
+        where: { messageId: email.messageId, companyId }
       });
     }
 
     return true;
   }
 
-  async getTrashEmails(userId: string): Promise<Email[]> {
+  async getTrashEmails(userId: string, companyId: number): Promise<Email[]> {
     const rows = await prisma.email.findMany({
       where: {
+        companyId,
         account: {
           userId: parseInt(userId)
         },
@@ -1021,12 +1066,13 @@ export class EmailModel {
     return rows.map((row: any) => this.mapRowToEmail(row));
   }
 
-  async getTrashEmailsOlderThan(daysOld: number = 30): Promise<{ emailId: string; userId: string; accountId: string }[]> {
+  async getTrashEmailsOlderThan(daysOld: number = 30, companyId?: number): Promise<{ emailId: string; userId: string; accountId: string; companyId: number }[]> {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysOld);
 
     const rows = await prisma.email.findMany({
       where: {
+        ...(companyId ? { companyId } : {}),
         labelIds: {
           array_contains: 'TRASH'
         },
@@ -1036,6 +1082,7 @@ export class EmailModel {
       },
       select: {
         id: true,
+        companyId: true,
         accountId: true,
         account: {
           select: {
@@ -1048,16 +1095,18 @@ export class EmailModel {
     return rows.map((row: any) => ({
       emailId: row.id,
       userId: row.account.userId.toString(),
-      accountId: row.accountId
+      accountId: row.accountId,
+      companyId: row.companyId
     }));
   }
 
-  async purgeOldTrashEmails(daysOld: number = 30): Promise<number> {
+  async purgeOldTrashEmails(daysOld: number = 30, companyId?: number): Promise<number> {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysOld);
 
     const emailsToPurge = await prisma.email.findMany({
       where: {
+        ...(companyId ? { companyId } : {}),
         labelIds: {
           array_contains: 'TRASH'
         },
@@ -1078,22 +1127,23 @@ export class EmailModel {
 
     await prisma.email.deleteMany({
       where: {
-        id: { in: emailIds }
+        id: { in: emailIds },
+        ...(companyId ? { companyId } : {})
       }
     });
 
     // Only delete content if no other emails use it
     for (const msgId of messageIds) {
-      const usage = await prisma.email.count({ where: { messageId: msgId } });
+      const usage = await prisma.email.count({ where: { messageId: msgId, ...(companyId ? { companyId } : {}) } });
       if (usage === 0) {
-        await prisma.emailContent.delete({ where: { messageId: msgId } });
+        await prisma.emailContent.deleteMany({ where: { messageId: msgId, ...(companyId ? { companyId } : {}) } });
       }
     }
 
     return emailIds.length;
   }
 
-  async updateEmail(emailId: string, updates: Partial<Email>): Promise<boolean> {
+  async updateEmail(emailId: string, companyId: number, updates: Partial<Email>): Promise<boolean> {
     const data: any = {};
     if (updates.isRead !== undefined) data.isRead = updates.isRead;
     if (updates.contactIds !== undefined) data.contactIds = updates.contactIds as any;
@@ -1115,15 +1165,19 @@ export class EmailModel {
 
     try {
       // 1. Update the email record itself
-      const updatedEmail = await prisma.email.update({
-        where: { id: emailId },
+      const updateResult = await prisma.email.updateMany({
+        where: { id: emailId, companyId },
         data
       });
 
+      if (updateResult.count === 0) return false;
+
       // 2. Also update the associated EmailContent if body/htmlBody/attachments provided
-      if (updates.body || updates.htmlBody || updates.attachments) {
-        await prisma.emailContent.update({
-          where: { messageId: updatedEmail.messageId },
+      const messageId = updates.messageId || (await prisma.email.findUnique({ where: { id: emailId }, select: { messageId: true } }))?.messageId;
+
+      if (messageId && (updates.body || updates.htmlBody || updates.attachments)) {
+        await prisma.emailContent.updateMany({
+          where: { messageId, companyId },
           data: {
             ...(updates.body ? { body: updates.body } : {}),
             ...(updates.htmlBody ? { htmlBody: updates.htmlBody } : {}),
@@ -1143,7 +1197,7 @@ export class EmailModel {
    * Batch update multiple emails efficiently
    * Uses a transaction for atomicity
    */
-  async batchUpdateEmails(updates: { id: string; updates: Partial<Email> }[]): Promise<number> {
+  async batchUpdateEmails(updates: { id: string; companyId: number; updates: Partial<Email> }[]): Promise<number> {
     if (updates.length === 0) return 0;
 
     let successCount = 0;
@@ -1154,7 +1208,7 @@ export class EmailModel {
     for (let i = 0; i < updates.length; i += BATCH_SIZE) {
       const batch = updates.slice(i, i + BATCH_SIZE);
 
-      const operations = batch.flatMap(({ id, updates: upd }) => {
+      const operations = batch.flatMap(({ id, companyId, updates: upd }) => {
         const data: any = { updatedAt: now };
         if (upd.isRead !== undefined) data.isRead = upd.isRead;
         if (upd.labelIds !== undefined) data.labelIds = upd.labelIds as any;
@@ -1167,16 +1221,16 @@ export class EmailModel {
         if (upd.attachments !== undefined) data.attachments = upd.attachments as any;
 
         const ops = [];
-        ops.push(prisma.email.update({
-          where: { id },
+        ops.push(prisma.email.updateMany({
+          where: { id, companyId },
           data
         }));
 
-        // If messageId is available and we are updating content fields, update EmailContent too
-        const messageId = (upd as any).messageId;
+        // If content fields are being updated, we need the messageId to update EmailContent
+        const messageId = upd.messageId;
         if (messageId && (upd.body || upd.htmlBody || upd.attachments)) {
-          ops.push(prisma.emailContent.update({
-            where: { messageId },
+          ops.push(prisma.emailContent.updateMany({
+            where: { messageId, companyId },
             data: {
               ...(upd.body ? { body: upd.body } : {}),
               ...(upd.htmlBody ? { htmlBody: upd.htmlBody } : {}),
@@ -1194,9 +1248,9 @@ export class EmailModel {
         successCount += batch.length;
       } catch (err) {
         // Fallback to individual updates on transaction failure
-        for (const { id, updates: upd } of batch) {
+        for (const { id, companyId, updates: upd } of batch) {
           try {
-            await this.updateEmail(id, upd);
+            await this.updateEmail(id, companyId, upd);
             successCount++;
           } catch (e) {
             // Skip failed updates
@@ -1209,28 +1263,29 @@ export class EmailModel {
   }
 
 
-  async getLastSyncedUid(accountId: string, folder: string): Promise<number | null> {
-    const row = await prisma.emailSyncState.findUnique({
+  async getLastSyncedUid(accountId: string, companyId: number, folder: string): Promise<number | null> {
+    const row = await prisma.emailSyncState.findFirst({
       where: {
-        accountId_folder: {
-          accountId,
-          folder
-        }
+        accountId,
+        companyId,
+        folder
       }
     });
     return row?.lastSyncedUid || null;
   }
 
-  async updateLastSyncedUid(accountId: string, folder: string, uid: number): Promise<void> {
+  async updateLastSyncedUid(accountId: string, companyId: number, folder: string, uid: number): Promise<void> {
     await prisma.emailSyncState.upsert({
       where: {
-        accountId_folder: {
+        accountId_folder_companyId: {
           accountId,
-          folder
+          folder,
+          companyId
         }
       },
       create: {
         accountId,
+        companyId,
         folder,
         lastSyncedUid: uid,
         updatedAt: new Date()
@@ -1242,10 +1297,11 @@ export class EmailModel {
     });
   }
 
-  async getUnreadUids(accountId: string, folder: string): Promise<number[]> {
+  async getUnreadUids(accountId: string, companyId: number, folder: string): Promise<number[]> {
     const rows = await prisma.email.findMany({
       where: {
         accountId,
+        companyId,
         folder,
         isRead: false,
         uid: { not: null }
@@ -1255,10 +1311,11 @@ export class EmailModel {
     return rows.map((r: any) => r.uid as number);
   }
 
-  async getRecentUids(accountId: string, folder: string, limit: number = 50): Promise<number[]> {
+  async getRecentUids(accountId: string, companyId: number, folder: string, limit: number = 50): Promise<number[]> {
     const rows = await prisma.email.findMany({
       where: {
         accountId,
+        companyId,
         folder,
         uid: { not: null }
       },
@@ -1270,9 +1327,10 @@ export class EmailModel {
   }
 
 
-  async getRecentIncomingEmails(userId: string, limit: number = 5): Promise<Email[]> {
+  async getRecentIncomingEmails(userId: string, companyId: number, limit: number = 5): Promise<Email[]> {
     const rows = await prisma.email.findMany({
       where: {
+        companyId,
         account: { userId: parseInt(userId) },
         isIncoming: true,
         isRead: false
@@ -1284,9 +1342,9 @@ export class EmailModel {
     return rows.map((row: any) => this.mapRowToEmail(row));
   }
 
-  async getAllFolderEmails(accountId: string, folder: string): Promise<{ uid: number }[]> {
+  async getAllFolderEmails(accountId: string, companyId: number, folder: string): Promise<{ uid: number }[]> {
     const rows = await prisma.email.findMany({
-      where: { accountId, folder },
+      where: { accountId, companyId, folder },
       select: { uid: true }
     });
     return rows.map((r: any) => ({ uid: r.uid || 0 }));
@@ -1299,6 +1357,7 @@ export class EmailModel {
       messageId: row.messageId,
       threadId: row.threadId || undefined,
       accountId: row.accountId,
+      companyId: row.companyId,
       from: row.from || row.from_address || "",
       to: (row.to as any) || (row.to_addresses as any) || [],
       cc: (row.cc as any) || (row.cc_addresses as any) || undefined,
@@ -1332,6 +1391,7 @@ export class EmailModel {
 
   async logTrackingEvent(data: {
     emailId: string;
+    companyId: number;
     type: 'open' | 'click';
     ipAddress?: string;
     userAgent?: string;
@@ -1340,6 +1400,7 @@ export class EmailModel {
     await (prisma as any).emailTrackingEvent.create({
       data: {
         emailId: data.emailId,
+        companyId: data.companyId,
         type: data.type,
         ipAddress: data.ipAddress,
         userAgent: data.userAgent,
@@ -1348,9 +1409,9 @@ export class EmailModel {
     });
   }
 
-  async incrementOpens(emailId: string): Promise<void> {
-    await (prisma as any).email.update({
-      where: { id: emailId },
+  async incrementOpens(emailId: string, companyId: number): Promise<void> {
+    await (prisma as any).email.updateMany({
+      where: { id: emailId, companyId },
       data: {
         opens: { increment: 1 },
         lastOpenedAt: new Date()
@@ -1358,13 +1419,32 @@ export class EmailModel {
     });
   }
 
-  async incrementClicks(emailId: string): Promise<void> {
-    await (prisma as any).email.update({
-      where: { id: emailId },
+  async incrementClicks(emailId: string, companyId: number): Promise<void> {
+    await (prisma as any).email.updateMany({
+      where: { id: emailId, companyId },
       data: {
         clicks: { increment: 1 },
         lastClickedAt: new Date()
       }
     });
+  }
+
+  private mapRowToAccount(row: any): EmailAccount {
+    return {
+      id: row.id,
+      userId: row.userId.toString(),
+      companyId: row.companyId,
+      email: row.email,
+      provider: row.provider as any,
+      accessToken: row.accessToken || undefined,
+      refreshToken: row.refreshToken || undefined,
+      imapConfig: row.imapConfig ? JSON.parse(row.imapConfig as string) : undefined,
+      smtpConfig: row.smtpConfig ? JSON.parse(row.smtpConfig as string) : undefined,
+      isActive: row.isActive,
+      lastSyncAt: row.lastSyncAt || undefined,
+      lastHistoryId: row.lastHistoryId || undefined,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
   }
 }

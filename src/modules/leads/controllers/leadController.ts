@@ -12,13 +12,13 @@ export class LeadController {
 
   async getLeads(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      if (!req.user) {
-        return ResponseHandler.validationError(res, 'User not authenticated');
+      if (!req.user || !req.user.companyId) {
+        return ResponseHandler.validationError(res, 'User not authenticated or company missing');
       }
 
       const { stage, q, limit = 100, offset = 0 } = (req as any).query;
 
-      const result = await this.leadService.getLeads(req.user.id, {
+      const result = await this.leadService.getLeads(req.user.id, req.user.companyId, {
         stage: stage as string,
         search: q as string,
         limit: Number(limit),
@@ -36,13 +36,13 @@ export class LeadController {
 
   async createLead(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      if (!req.user) {
-        return ResponseHandler.validationError(res, 'User not authenticated');
+      if (!req.user || !req.user.companyId) {
+        return ResponseHandler.validationError(res, 'User not authenticated or company missing');
       }
 
       const { name, company, value, notes } = req.body as any;
 
-      const lead = await this.leadService.createLead(req.user.id, {
+      const lead = await this.leadService.createLead(req.user.id, req.user.companyId, {
         name,
         company,
         value,
@@ -59,14 +59,14 @@ export class LeadController {
 
   async updateLeadStage(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      if (!req.user) {
-        return ResponseHandler.validationError(res, 'User not authenticated');
+      if (!req.user || !req.user.companyId) {
+        return ResponseHandler.validationError(res, 'User not authenticated or company missing');
       }
 
       const { id } = (req as any).params;
       const { stage } = req.body as any;
 
-      const lead = await this.leadService.updateLeadStage(Number(id), req.user.id, stage);
+      const lead = await this.leadService.updateLeadStage(Number(id), req.user.id, req.user.companyId, stage);
 
       if (!lead) {
         res.status(404).json({ error: 'Lead not found' });
@@ -83,14 +83,14 @@ export class LeadController {
 
   async addActivity(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      if (!req.user) {
-        return ResponseHandler.validationError(res, 'User not authenticated');
+      if (!req.user || !req.user.companyId) {
+        return ResponseHandler.validationError(res, 'User not authenticated or company missing');
       }
 
       const { id } = (req as any).params;
       const { type, text } = req.body as any;
 
-      await this.leadService.addActivity(Number(id), req.user.id, type, text);
+      await this.leadService.addActivity(Number(id), req.user.id, req.user.companyId, type, text);
 
       return ResponseHandler.success(res, [], 'Activity added successfully');
 
@@ -102,13 +102,13 @@ export class LeadController {
 
   async getLeadHistory(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      if (!req.user) {
-        return ResponseHandler.validationError(res, 'User not authenticated');
+      if (!req.user || !req.user.companyId) {
+        return ResponseHandler.validationError(res, 'User not authenticated or company missing');
       }
 
       const { id } = (req as any).params;
 
-      const history = await this.leadService.getLeadHistory(Number(id), req.user.id);
+      const history = await this.leadService.getLeadHistory(Number(id), req.user.id, req.user.companyId);
 
       return ResponseHandler.success(res, history, 'Successfully Fetched lead history');
 
@@ -120,13 +120,13 @@ export class LeadController {
 
   async deleteLead(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      if (!req.user) {
-        return ResponseHandler.validationError(res, 'User not authenticated');
+      if (!req.user || !req.user.companyId) {
+        return ResponseHandler.validationError(res, 'User not authenticated or company missing');
       }
 
       const { id } = (req as any).params;
 
-      const success = await this.leadService.deleteLead(Number(id), req.user.id);
+      const success = await this.leadService.deleteLead(Number(id), req.user.id, req.user.companyId);
 
       if (!success) {
         res.status(404).json({ error: 'Lead not found' });
@@ -142,11 +142,11 @@ export class LeadController {
 
   async getStats(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      if (!req.user) {
-        return ResponseHandler.validationError(res, 'User not authenticated');
+      if (!req.user || !req.user.companyId) {
+        return ResponseHandler.validationError(res, 'User not authenticated or company missing');
       }
 
-      const stats = await this.leadService.getStats(req.user.id);
+      const stats = await this.leadService.getStats(req.user.id, req.user.companyId);
 
       return ResponseHandler.success(res, stats);
 

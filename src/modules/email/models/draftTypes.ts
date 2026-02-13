@@ -8,6 +8,7 @@ export interface EmailDraft {
     id: string;
     accountId: string;
     userId: string;
+    companyId: number;
     from?: string;
 
     // Email content
@@ -51,6 +52,7 @@ export interface EmailDraft {
  */
 export interface CreateDraftInput {
     accountId: string;
+    companyId: number;
     from?: string;
     to: string[];
     cc?: string[];

@@ -29,6 +29,7 @@ export class DraftModel {
             id,
             accountId: input.accountId,
             userId: parseInt(userId),
+            companyId: input.companyId,
             from: input.from || null,
             toRecipients: (input.to as any) || [],
             ccRecipients: (input.cc as any) || null,
@@ -57,11 +58,12 @@ export class DraftModel {
     /**
      * Get a draft by ID
      */
-    async getDraftById(draftId: string, userId: string): Promise<EmailDraft | null> {
+    async getDraftById(draftId: string, userId: string, companyId: number): Promise<EmailDraft | null> {
         const row = await prisma.emailDraft.findFirst({
             where: {
                 id: draftId,
-                userId: parseInt(userId)
+                userId: parseInt(userId),
+                companyId
             }
         });
 
@@ -74,6 +76,7 @@ export class DraftModel {
      */
     async listDrafts(
         userId: string,
+        companyId: number,
         options: ListDraftsOptions = {}
     ): Promise<{ drafts: EmailDraft[]; total: number }> {
         const {
@@ -87,7 +90,8 @@ export class DraftModel {
         } = options;
 
         const where: any = {
-            userId: parseInt(userId)
+            userId: parseInt(userId),
+            companyId
         };
 
         // Filter by trash status
@@ -134,6 +138,7 @@ export class DraftModel {
     async updateDraft(
         draftId: string,
         userId: string,
+        companyId: number,
         updates: UpdateDraftInput
     ): Promise<EmailDraft | null> {
         const data: any = {};
@@ -157,7 +162,8 @@ export class DraftModel {
             const row = await prisma.emailDraft.update({
                 where: {
                     id: draftId,
-                    userId: parseInt(userId)
+                    userId: parseInt(userId),
+                    companyId
                 },
                 data
             });
@@ -171,12 +177,13 @@ export class DraftModel {
     /**
      * Delete a draft permanently
      */
-    async deleteDraft(draftId: string, userId: string): Promise<boolean> {
+    async deleteDraft(draftId: string, userId: string, companyId: number): Promise<boolean> {
         try {
             await prisma.emailDraft.delete({
                 where: {
                     id: draftId,
-                    userId: parseInt(userId)
+                    userId: parseInt(userId),
+                    companyId
                 }
             });
             return true;
@@ -188,12 +195,13 @@ export class DraftModel {
     /**
      * Move a draft to trash
      */
-    async trashDraft(draftId: string, userId: string): Promise<EmailDraft | null> {
+    async trashDraft(draftId: string, userId: string, companyId: number): Promise<EmailDraft | null> {
         try {
             const row = await prisma.emailDraft.update({
                 where: {
                     id: draftId,
-                    userId: parseInt(userId)
+                    userId: parseInt(userId),
+                    companyId
                 },
                 data: {
                     isTrashed: true
@@ -208,9 +216,9 @@ export class DraftModel {
     /**
      * Trash multiple drafts (batch operation)
      */
-    async trashDraftsBatch(draftIds: string[], userId: string): Promise<{ trashed: number; failed: number }> {
+    async trashDraftsBatch(draftIds: string[], userId: string, companyId: number): Promise<{ trashed: number; failed: number }> {
         const results = await Promise.all(draftIds.map(async (id) => {
-            const success = await this.trashDraft(id, userId);
+            const success = await this.trashDraft(id, userId, companyId);
             return success ? 'trashed' : 'failed';
         }));
 
@@ -223,12 +231,13 @@ export class DraftModel {
     /**
      * Restore a draft from trash
      */
-    async restoreDraftFromTrash(draftId: string, userId: string): Promise<EmailDraft | null> {
+    async restoreDraftFromTrash(draftId: string, userId: string, companyId: number): Promise<EmailDraft | null> {
         try {
             const row = await prisma.emailDraft.update({
                 where: {
                     id: draftId,
-                    userId: parseInt(userId)
+                    userId: parseInt(userId),
+                    companyId
                 },
                 data: {
                     isTrashed: false
@@ -243,25 +252,26 @@ export class DraftModel {
     /**
      * Get all trashed drafts
      */
-    async getTrashedDrafts(userId: string, limit = 50, offset = 0): Promise<{ drafts: EmailDraft[]; total: number }> {
-        return this.listDrafts(userId, { limit, offset, trashedOnly: true, scheduledOnly: false });
+    async getTrashedDrafts(userId: string, companyId: number, limit = 50, offset = 0): Promise<{ drafts: EmailDraft[]; total: number }> {
+        return this.listDrafts(userId, companyId, { limit, offset, trashedOnly: true, scheduledOnly: false });
     }
 
     /**
      * Delete a trashed draft permanently (redundant with deleteDraft but kept for naming consistency)
      */
-    async deleteTrashedDraft(draftId: string, userId: string): Promise<boolean> {
-        return this.deleteDraft(draftId, userId);
+    async deleteTrashedDraft(draftId: string, userId: string, companyId: number): Promise<boolean> {
+        return this.deleteDraft(draftId, userId, companyId);
     }
 
     /**
      * Permanently delete all trashed drafts for a user
      */
-    async deleteAllTrashedDrafts(userId: string): Promise<{ deleted: number }> {
+    async deleteAllTrashedDrafts(userId: string, companyId: number): Promise<{ deleted: number }> {
         try {
             const result = await prisma.emailDraft.deleteMany({
                 where: {
                     userId: parseInt(userId),
+                    companyId,
                     isTrashed: true
                 }
             });
@@ -300,6 +310,7 @@ export class DraftModel {
             accountId: row.accountId,
             from: row.from || undefined,
             userId: row.userId.toString(),
+            companyId: row.companyId,
             to: (row.toRecipients as string[]) || [],
             cc: (row.ccRecipients as string[]) || undefined,
             bcc: (row.bccRecipients as string[]) || undefined,

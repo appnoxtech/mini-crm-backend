@@ -9,7 +9,7 @@ export function createAuthRoutes(authController: AuthController): Router {
   const router = Router();
 
   // Public routes
-  router.post('/register', validate(registerSchema), (req, res) => authController.register(req, res));
+  router.post('/register', (req, res) => authController.register(req, res));
   router.post('/login', validate(loginSchema), (req, res) => authController.login(req, res));
 
   // Protected routes

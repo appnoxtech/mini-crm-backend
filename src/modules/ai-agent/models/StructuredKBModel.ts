@@ -24,21 +24,21 @@ export class StructuredKBModel {
         this.prisma = prisma;
     }
 
-    async initialize(): Promise<void> {
+    async initialize(companyId: number): Promise<void> {
         // Initialize default KB if not exists
         const existing = await this.prisma.structuredKnowledgeBase.findUnique({
-            where: { id: 'default' }
+            where: { companyId }
         });
 
         if (!existing) {
-            await this.createDefaultKB();
+            await this.createDefaultKB(companyId);
         }
     }
 
-    private async createDefaultKB(): Promise<void> {
+    private async createDefaultKB(companyId: number): Promise<void> {
         await this.prisma.structuredKnowledgeBase.create({
             data: {
-                id: 'default',
+                companyId: companyId,
                 category_1_company_profile: DEFAULT_STRUCTURED_KB.category_1_company_profile as any,
                 category_2_products_services: DEFAULT_STRUCTURED_KB.category_2_products_services as any,
                 category_3_sales_process: DEFAULT_STRUCTURED_KB.category_3_sales_process as any,
@@ -55,15 +55,15 @@ export class StructuredKBModel {
         });
     }
 
-    async getKB(id: string = 'default'): Promise<StructuredKnowledgeBase | null> {
+    async getKB(companyId: number): Promise<StructuredKnowledgeBase | null> {
         const row = await this.prisma.structuredKnowledgeBase.findUnique({
-            where: { id }
+            where: { companyId }
         });
 
         if (!row) return null;
 
         return {
-            id: row.id,
+            id: row.id.toString(),
             category_1_company_profile: (row.category_1_company_profile as any) || {},
             category_2_products_services: (row.category_2_products_services as any) || {},
             category_3_sales_process: (row.category_3_sales_process as any) || {},
@@ -80,25 +80,25 @@ export class StructuredKBModel {
     }
 
     async updateCategory(
+        companyId: number,
         categoryNumber: number,
-        data: CompanyProfile | ProductsCatalog | SalesProcess | CustomerMarkets | CommonScenarios | Communication | Operations | Resources | PricingPlans,
-        kbId: string = 'default'
+        data: CompanyProfile | ProductsCatalog | SalesProcess | CustomerMarkets | CommonScenarios | Communication | Operations | Resources | PricingPlans
     ): Promise<boolean> {
         const categoryKey = `category_${categoryNumber}_${this.getCategoryName(categoryNumber)}`;
 
         // Get current KB for versioning
-        const currentKB = await this.getKB(kbId);
+        const currentKB = await this.getKB(companyId);
         if (!currentKB) return false;
 
         // Save version snapshot before update
-        await this.saveVersion(kbId, currentKB, [categoryKey]);
+        await this.saveVersion(companyId, currentKB, [categoryKey]);
 
         // Calculate new completion after update
         const updatedKB = { ...currentKB, [categoryKey]: data };
         const completionPercent = this.calculateCompletion(updatedKB);
 
         await this.prisma.structuredKnowledgeBase.update({
-            where: { id: kbId },
+            where: { companyId },
             data: {
                 [categoryKey]: data as any,
                 version: { increment: 1 },
@@ -125,11 +125,19 @@ export class StructuredKBModel {
         return names[categoryNumber] || '';
     }
 
-    private async saveVersion(kbId: string, kb: StructuredKnowledgeBase, changedSections: string[]): Promise<void> {
+    private async saveVersion(companyId: number, kb: StructuredKnowledgeBase, changedSections: string[]): Promise<void> {
+        const kbRow = await this.prisma.structuredKnowledgeBase.findUnique({
+            where: { companyId },
+            select: { id: true }
+        });
+
+        if (!kbRow) return;
+
         await this.prisma.structuredKBVersion.create({
             data: {
                 id: uuidv4(),
-                kbId: kbId,
+                companyId: companyId,
+                kbId: kbRow.id,
                 version: kb.version,
                 fullKBSnapshot: kb as any,
                 changedSections: changedSections as any,
@@ -191,12 +199,12 @@ export class StructuredKBModel {
         return Math.round((completedCategories / 9) * 100);
     }
 
-    async getCompletionStatus(kbId: string = 'default'): Promise<{
+    async getCompletionStatus(companyId: number): Promise<{
         percent: number;
         incomplete_sections: string[];
         categories: Array<{ id: number; name: string; complete: boolean }>;
     }> {
-        const kb = await this.getKB(kbId);
+        const kb = await this.getKB(companyId);
         if (!kb) return { percent: 0, incomplete_sections: [], categories: [] };
 
         const incomplete: string[] = [];
@@ -261,13 +269,13 @@ export class StructuredKBModel {
         };
     }
 
-    async getVersionHistory(kbId: string = 'default', limit: number = 10): Promise<Array<{
+    async getVersionHistory(companyId: number, limit: number = 10): Promise<Array<{
         version: number;
         changed_sections: string[];
         change_timestamp: Date;
     }>> {
         const rows = await this.prisma.structuredKBVersion.findMany({
-            where: { kbId },
+            where: { companyId },
             orderBy: { version: 'desc' },
             take: limit,
             select: {

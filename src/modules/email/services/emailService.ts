@@ -146,13 +146,14 @@ export class EmailService {
       dealId?: number;
       enableTracking?: boolean;
     },
+    companyId: number,
     options?: { skipSave?: boolean }
   ): Promise<string> {
     let account: EmailAccount | null;
 
     if (typeof accountOrId === 'string') {
       // Get the email account from DB
-      account = await this.emailModel.getEmailAccountById(accountOrId);
+      account = await this.emailModel.getEmailAccountById(accountOrId, companyId);
     } else {
       // Use the provided account object
       account = accountOrId;
@@ -187,6 +188,7 @@ export class EmailService {
       id: emailId,
       messageId,
       accountId: account.id,
+      companyId: account.companyId,
       from: account.email,
       to: emailData.to,
       subject: emailData.subject,
@@ -223,7 +225,7 @@ export class EmailService {
         const cleanRecipient = this.extractEmailFromAddress(rawRecipient);
         if (!cleanRecipient) continue;
 
-        const recipientAccount = await this.emailModel.getEmailAccountByEmail(cleanRecipient);
+        const recipientAccount = await this.emailModel.getEmailAccountByEmail(cleanRecipient, companyId);
 
         if (recipientAccount) {
           const isSelfSent = String(recipientAccount.id) === String(account.id);
@@ -235,6 +237,7 @@ export class EmailService {
             ...email,
             id: isSelfSent ? emailId : `${recipientAccount.id}-${messageId}`, // Use the sent ID for self, composite for others
             accountId: recipientAccount.id,
+            companyId: recipientAccount.companyId,
             isIncoming: true,
             isRead: false,
             // For self-sent emails, mark them differently so they appear in both Inbox and Sent
@@ -244,14 +247,14 @@ export class EmailService {
           };
 
           // Check if recipient already has this email
-          const existingForRecipient = await this.emailModel.findEmailByMessageId(messageId, recipientAccount.id);
+          const existingForRecipient = await this.emailModel.findEmailByMessageId(messageId, recipientAccount.companyId, recipientAccount.id);
 
           if (!existingForRecipient) {
             // New recipient (not self): Create the incoming-focused record
             await this.emailModel.createEmail(recipientEmailRecord);
           } else if (isSelfSent) {
             // Self-sent email: Update the existing "Sent" record to also be in INBOX
-            await this.emailModel.updateEmail(emailId, { folder: 'INBOX' });
+            await this.emailModel.updateEmail(emailId, account.companyId, { folder: 'INBOX' });
           }
 
           // 2. Trigger real-time notification for the recipient (including self!)
@@ -274,6 +277,7 @@ export class EmailService {
         await this.activityModel.create({
           dealId: emailData.dealId,
           userId: Number(account.userId),
+          companyId: account.companyId,
           activityType: 'mail',
           subject: emailData.subject,
           label: 'outgoing',
@@ -321,6 +325,19 @@ export class EmailService {
     let newEmails = 0;
 
     try {
+      // ⚠️ CRITICAL: Ensure companyId is always present
+      // If missing from account, fetch from user record
+      if (!account.companyId) {
+        console.warn(`[EmailSync] Account ${account.id} missing companyId, fetching from user ${account.userId}`);
+        const companyId = await this.emailModel.getCompanyIdForUser(account.userId);
+        if (!companyId) {
+          throw new Error(`Cannot sync emails for account ${account.id}: User ${account.userId} has no companyId`);
+        }
+        account.companyId = companyId;
+        // Update the account record to fix the missing companyId
+        await this.emailModel.updateEmailAccount(account.id, companyId, { companyId } as any);
+      }
+
       // Notify user that sync is in progress
       if (this.notificationService) {
         this.notificationService.notifySyncStatus(account.userId, account.id, 'starting');
@@ -353,7 +370,7 @@ export class EmailService {
 
       if (rawEmails.length === 0) {
         // No emails to process, just update sync time
-        await this.emailModel.updateEmailAccount(account.id, {
+        await this.emailModel.updateEmailAccount(account.id, account.companyId, {
           lastSyncAt: new Date(),
         });
 
@@ -406,7 +423,7 @@ export class EmailService {
         .map(e => e.parsed!.messageId!);
 
       // Step 3: Batch fetch existing emails (1 query instead of N)
-      const existingEmailsMap = await this.emailModel.findEmailsByMessageIds(messageIds, account.id);
+      const existingEmailsMap = await this.emailModel.findEmailsByMessageIds(messageIds, account.companyId, account.id);
       console.log(`[EmailSync] Found ${existingEmailsMap.size} existing emails out of ${messageIds.length}`);
 
       // Step 4: For IMAP, also check by UID (batch)
@@ -417,17 +434,17 @@ export class EmailService {
           .map(e => ({ folder: (e.parsed as any).folder, uid: (e.parsed as any).uid }));
 
         if (folderUidPairs.length > 0) {
-          existingUidsSet = await this.emailModel.findExistingImapUids(account.id, folderUidPairs);
+          existingUidsSet = await this.emailModel.findExistingImapUids(account.id, account.companyId, folderUidPairs);
         }
       }
 
       // Step 5: Batch fetch existing content for deduplication
-      const existingContentMap = await this.emailModel.findExistingContentByMessageIds(messageIds);
+      const existingContentMap = await this.emailModel.findExistingContentByMessageIds(messageIds, account.companyId);
       console.log(`[EmailSync] Found ${existingContentMap.size} existing content records`);
 
       // Step 6: Separate new emails from existing ones
       const emailsToCreate: Email[] = [];
-      const emailsToUpdate: { id: string; updates: any }[] = [];
+      const emailsToUpdate: { id: string; companyId: number; updates: any }[] = [];
       const newEmailNotifications: Email[] = [];
 
       for (const { raw, parsed, error } of parsedEmails) {
@@ -488,7 +505,7 @@ export class EmailService {
 
             if (needsUpdate) {
               (updates as any).messageId = existing.messageId; // Pass messageId for EmailContent update
-              emailsToUpdate.push({ id: existing.id, updates });
+              emailsToUpdate.push({ id: existing.id, companyId: account.companyId, updates });
             }
           }
           processed++;
@@ -516,6 +533,7 @@ export class EmailService {
           id: uniqueEmailId,
           messageId: parsed.messageId,
           accountId: account.id,
+          companyId: account.companyId,
           from: parsed.from!,
           to: parsed.to || [],
           subject: parsed.subject || "",
@@ -586,7 +604,7 @@ export class EmailService {
       }
 
       // Update last sync time
-      await this.emailModel.updateEmailAccount(account.id, {
+      await this.emailModel.updateEmailAccount(account.id, account.companyId, {
         lastSyncAt: new Date(),
       });
 
@@ -629,13 +647,14 @@ export class EmailService {
     if (provider === 'imap' || provider === 'custom') {
       const { uid, folder } = parsed as any;
       if (uid && folder) {
-        existing = await this.emailModel.findEmailByImapUid(account.id, folder, uid);
+        existing = await this.emailModel.findEmailByImapUid(account.id, account.companyId, folder, uid);
       }
     }
 
     if (!existing) {
       existing = await this.emailModel.findEmailByMessageId(
         parsed.messageId!,
+        account.companyId,
         account.id
       );
     }
@@ -682,18 +701,18 @@ export class EmailService {
 
       if (needsUpdate) {
         console.log(`Backfilling missing fields for existing email ${existing.id}:`, updates);
-        await this.emailModel.updateEmail(existing.id, updates);
+        await this.emailModel.updateEmail(existing.id, account.companyId, updates);
       }
 
       if (existing.isRead !== parsed.isRead) {
-        await this.emailModel.markEmailAsRead(existing.id, account.userId, !!parsed.isRead);
+        await this.emailModel.markEmailAsRead(existing.id, account.userId, account.companyId, !!parsed.isRead);
       }
 
       return { id: existing.id, isNew: false };
     }
 
     // --- CHECK FOR GLOBAL CONTENT REUSE ---
-    const existingContent = await this.emailModel.findContentByMessageId(parsed.messageId!);
+    const existingContent = await this.emailModel.findContentByMessageId(parsed.messageId!, account.companyId);
     if (existingContent) {
       console.log(`Reusing existing content for messageId: ${parsed.messageId}`);
       parsed.body = existingContent.body;
@@ -717,6 +736,7 @@ export class EmailService {
       id: uniqueEmailId,
       messageId: parsed.messageId!,
       accountId: account.id,
+      companyId: account.companyId,
       from: parsed.from!,
       to: parsed.to || [],
       subject: parsed.subject || "",
@@ -753,6 +773,7 @@ export class EmailService {
           await this.activityModel.create({
             dealId: Number(dealId),
             userId: Number(account.userId),
+            companyId: account.companyId,
             activityType: 'mail',
             subject: email.subject,
             label: isIncoming ? 'incoming' : 'outgoing',
@@ -1245,24 +1266,24 @@ export class EmailService {
     return { contactIds, dealIds, accountEntityIds: [] };
   }
 
-  async getEmailsForContact(contactId: string): Promise<Email[]> {
-    return this.emailModel.getEmailsForContact(contactId);
+  async getEmailsForContact(contactId: string, companyId: number): Promise<Email[]> {
+    return this.emailModel.getEmailsForContact(contactId, companyId);
   }
 
-  async getEmailsForDeal(dealId: string): Promise<Email[]> {
-    return await this.emailModel.getEmailsForDeal(dealId);
+  async getEmailsForDeal(dealId: string, companyId: number): Promise<Email[]> {
+    return await this.emailModel.getEmailsForDeal(dealId, companyId);
   }
 
-  async getEmailAccountByUserId(userId: string): Promise<EmailAccount | null> {
-    return await this.emailModel.getEmailAccountByUserId(userId);
+  async getEmailAccountByUserId(userId: string, companyId: number): Promise<EmailAccount | null> {
+    return await this.emailModel.getEmailAccountByUserId(userId, companyId);
   }
 
-  async getEmailAccountByEmail(email: string): Promise<EmailAccount | null> {
-    return await this.emailModel.getEmailAccountByEmail(email);
+  async getEmailAccountByEmail(email: string, companyId: number): Promise<EmailAccount | null> {
+    return await this.emailModel.getEmailAccountByEmail(email, companyId);
   }
 
-  async getEmailAccountById(accountId: string): Promise<EmailAccount | null> {
-    return await this.emailModel.getEmailAccountById(accountId);
+  async getEmailAccountById(accountId: string, companyId: number): Promise<EmailAccount | null> {
+    return await this.emailModel.getEmailAccountById(accountId, companyId);
   }
 
   async createEmailAccount(account: EmailAccount): Promise<EmailAccount> {
@@ -1271,18 +1292,20 @@ export class EmailService {
 
   async updateEmailAccount(
     accountId: string,
+    companyId: number,
     updates: Partial<EmailAccount>
   ): Promise<void> {
-    return await this.emailModel.updateEmailAccount(accountId, updates);
+    return await this.emailModel.updateEmailAccount(accountId, companyId, updates);
   }
 
-  async getEmailAccounts(userId: string): Promise<EmailAccount[]> {
-    return await this.emailModel.getEmailAccounts(userId);
+  async getEmailAccounts(userId: string, companyId: number): Promise<EmailAccount[]> {
+    return await this.emailModel.getEmailAccounts(userId, companyId);
   }
 
   // Get emails for a user with filtering options
   async getEmailsForUser(
     userId: string,
+    companyId: number,
     options: {
       limit?: number;
       offset?: number;
@@ -1292,39 +1315,40 @@ export class EmailService {
       accountId?: string;
     } = {}
   ): Promise<{ emails: Email[]; total: number }> {
-    return await this.emailModel.getEmailsForUser(userId, options);
+    return await this.emailModel.getEmailsForUser(userId, companyId, options);
   }
 
   // In EmailService
-  async getAllEmails(options: { limit?: number } = {}) {
-    return await this.emailModel.getAllEmails({ limit: 1000 });
+  async getAllEmails(companyId: number, options: { limit?: number } = {}) {
+    return await this.emailModel.getAllEmails(companyId, { limit: 1000 });
   }
 
   // Get a specific email by ID
-  async getEmailById(emailId: string, userId: string): Promise<Email | null> {
-    return await this.emailModel.getEmailById(emailId, userId);
+  async getEmailById(emailId: string, userId: string, companyId: number): Promise<Email | null> {
+    return await this.emailModel.getEmailById(emailId, userId, companyId);
   }
 
   // Mark email as read/unread
   async markEmailAsRead(
     emailId: string,
     userId: string,
+    companyId: number,
     isRead: boolean
   ): Promise<boolean> {
     // 1. Update local DB immediately
-    const success = await this.emailModel.markEmailAsRead(emailId, userId, isRead);
+    const success = await this.emailModel.markEmailAsRead(emailId, userId, companyId, isRead);
     if (!success) {
       return false;
     }
 
     // 2. Sync to provider asynchronously
     // Fetch email to get accountId and provider details
-    const email = await this.emailModel.getEmailById(emailId, userId);
+    const email = await this.emailModel.getEmailById(emailId, userId, companyId);
     if (!email) {
       return true; // DB update was success, but somehow can't refetch? inconsistent but return success
     }
 
-    const account = await this.emailModel.getEmailAccountById(email.accountId);
+    const account = await this.emailModel.getEmailAccountById(email.accountId, companyId);
     if (!account) {
       console.warn(`Account ${email.accountId} not found for email ${emailId}, skipping provider sync`);
       return true;
@@ -1338,29 +1362,29 @@ export class EmailService {
     return true;
   }
 
-  async archiveEmail(emailId: string, userId: string): Promise<boolean> {
-    return await this.emailModel.archiveEmail(emailId, userId);
+  async archiveEmail(emailId: string, userId: string, companyId: number): Promise<boolean> {
+    return await this.emailModel.archiveEmail(emailId, userId, companyId);
   }
 
-  async unarchiveEmail(emailId: string, userId: string): Promise<boolean> {
-    return await this.emailModel.unarchiveEmail(emailId, userId);
+  async unarchiveEmail(emailId: string, userId: string, companyId: number): Promise<boolean> {
+    return await this.emailModel.unarchiveEmail(emailId, userId, companyId);
   }
 
   /**
    * Move email to trash (soft delete)
    * Updates local DB and syncs to provider (Gmail/IMAP/Outlook)
    */
-  async trashEmail(emailId: string, userId: string): Promise<boolean> {
+  async trashEmail(emailId: string, userId: string, companyId: number): Promise<boolean> {
     // 1. Update local DB immediately
-    const success = await this.emailModel.trashEmail(emailId, userId);
+    const success = await this.emailModel.trashEmail(emailId, userId, companyId);
 
     if (!success) {
       if (this.draftModel) {
         // Try finding it as a draft
-        const draft = await this.draftModel.trashDraft(emailId, userId);
+        const draft = await this.draftModel.trashDraft(emailId, userId, companyId);
         if (draft) {
           if (draft.remoteUid || draft.providerId) {
-            this.syncDraftTrashToProvider(draft, userId, true).catch(err =>
+            this.syncDraftTrashToProvider(draft, userId, companyId, true).catch(err =>
               console.error(`Failed to sync draft trash status for ${emailId}:`, err)
             );
           }
@@ -1371,12 +1395,12 @@ export class EmailService {
     }
 
     // 2. Sync to provider asynchronously
-    const email = await this.emailModel.getEmailById(emailId, userId);
+    const email = await this.emailModel.getEmailById(emailId, userId, companyId);
     if (!email) {
       return true;
     }
 
-    const account = await this.emailModel.getEmailAccountById(email.accountId);
+    const account = await this.emailModel.getEmailAccountById(email.accountId, companyId);
     if (!account) {
       console.warn(`Account ${email.accountId} not found for email ${emailId}, skipping provider sync`);
       return true;
@@ -1393,17 +1417,17 @@ export class EmailService {
   /**
    * Restore email from trash back to inbox
    */
-  async restoreFromTrash(emailId: string, userId: string): Promise<boolean> {
+  async restoreFromTrash(emailId: string, userId: string, companyId: number): Promise<boolean> {
     // 1. Update local DB immediately
-    const success = await this.emailModel.restoreFromTrash(emailId, userId);
+    const success = await this.emailModel.restoreFromTrash(emailId, userId, companyId);
 
     if (!success) {
       if (this.draftModel) {
         // Try finding it as a draft
-        const draft = await this.draftModel.restoreDraftFromTrash(emailId, userId);
+        const draft = await this.draftModel.restoreDraftFromTrash(emailId, userId, companyId);
         if (draft) {
           if (draft.remoteUid || draft.providerId) {
-            this.syncDraftTrashToProvider(draft, userId, false).catch(err =>
+            this.syncDraftTrashToProvider(draft, userId, companyId, false).catch(err =>
               console.error(`Failed to sync draft restore status for ${emailId}:`, err)
             );
           }
@@ -1414,22 +1438,21 @@ export class EmailService {
     }
 
     // 2. Sync to provider asynchronously
-    const email = await this.emailModel.getEmailById(emailId, userId);
+    const email = await this.emailModel.getEmailById(emailId, userId, companyId);
     if (!email) {
       return true;
     }
 
-    const account = await this.emailModel.getEmailAccountById(email.accountId);
+    const account = await this.emailModel.getEmailAccountById(email.accountId, companyId);
     if (!account) {
       console.warn(`Account ${email.accountId} not found for email ${emailId}, skipping provider sync`);
       return true;
     }
 
     // 2. Sync to provider synchronously to ensure alignment
-    // 2. Sync to provider synchronously to ensure alignment
     try {
       // Re-fetch email to get updated labels/folder from local restore logic
-      const updatedEmail = await this.emailModel.getEmailById(emailId, userId);
+      const updatedEmail = await this.emailModel.getEmailById(emailId, userId, companyId);
       await this.syncTrashToProvider(account, updatedEmail || email, false);
     } catch (err) {
       console.error(`Failed to sync restore from trash for ${emailId} to provider:`, err);
@@ -1441,15 +1464,15 @@ export class EmailService {
   /**
    * Delete all emails in trash permanently
    */
-  async deleteAllTrash(userId: string): Promise<{ deleted: number; failed: number }> {
+  async deleteAllTrash(userId: string, companyId: number): Promise<{ deleted: number; failed: number }> {
     let deleted = 0;
     let failed = 0;
 
     // 1. Fetch all items first (Emails + Drafts)
-    const trashEmails = await this.emailModel.getTrashEmails(userId);
+    const trashEmails = await this.emailModel.getTrashEmails(userId, companyId);
     let trashDrafts: any[] = [];
     if (this.draftModel) {
-      const { drafts } = await this.draftModel.getTrashedDrafts(userId, 5000, 0); // High limit to get all
+      const { drafts } = await this.draftModel.getTrashedDrafts(userId, companyId, 5000, 0); // High limit to get all
       trashDrafts = drafts;
     }
 
@@ -1464,13 +1487,13 @@ export class EmailService {
         // Or better: use available methods.
         // To ensure "Instant", we should run local deletes in parallel or batch.
         // Since EmailModel doesn't have deleteMany exposed here, we'll loop parallel promises.
-        await Promise.all(trashEmails.map(e => this.emailModel.deleteEmailPermanently(e.id, userId)));
+        await Promise.all(trashEmails.map(e => this.emailModel.deleteEmailPermanently(e.id, userId, companyId)));
         deleted += trashEmails.length;
       }
 
       // Bulk delete drafts
       if (trashDrafts.length > 0) {
-        await this.draftModel.deleteAllTrashedDrafts(userId);
+        await this.draftModel.deleteAllTrashedDrafts(userId, companyId);
         // Drafts are deleted locally by this call
       }
     } catch (e) {
@@ -1484,7 +1507,7 @@ export class EmailService {
       (async () => {
         for (const email of trashEmails) {
           try {
-            const account = await this.emailModel.getEmailAccountById(email.accountId);
+            const account = await this.emailModel.getEmailAccountById(email.accountId, companyId);
             if (account) {
               await this.syncPermanentDeleteToProvider(account, email);
             }
@@ -1498,7 +1521,7 @@ export class EmailService {
         for (const draft of trashDrafts) {
           try {
             // Pass the draft object to avoid re-fetching!
-            await this.deleteDraftFromServer(userId, draft.id, draft);
+            await this.deleteDraftFromServer(userId, companyId, draft.id, draft);
           } catch (err) {
             console.warn(`[Background] Failed to sync delete draft ${draft.id}`, err);
             failed++;
@@ -1517,30 +1540,30 @@ export class EmailService {
    * Permanently delete an email
    * Validates draft vs email, deletes local first (optimistic), then syncs
    */
-  async deleteEmailPermanently(emailId: string, userId: string): Promise<boolean> {
+  async deleteEmailPermanently(emailId: string, userId: string, companyId: number): Promise<boolean> {
     // 0. Check if it's a draft first
     if (this.draftModel) {
-      const draft = await this.draftModel.getDraftById(emailId, userId);
+      const draft = await this.draftModel.getDraftById(emailId, userId, companyId);
       if (draft) {
         // Local delete first
-        await this.draftModel.deleteDraft(emailId, userId);
+        await this.draftModel.deleteDraft(emailId, userId, companyId);
 
         // Background sync
-        this.deleteDraftFromServer(userId, emailId, draft).catch(e => console.warn(e));
+        this.deleteDraftFromServer(userId, companyId, emailId, draft).catch(e => console.warn(e));
         return true;
       }
     }
 
     // Get email first to have data for sync
-    const email = await this.emailModel.getEmailById(emailId, userId);
+    const email = await this.emailModel.getEmailById(emailId, userId, companyId);
     if (!email) {
       return false;
     }
 
-    const account = await this.emailModel.getEmailAccountById(email.accountId);
+    const account = await this.emailModel.getEmailAccountById(email.accountId, companyId);
 
     // 1. Delete from local DB IMMEDIATELY (Optimistic)
-    const success = await this.emailModel.deleteEmailPermanently(emailId, userId);
+    const success = await this.emailModel.deleteEmailPermanently(emailId, userId, companyId);
 
     // 2. Sync permanent deletion to provider in BACKGROUND
     if (account && success) {
@@ -1570,7 +1593,7 @@ export class EmailService {
           gmailId = (await this.connectorService.findGmailMessageByRfcId(account, email.messageId)) ?? undefined;
           if (gmailId) {
             console.log(`[TrashSync] Resolved Gmail ID: ${gmailId}. Backfilling DB.`);
-            await this.emailModel.updateEmail(email.id, { providerId: gmailId ?? undefined });
+            await this.emailModel.updateEmail(email.id, account.companyId, { providerId: gmailId ?? undefined });
           }
         }
 
@@ -1612,7 +1635,7 @@ export class EmailService {
           outlookId = (await this.connectorService.findOutlookMessageByRfcId(account, email.messageId)) ?? undefined;
           if (outlookId) {
             console.log(`[TrashSync] Resolved Outlook ID: ${outlookId}. Backfilling DB.`);
-            await this.emailModel.updateEmail(email.id, { providerId: outlookId ?? undefined });
+            await this.emailModel.updateEmail(email.id, account.companyId, { providerId: outlookId ?? undefined });
           }
         }
 
@@ -1683,8 +1706,8 @@ export class EmailService {
    * Sync archived emails for a user from Gmail
    * Uses history API for incremental sync if available
    */
-  async syncArchivedEmails(userId: string): Promise<{ processed: number; errors: number }> {
-    const account = await this.emailModel.getEmailAccountByUserId(userId);
+  async syncArchivedEmails(userId: string, companyId: number): Promise<{ processed: number; errors: number }> {
+    const account = await this.emailModel.getEmailAccountByUserId(userId, companyId);
     if (!account || account.provider !== 'gmail' || !account.accessToken) {
       console.log(`Skipping archive sync: User ${userId} has no connected Gmail account`);
       return { processed: 0, errors: 0 };
@@ -1707,7 +1730,7 @@ export class EmailService {
       // Check for history expired error to trigger full sync next time/now
       if (error.message === 'HISTORY_EXPIRED') {
         console.log('History expired, clearing lastHistoryId to force full sync next time');
-        await this.emailModel.updateEmailAccount(account.id, { lastHistoryId: undefined });
+        await this.emailModel.updateEmailAccount(account.id, account.companyId, { lastHistoryId: undefined });
         // Optionally retry immediately
         return await this.syncGmailArchiveInitial(account);
       }
@@ -1738,7 +1761,7 @@ export class EmailService {
           await this.processSingleEmail(account, msg);
           // Explicitly ensure ARCHIVE label is set in DB since we fetched it via archive query
           // processSingleEmail might not set it if it just relies on Gmail labels and "ARCHIVE" isn't a real label
-          await this.ensureArchiveStatus(msg.id, account.userId);
+          await this.ensureArchiveStatus(msg.id, account.userId, account.companyId);
           processed++;
         } catch (err) {
           console.error(`Error processing archived email ${msg.id}:`, err);
@@ -1750,7 +1773,7 @@ export class EmailService {
 
     // Update account with new history ID
     if (newHistoryId) {
-      await this.emailModel.updateEmailAccount(account.id, {
+      await this.emailModel.updateEmailAccount(account.id, account.companyId, {
         lastHistoryId: newHistoryId,
         lastSyncAt: new Date()
       });
@@ -1770,7 +1793,7 @@ export class EmailService {
       console.log('No new history changes found.');
       // Still update history ID to the latest
       if (newHistoryId) {
-        await this.emailModel.updateEmailAccount(account.id, {
+        await this.emailModel.updateEmailAccount(account.id, account.companyId, {
           lastHistoryId: newHistoryId,
           lastSyncAt: new Date()
         });
@@ -1785,7 +1808,7 @@ export class EmailService {
           try {
             const gmailId = item.message.id;
             // Check if we already have it using internal Gmail ID
-            const existing = await this.emailModel.findEmailByProviderId(account.id, gmailId);
+            const existing = await this.emailModel.findEmailByProviderId(account.id, account.companyId, gmailId);
             if (!existing) {
               // Fetch full details
               const fullMsg = await this.connectorService.fetchGmailMessageDetails(account.id, gmailId);
@@ -1795,7 +1818,7 @@ export class EmailService {
               if (result) {
                 const labels = fullMsg.labelIds || [];
                 if (!labels.includes('INBOX') && !labels.includes('SPAM') && !labels.includes('TRASH')) {
-                  await this.ensureArchiveStatus(result.id, account.userId);
+                  await this.ensureArchiveStatus(result.id, account.userId, account.companyId);
                 }
                 processed++;
               }
@@ -1815,17 +1838,17 @@ export class EmailService {
             if (item.labelIds) {
               if (item.labelIds.includes('INBOX')) {
                 console.log(`Message ${item.message.id} archived (INBOX label removed)`);
-                const existing = await this.emailModel.findEmailByProviderId(account.id, item.message.id);
+                const existing = await this.emailModel.findEmailByProviderId(account.id, account.companyId, item.message.id);
                 if (existing) {
-                  await this.emailModel.archiveEmail(existing.id, account.userId);
+                  await this.emailModel.archiveEmail(existing.id, account.userId, account.companyId);
                   processed++;
                 }
               }
               if (item.labelIds.includes('UNREAD')) {
                 console.log(`Message ${item.message.id} marked as READ (UNREAD label removed)`);
-                const existing = await this.emailModel.findEmailByProviderId(account.id, item.message.id);
+                const existing = await this.emailModel.findEmailByProviderId(account.id, account.companyId, item.message.id);
                 if (existing) {
-                  await this.emailModel.markEmailAsRead(existing.id, account.userId, true);
+                  await this.emailModel.markEmailAsRead(existing.id, account.userId, account.companyId, true);
                   processed++;
                 }
               }
@@ -1843,17 +1866,17 @@ export class EmailService {
             if (item.labelIds) {
               if (item.labelIds.includes('INBOX')) {
                 console.log(`Message ${item.message.id} unarchived (INBOX label added)`);
-                const existing = await this.emailModel.findEmailByProviderId(account.id, item.message.id);
+                const existing = await this.emailModel.findEmailByProviderId(account.id, account.companyId, item.message.id);
                 if (existing) {
-                  await this.emailModel.unarchiveEmail(existing.id, account.userId);
+                  await this.emailModel.unarchiveEmail(existing.id, account.userId, account.companyId);
                   processed++;
                 }
               }
               if (item.labelIds.includes('UNREAD')) {
                 console.log(`Message ${item.message.id} marked as UNREAD (UNREAD label added)`);
-                const existing = await this.emailModel.findEmailByProviderId(account.id, item.message.id);
+                const existing = await this.emailModel.findEmailByProviderId(account.id, account.companyId, item.message.id);
                 if (existing) {
-                  await this.emailModel.markEmailAsRead(existing.id, account.userId, false);
+                  await this.emailModel.markEmailAsRead(existing.id, account.userId, account.companyId, false);
                   processed++;
                 }
               }
@@ -1867,7 +1890,7 @@ export class EmailService {
 
     // Update to new history ID
     if (newHistoryId) {
-      await this.emailModel.updateEmailAccount(account.id, {
+      await this.emailModel.updateEmailAccount(account.id, account.companyId, {
         lastHistoryId: newHistoryId,
         lastSyncAt: new Date()
       });
@@ -1877,9 +1900,9 @@ export class EmailService {
   }
 
   // Helper to force set isArchived/label
-  private async ensureArchiveStatus(emailId: string, userId: string) {
+  private async ensureArchiveStatus(emailId: string, userId: string, companyId: number) {
     // We can reuse archiveEmail logic which adds 'ARCHIVE' label and removes 'INBOX'
-    await this.emailModel.archiveEmail(emailId, userId);
+    await this.emailModel.archiveEmail(emailId, userId, companyId);
   }
 
   /**
@@ -1893,8 +1916,8 @@ export class EmailService {
   /**
    * Trigger full historical sync in background
    */
-  async triggerHistoricalSync(accountId: string): Promise<{ success: boolean; message: string }> {
-    const account = await this.emailModel.getEmailAccountById(accountId);
+  async triggerHistoricalSync(accountId: string, companyId: number): Promise<{ success: boolean; message: string }> {
+    const account = await this.emailModel.getEmailAccountById(accountId, companyId);
     if (!account) throw new Error("Account not found");
 
     // Run in background (don't await)
@@ -1908,8 +1931,8 @@ export class EmailService {
   /**
    * Get paginated emails for the user
    */
-  async getPaginatedEmails(userId: string, options: any) {
-    return this.emailModel.getEmailsPaginated(userId, options);
+  async getPaginatedEmails(userId: string, companyId: number, options: any) {
+    return this.emailModel.getEmailsPaginated(userId, companyId, options);
   }
 
   private async syncReadStatusToProvider(account: EmailAccount, email: Email, isRead: boolean) {
@@ -1926,7 +1949,7 @@ export class EmailService {
           gmailId = (await this.connectorService.findGmailMessageByRfcId(account, email.messageId)) ?? undefined;
           if (gmailId) {
             console.log(`[ReadSync] Resolved Gmail ID: ${gmailId}. Backfilling DB.`);
-            await this.emailModel.updateEmail(email.id, { providerId: gmailId ?? undefined });
+            await this.emailModel.updateEmail(email.id, account.companyId, { providerId: gmailId ?? undefined });
           }
         }
 
@@ -1963,7 +1986,7 @@ export class EmailService {
           outlookId = (await this.connectorService.findOutlookMessageByRfcId(account, email.messageId)) ?? undefined;
           if (outlookId) {
             console.log(`[ReadSync] Resolved Outlook ID: ${outlookId}. Backfilling DB.`);
-            await this.emailModel.updateEmail(email.id, { providerId: outlookId ?? undefined });
+            await this.emailModel.updateEmail(email.id, account.companyId, { providerId: outlookId ?? undefined });
           }
         }
 
@@ -1984,8 +2007,8 @@ export class EmailService {
   /**
    * Sync draft to provider
    */
-  async syncDraft(userId: string, draftId: string): Promise<boolean> {
-    const draft = await this.draftModel.getDraftById(draftId, userId);
+  async syncDraft(userId: string, companyId: number, draftId: string): Promise<boolean> {
+    const draft = await this.draftModel.getDraftById(draftId, userId, companyId);
     if (!draft) return false;
 
     // Use DraftService logic if possible, but DraftService calls EmailService.saveDraft.
@@ -2009,8 +2032,8 @@ export class EmailService {
 
       for (const folder of folders) {
         // Get unread UIDs + last 50 synced UIDs for this folder
-        const unreadUids = await this.emailModel.getUnreadUids(account.id, folder.label);
-        const recentUids = await this.emailModel.getRecentUids(account.id, folder.label, 50);
+        const unreadUids = await this.emailModel.getUnreadUids(account.id, account.companyId, folder.label);
+        const recentUids = await this.emailModel.getRecentUids(account.id, account.companyId, folder.label, 50);
 
         // Combine and unique UIDs
         const uidsToRefresh = Array.from(new Set([...unreadUids, ...recentUids]));
@@ -2026,9 +2049,9 @@ export class EmailService {
           const isReadOnServer = flags.includes('\\Seen');
 
           // Get current state from DB
-          const existing = await this.emailModel.findEmailByImapUid(account.id, folder.label, uid);
+          const existing = await this.emailModel.findEmailByImapUid(account.id, account.companyId, folder.label, uid);
           if (existing && existing.isRead !== isReadOnServer) {
-            await this.emailModel.markEmailAsRead(existing.id, account.userId, isReadOnServer);
+            await this.emailModel.markEmailAsRead(existing.id, account.userId, account.companyId, isReadOnServer);
           }
         }
 
@@ -2040,7 +2063,7 @@ export class EmailService {
           console.log(`[Sync] Found ${missingUids.length} missing UIDs in ${folder.label}. Processing removals...`);
 
           for (const missingUid of missingUids) {
-            const existing = await this.emailModel.findEmailByImapUid(account.id, folder.label, missingUid);
+            const existing = await this.emailModel.findEmailByImapUid(account.id, account.companyId, folder.label, missingUid);
             if (!existing) {
               console.log(`[Sync] Could not find email with UID ${missingUid} in folder ${folder.label} for account ${account.id}. Skipping.`);
               continue;
@@ -2077,7 +2100,7 @@ export class EmailService {
 
               if (restoredTo) {
                 console.log(`[Sync] Email ${existing.id} was restored to ${restoredTo} on server. Updating local record.`);
-                await this.emailModel.updateEmail(existing.id, {
+                await this.emailModel.updateEmail(existing.id, account.companyId, {
                   folder: restoredTo,
                   labelIds: [restoredTo],
                   uid: restoredUid || null as any,
@@ -2086,7 +2109,7 @@ export class EmailService {
               } else {
                 // Permanently delete if truly gone from Trash/Spam
                 console.log(`[Sync] Deleting missing email ${existing.id} from ${folder.label}`);
-                await this.emailModel.deleteEmailPermanently(existing.id, account.userId);
+                await this.emailModel.deleteEmailPermanently(existing.id, account.userId, account.companyId);
               }
             } else {
               // Soft delete (Move to Trash) if gone from Inbox/Sent/etc
@@ -2106,7 +2129,7 @@ export class EmailService {
               }
 
               console.log(`[Sync] Soft deleting (moving to trash) missing email ${existing.id} from ${folder.label}${trashUid ? ` (found in Trash with UID ${trashUid})` : ''}`);
-              await this.emailModel.updateEmail(existing.id, {
+              await this.emailModel.updateEmail(existing.id, account.companyId, {
                 folder: 'TRASH',
                 labelIds: ['TRASH'],
                 uid: trashUid || null as any, // Use found UID or null
@@ -2129,13 +2152,13 @@ export class EmailService {
       // Get unread or recent email IDs
       // Note: For Outlook we don't have separate folders in a simple way like IMAP here
       // but we can at least check the most recent synced messages across all folders
-      const unreadEmails = await this.emailModel.getEmailsForUser(account.userId, {
+      const unreadEmails = await this.emailModel.getEmailsForUser(account.userId, account.companyId, {
         accountId: account.id,
         unreadOnly: true,
         limit: 50
       });
 
-      const recentEmails = await this.emailModel.getEmailsForUser(account.userId, {
+      const recentEmails = await this.emailModel.getEmailsForUser(account.userId, account.companyId, {
         accountId: account.id,
         limit: 50
       });
@@ -2150,7 +2173,7 @@ export class EmailService {
 
           if (email.isRead !== isReadOnServer) {
             console.log(`Outlook message ${outlookId} status mismatch: CRM=${email.isRead}, Server=${isReadOnServer}. Updating...`);
-            await this.emailModel.markEmailAsRead(email.id, account.userId, isReadOnServer);
+            await this.emailModel.markEmailAsRead(email.id, account.userId, account.companyId, isReadOnServer);
           }
         } catch (err) {
           // Individual message fail shouldn't stop others
@@ -2163,6 +2186,7 @@ export class EmailService {
   }
   async saveDraft(
     userId: string,
+    companyId: number,
     draftInput: {
       accountId: string;
       to: string[];
@@ -2175,7 +2199,7 @@ export class EmailService {
     },
     existingProviderDraftId?: string
   ): Promise<string> {
-    const account = await this.emailModel.getEmailAccountById(draftInput.accountId);
+    const account = await this.emailModel.getEmailAccountById(draftInput.accountId, companyId);
     if (!account) {
       throw new Error('Email account not found');
     }
@@ -2196,10 +2220,11 @@ export class EmailService {
 
   async deleteDraftProvider(
     userId: string,
+    companyId: number,
     accountId: string,
     providerDraftId: string
   ): Promise<void> {
-    const account = await this.emailModel.getEmailAccountById(accountId);
+    const account = await this.emailModel.getEmailAccountById(accountId, companyId);
     if (!account) return;
 
     if (account.userId !== userId) return;
@@ -2211,8 +2236,8 @@ export class EmailService {
     }
   }
 
-  async syncDraftTrashToProvider(draft: EmailDraft, userId: string, moveToTrash: boolean): Promise<void> {
-    const account = await this.emailModel.getEmailAccountById(draft.accountId);
+  async syncDraftTrashToProvider(draft: EmailDraft, userId: string, companyId: number, moveToTrash: boolean): Promise<void> {
+    const account = await this.emailModel.getEmailAccountById(draft.accountId, companyId);
     if (!account || account.userId !== userId) return;
 
     const emailForSync: any = {
@@ -2226,15 +2251,15 @@ export class EmailService {
     return this.syncTrashToProvider(account, emailForSync, moveToTrash);
   }
 
-  async deleteDraftFromServer(userId: string, draftId: string, draftObj?: EmailDraft): Promise<void> {
-    const draft = draftObj || await this.draftModel.getDraftById(draftId, userId);
+  async deleteDraftFromServer(userId: string, companyId: number, draftId: string, draftObj?: EmailDraft): Promise<void> {
+    const draft = draftObj || await this.draftModel.getDraftById(draftId, userId, companyId);
     if (!draft || !draft.providerDraftId) return;
 
-    return this.deleteDraftProvider(userId, draft.accountId, draft.providerDraftId);
+    return this.deleteDraftProvider(userId, companyId, draft.accountId, draft.providerDraftId);
   }
 
-  async triggerEmailSync(userId: string, accountId: string): Promise<{ success: boolean; message: string }> {
-    const account = await this.emailModel.getEmailAccountById(accountId);
+  async triggerEmailSync(userId: string, companyId: number, accountId: string): Promise<{ success: boolean; message: string }> {
+    const account = await this.emailModel.getEmailAccountById(accountId, companyId);
     if (!account || account.userId !== userId) {
       throw new Error("Account not found");
     }
@@ -2247,9 +2272,9 @@ export class EmailService {
     return { success: true, message: "Sync started in background" };
   }
 
-  async triggerArchiveSync(userId: string): Promise<{ success: boolean; message: string }> {
+  async triggerArchiveSync(userId: string, companyId: number): Promise<{ success: boolean; message: string }> {
     // Run in background
-    this.syncArchivedEmails(userId).catch(err => {
+    this.syncArchivedEmails(userId, companyId).catch(err => {
       console.error(`Background archive sync failed for user ${userId}:`, err);
     });
 
@@ -2264,13 +2289,13 @@ export class EmailService {
     return { delivered: 0, pending: 0 }; // Placeholder
   }
 
-  async markEmailAsSpam(emailId: string, userId: string): Promise<boolean> {
+  async markEmailAsSpam(emailId: string, userId: string, companyId: number): Promise<boolean> {
     // Implement spam logic if needed, for now just a placeholder
     console.log(`Marking email ${emailId} as spam for user ${userId}`);
     return true;
   }
 
-  async unmarkEmailAsSpam(emailId: string, userId: string): Promise<boolean> {
+  async unmarkEmailAsSpam(emailId: string, userId: string, companyId: number): Promise<boolean> {
     // Implement unspam logic if needed, for now just a placeholder
     console.log(`Unmarking email ${emailId} from spam for user ${userId}`);
     return true;

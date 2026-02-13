@@ -31,6 +31,9 @@ export class SummarizationController {
      */
     async queueThreadSummarization(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
+            if (!req.user) {
+                return ResponseHandler.unauthorized(res, 'User not authenticated');
+            }
             const { threadId } = req.params;
 
             if (!threadId) {
@@ -38,9 +41,9 @@ export class SummarizationController {
             }
 
             // Check if thread already has a summary (from either service)
-            let existingSummary = await this.queueService.getThreadSummary(threadId);
+            let existingSummary = await this.queueService.getThreadSummary(threadId, req.user.companyId);
             if (!existingSummary) {
-                existingSummary = await this.runpodService.getThreadSummary(threadId);
+                existingSummary = await this.runpodService.getThreadSummary(threadId, req.user.companyId);
             }
 
             // If already processing or completed, return status
@@ -66,7 +69,7 @@ export class SummarizationController {
             }
 
             // Submit to RunPod async (no Redis required!)
-            const result = await this.runpodService.submitForSummarization(threadId);
+            const result = await this.runpodService.submitForSummarization(threadId, req.user.companyId);
 
             const data = {
                 jobId: result.jobId,
@@ -86,13 +89,16 @@ export class SummarizationController {
      */
     async summarizeThreadSync(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
+            if (!req.user) {
+                return ResponseHandler.unauthorized(res, 'User not authenticated');
+            }
             const { threadId } = req.params;
 
             if (!threadId) {
                 return ResponseHandler.validationError(res, 'Thread ID is required');
             }
 
-            const emails = await this.emailModel.getEmailsForThread(threadId);
+            const emails = await this.emailModel.getEmailsForThread(threadId, req.user.companyId);
 
             if (emails.length === 0) {
                 return ResponseHandler.notFound(res, 'Thread not found');
@@ -107,7 +113,7 @@ export class SummarizationController {
             const summary = await summarizeThreadWithVLLM(threadText);
 
             // Save the summary
-            await this.emailModel.saveThreadSummary(threadId, summary);
+            await this.emailModel.saveThreadSummary(threadId, req.user.companyId, summary);
 
             const data = {
                 threadId,
@@ -127,6 +133,9 @@ export class SummarizationController {
      */
     async getEnhancedThreadSummary(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
+            if (!req.user) {
+                return ResponseHandler.unauthorized(res, 'User not authenticated');
+            }
             const { threadId } = req.params;
 
             if (!threadId) {
@@ -134,11 +143,11 @@ export class SummarizationController {
             }
 
             // Try to get summary from Redis queue service first
-            let summary = await this.queueService.getThreadSummary(threadId);
+            let summary = await this.queueService.getThreadSummary(threadId, req.user.companyId);
 
             // If not found, try RunPod async service
             if (!summary) {
-                summary = await this.runpodService.getThreadSummary(threadId);
+                summary = await this.runpodService.getThreadSummary(threadId, req.user.companyId);
             }
 
             if (!summary) {
@@ -226,7 +235,7 @@ export class SummarizationController {
             const userId = req.user.id.toString();
 
             // Get threads needing summarization
-            const threads = await this.queueService.getThreadsNeedingSummary(limit);
+            const threads = await this.queueService.getThreadsNeedingSummary(req.user.companyId, limit);
 
             if (threads.length === 0) {
                 return ResponseHandler.success(res, 0, 'No threads need summarization');
@@ -237,6 +246,7 @@ export class SummarizationController {
                 try {
                     const job = await this.queueService.addToQueue({
                         threadId,
+                        companyId: req.user.companyId,
                         userId,
                         subject: `Thread ${threadId}`
                     });
@@ -327,8 +337,14 @@ export class SummarizationController {
      */
     async getPendingThreads(req: Request, res: Response): Promise<void> {
         try {
+            const user = (req as any).user;
+            if (!user) {
+                return ResponseHandler.unauthorized(res, 'User not authenticated');
+            }
+
             const { limit = 50 } = req.query;
             const threads = await this.queueService.getThreadsNeedingSummary(
+                user.companyId,
                 parseInt(limit as string)
             );
 

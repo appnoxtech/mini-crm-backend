@@ -10,6 +10,7 @@ export class ImportModel {
         return {
             id: row.id,
             userId: row.userId,
+            companyId: row.companyId,
             entityType: row.entityType as ImportEntityType,
             fileName: row.fileName,
             fileFormat: row.fileFormat as ImportFileFormat,
@@ -30,6 +31,7 @@ export class ImportModel {
 
     async create(data: {
         userId: number;
+        companyId: number;
         entityType: ImportEntityType;
         fileName: string;
         fileFormat: ImportFileFormat;
@@ -39,6 +41,7 @@ export class ImportModel {
         const job = await prisma.import.create({
             data: {
                 userId: data.userId,
+                companyId: data.companyId,
                 entityType: data.entityType,
                 fileName: data.fileName,
                 fileFormat: data.fileFormat,
@@ -51,22 +54,22 @@ export class ImportModel {
         return this.rowToImportJob(job);
     }
 
-    async findById(id: number): Promise<ImportJob | null> {
-        const row = await prisma.import.findUnique({
-            where: { id }
+    async findById(id: number, companyId: number): Promise<ImportJob | null> {
+        const row = await prisma.import.findFirst({
+            where: { id, companyId }
         });
         return row ? this.rowToImportJob(row) : null;
     }
 
-    async findByUserId(userId: number, limit: number = 20, offset: number = 0): Promise<{ imports: ImportJob[]; count: number }> {
+    async findByUserId(userId: number, companyId: number, limit: number = 20, offset: number = 0): Promise<{ imports: ImportJob[]; count: number }> {
         const [rows, count] = await Promise.all([
             prisma.import.findMany({
-                where: { userId },
+                where: { userId, companyId },
                 orderBy: { createdAt: 'desc' },
                 take: limit,
                 skip: offset
             }),
-            prisma.import.count({ where: { userId } })
+            prisma.import.count({ where: { userId, companyId } })
         ]);
 
         return {
@@ -75,11 +78,11 @@ export class ImportModel {
         };
     }
 
-    async updateStatus(id: number, status: ImportStatus, errorSummary?: string): Promise<void> {
+    async updateStatus(id: number, companyId: number, status: ImportStatus, errorSummary?: string): Promise<void> {
         const completedAt = ['completed', 'failed', 'cancelled', 'rolled_back'].includes(status) ? new Date() : undefined;
 
-        await prisma.import.update({
-            where: { id },
+        await prisma.import.updateMany({
+            where: { id, companyId },
             data: {
                 status,
                 completedAt,
@@ -88,27 +91,27 @@ export class ImportModel {
         });
     }
 
-    async updateMapping(id: number, mapping: FieldMapping[]): Promise<void> {
-        await prisma.import.update({
-            where: { id },
+    async updateMapping(id: number, companyId: number, mapping: FieldMapping[]): Promise<void> {
+        await prisma.import.updateMany({
+            where: { id, companyId },
             data: {
                 mapping: mapping as any
             }
         });
     }
 
-    async updateDuplicateHandling(id: number, duplicateHandling: DuplicateHandling): Promise<void> {
-        await prisma.import.update({
-            where: { id },
+    async updateDuplicateHandling(id: number, companyId: number, duplicateHandling: DuplicateHandling): Promise<void> {
+        await prisma.import.updateMany({
+            where: { id, companyId },
             data: {
                 duplicateHandling
             }
         });
     }
 
-    async updateProgress(id: number, processedRows: number, successCount: number, errorCount: number, skippedCount: number): Promise<void> {
-        await prisma.import.update({
-            where: { id },
+    async updateProgress(id: number, companyId: number, processedRows: number, successCount: number, errorCount: number, skippedCount: number): Promise<void> {
+        await prisma.import.updateMany({
+            where: { id, companyId },
             data: {
                 processedRows,
                 successCount,
@@ -118,39 +121,40 @@ export class ImportModel {
         });
     }
 
-    async getFilePath(id: number): Promise<string | null> {
-        const result = await prisma.import.findUnique({
-            where: { id },
+    async getFilePath(id: number, companyId: number): Promise<string | null> {
+        const result = await prisma.import.findFirst({
+            where: { id, companyId },
             select: { filePath: true }
         });
         return result?.filePath || null;
     }
 
-    async delete(id: number): Promise<boolean> {
+    async delete(id: number, companyId: number): Promise<boolean> {
         try {
-            await prisma.import.delete({
-                where: { id }
+            const result = await prisma.import.deleteMany({
+                where: { id, companyId }
             });
-            return true;
+            return result.count > 0;
         } catch (error) {
             return false;
         }
     }
 
     // Staging methods
-    async addStagedRecord(importId: number, data: any, rowNumber: number): Promise<void> {
+    async addStagedRecord(importId: number, companyId: number, data: any, rowNumber: number): Promise<void> {
         await prisma.importStaging.create({
             data: {
                 importId,
+                companyId,
                 data: data as any,
                 rowNumber
             }
         });
     }
 
-    async getStagedRecords(importId: number): Promise<{ data: any; rowNumber: number }[]> {
+    async getStagedRecords(importId: number, companyId: number): Promise<{ data: any; rowNumber: number }[]> {
         const rows = await prisma.importStaging.findMany({
-            where: { importId },
+            where: { importId, companyId },
             orderBy: { rowNumber: 'asc' }
         });
 
@@ -160,38 +164,40 @@ export class ImportModel {
         }));
     }
 
-    async clearStagedRecords(importId: number): Promise<void> {
+    async clearStagedRecords(importId: number, companyId: number): Promise<void> {
         await prisma.importStaging.deleteMany({
-            where: { importId }
+            where: { importId, companyId }
         });
     }
 
     // Import Actions tracking (for rollback)
-    async addRecord(importId: number, entityId: number, action: 'created' | 'updated'): Promise<void> {
+    async addRecord(importId: number, companyId: number, entityId: number, action: 'created' | 'updated'): Promise<void> {
         if (action !== 'created') return;
 
         await prisma.importRecord.create({
             data: {
                 importId,
+                companyId,
                 entityId,
                 action
             }
         });
     }
 
-    async getCreatedEntityIds(importId: number): Promise<number[]> {
+    async getCreatedEntityIds(importId: number, companyId: number): Promise<number[]> {
         const rows = await prisma.importRecord.findMany({
-            where: { importId, action: 'created' },
+            where: { importId, companyId, action: 'created' },
             select: { entityId: true }
         });
         return rows.map((r: any) => r.entityId);
     }
 
     // Import errors methods
-    async addError(importId: number, error: ImportError): Promise<void> {
+    async addError(importId: number, companyId: number, error: ImportError): Promise<void> {
         await prisma.importError.create({
             data: {
                 importId,
+                companyId,
                 rowNumber: error.row,
                 columnName: error.column || null,
                 value: error.value ? String(error.value) : null,
@@ -201,10 +207,11 @@ export class ImportModel {
         });
     }
 
-    async addErrors(importId: number, errors: ImportError[]): Promise<void> {
+    async addErrors(importId: number, companyId: number, errors: ImportError[]): Promise<void> {
         await prisma.importError.createMany({
             data: errors.map(error => ({
                 importId,
+                companyId,
                 rowNumber: error.row,
                 columnName: error.column || null,
                 value: error.value ? String(error.value) : null,
@@ -214,9 +221,9 @@ export class ImportModel {
         });
     }
 
-    async getErrors(importId: number, limit: number = 100): Promise<ImportError[]> {
+    async getErrors(importId: number, companyId: number, limit: number = 100): Promise<ImportError[]> {
         const rows = await prisma.importError.findMany({
-            where: { importId },
+            where: { importId, companyId },
             orderBy: { rowNumber: 'asc' },
             take: limit
         });
@@ -230,17 +237,18 @@ export class ImportModel {
         }));
     }
 
-    async clearErrors(importId: number): Promise<void> {
+    async clearErrors(importId: number, companyId: number): Promise<void> {
         await prisma.importError.deleteMany({
-            where: { importId }
+            where: { importId, companyId }
         });
     }
 
     // Template methods
-    async saveTemplate(userId: number, name: string, entityType: ImportEntityType, mapping: FieldMapping[]): Promise<number> {
+    async saveTemplate(userId: number, companyId: number, name: string, entityType: ImportEntityType, mapping: FieldMapping[]): Promise<number> {
         const template = await prisma.importTemplate.create({
             data: {
                 userId,
+                companyId,
                 name,
                 entityType,
                 mapping: mapping as any
@@ -249,8 +257,8 @@ export class ImportModel {
         return template.id;
     }
 
-    async getTemplates(userId: number, entityType?: ImportEntityType): Promise<any[]> {
-        const where: any = { userId };
+    async getTemplates(userId: number, companyId: number, entityType?: ImportEntityType): Promise<any[]> {
+        const where: any = { userId, companyId };
         if (entityType) {
             where.entityType = entityType;
         }
@@ -263,6 +271,7 @@ export class ImportModel {
         return rows.map((row: any) => ({
             id: row.id,
             userId: row.userId,
+            companyId: row.companyId,
             name: row.name,
             entityType: row.entityType,
             mapping: row.mapping,
@@ -270,12 +279,12 @@ export class ImportModel {
         }));
     }
 
-    async deleteTemplate(id: number, userId: number): Promise<boolean> {
+    async deleteTemplate(id: number, userId: number, companyId: number): Promise<boolean> {
         try {
-            await prisma.importTemplate.delete({
-                where: { id, userId }
+            const result = await prisma.importTemplate.deleteMany({
+                where: { id, userId, companyId }
             });
-            return true;
+            return result.count > 0;
         } catch (error) {
             return false;
         }

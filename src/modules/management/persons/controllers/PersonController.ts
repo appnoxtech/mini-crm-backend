@@ -14,7 +14,7 @@ export class PersonController {
 
             const { searchQuery } = req.query as any;
 
-            const result = await this.personService.searchPersons(searchQuery as string);
+            const result = await this.personService.searchPersons(searchQuery as string, req.user.companyId as number);
 
             return ResponseHandler.success(res, result);
         } catch (error) {
@@ -32,6 +32,7 @@ export class PersonController {
             const { q, organizationId, limit = 100, offset = 0, includeDeleted } = req.query as any;
 
             const result = await this.personService.getAllPersons({
+                companyId: req.user.companyId as number,
                 search: q as string,
                 organizationId: organizationId ? Number(organizationId) : undefined,
                 limit: Number(limit),
@@ -53,7 +54,7 @@ export class PersonController {
             }
 
             const { id } = req.params;
-            const person = await this.personService.getPersonById(Number(id));
+            const person = await this.personService.getPersonById(Number(id), req.user.companyId as number);
 
             if (!person) {
                 return ResponseHandler.notFound(res, 'Person not found');
@@ -75,6 +76,7 @@ export class PersonController {
             const { firstName, lastName, emails, phones, organizationId } = req.body;
 
             const person = await this.personService.createPerson({
+                companyId: req.user.companyId as number,
                 firstName: firstName || "",
                 lastName: lastName || "",
                 emails: emails || [],
@@ -106,7 +108,7 @@ export class PersonController {
 
 
 
-            const person = await this.personService.updatePerson(Number(id), {
+            const person = await this.personService.updatePerson(Number(id), req.user.companyId as number, {
                 firstName,
                 lastName,
                 emails,
@@ -138,7 +140,7 @@ export class PersonController {
             }
 
             const { id } = req.params;
-            const success = await this.personService.deletePerson(Number(id));
+            const success = await this.personService.deletePerson(Number(id), req.user.companyId as number);
 
             if (!success) {
                 return ResponseHandler.notFound(res, 'Person not found');
@@ -158,7 +160,7 @@ export class PersonController {
             }
 
             const { id } = req.params;
-            const person = await this.personService.restorePerson(Number(id));
+            const person = await this.personService.restorePerson(Number(id), req.user.companyId as number);
 
             if (!person) {
                 return ResponseHandler.notFound(res, 'Person not found or not deleted');

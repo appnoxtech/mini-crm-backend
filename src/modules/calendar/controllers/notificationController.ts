@@ -14,7 +14,7 @@ export class NotificationController {
 
             const { status, page, limit } = req.query;
 
-            const result = await this.notificationModel.findByUserId(req.user.id, {
+            const result = await this.notificationModel.findByUserId(req.user.id, req.user.companyId, {
                 status: status as any,
                 limit: limit ? Number(limit) : 20,
                 offset: page ? (Number(page) - 1) * (Number(limit) || 20) : 0
@@ -51,6 +51,7 @@ export class NotificationController {
             const result = await this.notificationModel.findAll({
                 status: status as any,
                 userId: userId ? Number(userId) : undefined,
+                companyId: req.user.companyId, // Added companyId check
                 limit: limit ? Number(limit) : 50,
                 offset: page ? (Number(page) - 1) * (Number(limit) || 50) : 0
             });

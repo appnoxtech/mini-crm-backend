@@ -2,6 +2,8 @@ import { prisma } from '../../../shared/prisma';
 import { BaseEntity } from '../../../shared/types';
 
 export interface CalendarEvent extends BaseEntity {
+    id: number;
+    companyId: number;
     userId: number;
     title: string;
     description?: string;
@@ -20,6 +22,7 @@ export class CalendarEventModel {
     private mapPrismaToCalendarEvent(event: any): CalendarEvent {
         return {
             id: event.id,
+            companyId: event.companyId,
             userId: event.userId,
             title: event.title,
             description: event.description || undefined,
@@ -36,6 +39,7 @@ export class CalendarEventModel {
     async create(data: Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt'>): Promise<CalendarEvent> {
         const event = await prisma.calendarEvent.create({
             data: {
+                companyId: data.companyId,
                 userId: data.userId,
                 title: data.title,
                 description: data.description || null,
@@ -49,8 +53,8 @@ export class CalendarEventModel {
         return this.mapPrismaToCalendarEvent(event);
     }
 
-    async findById(id: number, userId?: number): Promise<CalendarEvent | null> {
-        const where: any = { id, deletedAt: null };
+    async findById(id: number, companyId: number, userId?: number): Promise<CalendarEvent | null> {
+        const where: any = { id, companyId, deletedAt: null };
         if (userId !== undefined) {
             where.userId = userId;
         }
@@ -62,7 +66,7 @@ export class CalendarEventModel {
         return event ? this.mapPrismaToCalendarEvent(event) : null;
     }
 
-    async findByUserId(userId: number, filters: {
+    async findByUserId(userId: number, companyId: number, filters: {
         startDate?: string;
         endDate?: string;
         limit?: number;
@@ -70,6 +74,7 @@ export class CalendarEventModel {
     } = {}): Promise<{ events: CalendarEvent[]; total: number }> {
         const where: any = {
             userId,
+            companyId,
             deletedAt: null
         };
 
@@ -101,13 +106,14 @@ export class CalendarEventModel {
         };
     }
 
-    async findAccessible(userId: number, filters: {
+    async findAccessible(userId: number, companyId: number, filters: {
         startDate?: string;
         endDate?: string;
         limit?: number;
         offset?: number;
     } = {}): Promise<{ events: CalendarEvent[]; total: number }> {
         const where: any = {
+            companyId,
             deletedAt: null,
             OR: [
                 { userId },
@@ -162,8 +168,8 @@ export class CalendarEventModel {
         return events.map((e: any) => this.mapPrismaToCalendarEvent(e));
     }
 
-    async update(id: number, userId: number, data: Partial<Omit<CalendarEvent, 'id' | 'userId' | 'createdAt' | 'updatedAt'>>): Promise<CalendarEvent | null> {
-        const existing = await this.findById(id, userId);
+    async update(id: number, userId: number, companyId: number, data: Partial<Omit<CalendarEvent, 'id' | 'userId' | 'createdAt' | 'updatedAt'>>): Promise<CalendarEvent | null> {
+        const existing = await this.findById(id, companyId, userId);
         if (!existing) return null;
 
         const updateData: any = {};
@@ -184,10 +190,10 @@ export class CalendarEventModel {
         return this.mapPrismaToCalendarEvent(updated);
     }
 
-    async delete(id: number, userId: number): Promise<boolean> {
+    async delete(id: number, userId: number, companyId: number): Promise<boolean> {
         try {
             await prisma.calendarEvent.update({
-                where: { id, userId },
+                where: { id, userId, companyId },
                 data: { deletedAt: new Date() }
             });
             return true;
@@ -196,10 +202,10 @@ export class CalendarEventModel {
         }
     }
 
-    async hardDelete(id: number, userId: number): Promise<boolean> {
+    async hardDelete(id: number, userId: number, companyId: number): Promise<boolean> {
         try {
             await prisma.calendarEvent.delete({
-                where: { id, userId }
+                where: { id, userId, companyId }
             });
             return true;
         } catch (error) {

@@ -38,7 +38,7 @@ export function startTrashCleanupJob() {
             for (const emailInfo of oldTrashEmails) {
                 try {
                     // Use the service method which handles provider sync
-                    await emailService.deleteEmailPermanently(emailInfo.emailId, emailInfo.userId);
+                    await emailService.deleteEmailPermanently(emailInfo.emailId, emailInfo.userId, emailInfo.companyId);
                     deletedCount++;
                 } catch (error) {
                     console.error(`[TrashCleanup] Failed to delete email ${emailInfo.emailId}:`, error);

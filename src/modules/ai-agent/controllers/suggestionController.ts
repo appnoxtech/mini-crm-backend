@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { SuggestionOrchestratorService } from "../services/suggestionOrchestratorService";
+import { AuthenticatedRequest } from "../../../shared/types";
 
 export class SuggestionController {
     private orchestrator: SuggestionOrchestratorService;
@@ -8,7 +9,7 @@ export class SuggestionController {
         this.orchestrator = orchestrator;
     }
 
-    async generateSuggestion(req: Request, res: Response): Promise<void> {
+    async generateSuggestion(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
             const { dealId, personId, threadId, messageId, email, forceRefresh, customPrompt, lastEmailContent, lastEmailSubject, userName } = req.body;
 
@@ -21,6 +22,8 @@ export class SuggestionController {
                 return;
             }
 
+            const userId = req.user?.id;
+            const companyId = req.user?.companyId;
 
             const suggestion = await this.orchestrator.generateSuggestion({
                 dealId: dealId ? Number(dealId) : undefined,
@@ -32,7 +35,9 @@ export class SuggestionController {
                 customPrompt,
                 lastEmailContent,
                 lastEmailSubject,
-                userName
+                userName,
+                companyId,
+                userId
             });
 
             res.status(201).json(suggestion);
@@ -43,10 +48,15 @@ export class SuggestionController {
         }
     }
 
-    async getDealSuggestions(req: Request, res: Response): Promise<void> {
+    async getDealSuggestions(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
             const { dealId } = req.params;
-            const suggestions = await this.orchestrator.getSuggestionsForDeal(Number(dealId));
+            const companyId = req.user?.companyId;
+            if (!companyId) {
+                res.status(401).json({ error: "Unauthorized" });
+                return;
+            }
+            const suggestions = await this.orchestrator.getSuggestionsForDeal(Number(dealId), companyId);
             res.json(suggestions);
         } catch (error: any) {
             console.error("Controller Error (getDeal):", error.message);
@@ -54,10 +64,15 @@ export class SuggestionController {
         }
     }
 
-    async getPersonSuggestions(req: Request, res: Response): Promise<void> {
+    async getPersonSuggestions(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
             const { personId } = req.params;
-            const suggestions = await this.orchestrator.getSuggestionsForPerson(Number(personId));
+            const companyId = req.user?.companyId;
+            if (!companyId) {
+                res.status(401).json({ error: "Unauthorized" });
+                return;
+            }
+            const suggestions = await this.orchestrator.getSuggestionsForPerson(Number(personId), companyId);
             res.json(suggestions);
         } catch (error: any) {
             console.error("Controller Error (getPerson):", error.message);

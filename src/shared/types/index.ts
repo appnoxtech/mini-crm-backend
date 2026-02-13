@@ -9,6 +9,7 @@ export interface BaseEntity {
 
 export interface User {
   id: number;
+  companyId: number;
   email: string;
   name: string;
   passwordHash: string;
@@ -25,6 +26,7 @@ export interface User {
 
 export interface AuthUser {
   id: number;
+  companyId: number;
   email: string;
   name: string;
   createdAt?: string;

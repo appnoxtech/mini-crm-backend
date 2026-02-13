@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { AuthenticatedRequest } from "../../../shared/types";
 import { PricingModel } from "../models/PricingModel";
 import { BrandGuidelinesModel } from "../models/BrandGuidelinesModel";
 import { KnowledgeBaseModel } from "../models/KnowledgeBaseModel";
@@ -94,47 +95,63 @@ export class AIConfigController {
     }
 
     // Knowledge Base
-    async getKnowledgeBase(req: Request, res: Response): Promise<void> {
+    async getKnowledgeBase(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
-            const items = await this.knowledgeBaseModel.getAllItems();
+            if (!req.user) {
+                res.status(401).json({ error: 'User not authenticated' });
+                return;
+            }
+            const items = await this.knowledgeBaseModel.getAllItems(req.user.companyId);
             res.json(items);
         } catch (error: any) {
             res.status(500).json({ error: error.message });
         }
     }
 
-    async addToKnowledgeBase(req: Request, res: Response): Promise<void> {
+    async addToKnowledgeBase(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
-            const id = await this.knowledgeBaseModel.addItem(req.body);
+            if (!req.user) {
+                res.status(401).json({ error: 'User not authenticated' });
+                return;
+            }
+            const id = await this.knowledgeBaseModel.addItem({ ...req.body, companyId: req.user.companyId });
             res.status(201).json({ id, ...req.body });
         } catch (error: any) {
             res.status(500).json({ error: error.message });
         }
     }
 
-    async updateKnowledgeBaseItem(req: Request, res: Response): Promise<void> {
+    async updateKnowledgeBaseItem(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
+            if (!req.user) {
+                res.status(401).json({ error: 'User not authenticated' });
+                return;
+            }
             const { id } = req.params;
             if (!id) {
                 res.status(400).json({ error: 'Item ID is required' });
                 return;
             }
             const updates = req.body;
-            await this.knowledgeBaseModel.updateItem(id, updates);
+            await this.knowledgeBaseModel.updateItem(id, req.user.companyId, updates);
             res.json({ success: true });
         } catch (error: any) {
             res.status(500).json({ error: error.message });
         }
     }
 
-    async deleteKnowledgeBaseItem(req: Request, res: Response): Promise<void> {
+    async deleteKnowledgeBaseItem(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
+            if (!req.user) {
+                res.status(401).json({ error: 'User not authenticated' });
+                return;
+            }
             const { id } = req.params;
             if (!id) {
                 res.status(400).json({ error: 'Item ID is required' });
                 return;
             }
-            await this.knowledgeBaseModel.deleteItem(id);
+            await this.knowledgeBaseModel.deleteItem(id, req.user.companyId);
             res.json({ success: true });
         } catch (error: any) {
             res.status(500).json({ error: error.message });

@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 
 export interface Organization extends BaseEntity {
     name: string;
+    companyId: number;
     description?: string;
     industry?: string;
     website?: string;
@@ -27,6 +28,7 @@ export interface Organization extends BaseEntity {
 
 export type searchOrgResult = {
     id: number;
+    companyId: number;
     name: string;
     description: string;
     industry: string;
@@ -42,6 +44,7 @@ export type searchOrgResult = {
 
 export interface CreateOrganizationData {
     name: string;
+    companyId: number;
     description?: string;
     website?: string;
     industry?: string;
@@ -62,6 +65,7 @@ export interface CreateOrganizationData {
 
 export interface UpdateOrganizationData {
     name?: string;
+    companyId?: number;
     description?: string;
     website?: string;
     industry?: string;
@@ -89,6 +93,7 @@ export class OrganizationModel {
         const org = await prisma.organization.create({
             data: {
                 name: data.name,
+                companyId: data.companyId,
                 description: data.description || null,
                 industry: data.industry || null,
                 website: data.website || null,
@@ -105,28 +110,30 @@ export class OrganizationModel {
         return this.mapPrismaOrgToOrg(org);
     }
 
-    async findByIds(ids: number[], includeDeleted = false): Promise<Organization[]> {
+    async findByIds(ids: number[], companyId: number, includeDeleted = false): Promise<Organization[]> {
         if (ids.length === 0) return [];
         const rows = await prisma.organization.findMany({
             where: {
                 id: { in: ids },
+                companyId,
                 ...(!includeDeleted && { deletedAt: null })
             }
         });
         return rows.map((r: any) => this.mapPrismaOrgToOrg(r));
     }
 
-    async findById(id: number, includeDeleted = false): Promise<Organization | null> {
-        const org = await prisma.organization.findUnique({
-            where: { id }
+    async findById(id: number, companyId: number, includeDeleted = false): Promise<Organization | null> {
+        const org = await prisma.organization.findFirst({
+            where: { id, companyId }
         });
         if (!org || (!includeDeleted && org.deletedAt)) return null;
         return this.mapPrismaOrgToOrg(org);
     }
 
-    async searchByOrgName(search: string): Promise<Organization[]> {
+    async searchByOrgName(search: string, companyId: number): Promise<Organization[]> {
         const rows = await prisma.organization.findMany({
             where: {
+                companyId,
                 name: { contains: search, mode: 'insensitive' },
                 deletedAt: null
             }
@@ -134,9 +141,10 @@ export class OrganizationModel {
         return rows.map((r: any) => this.mapPrismaOrgToOrg(r));
     }
 
-    async searchByOrganizationName(search: string): Promise<searchOrgResult[]> {
+    async searchByOrganizationName(search: string, companyId: number): Promise<searchOrgResult[]> {
         const rows = await prisma.organization.findMany({
             where: {
+                companyId: companyId,
                 OR: [
                     { name: { contains: search, mode: 'insensitive' } },
                     { description: { contains: search, mode: 'insensitive' } },
@@ -149,6 +157,7 @@ export class OrganizationModel {
 
         return rows.map((org: any) => ({
             id: org.id,
+            companyId: org.companyId,
             name: org.name,
             description: org.description || '',
             industry: org.industry || '',
@@ -164,12 +173,13 @@ export class OrganizationModel {
     }
 
     async findAll(options: {
+        companyId: number;
         search?: string;
         limit?: number;
         offset?: number;
         includeDeleted?: boolean;
-    } = {}): Promise<{ organizations: Organization[]; count: number }> {
-        const where: any = {};
+    }): Promise<{ organizations: Organization[]; count: number }> {
+        const where: any = { companyId: options.companyId };
 
         if (!options.includeDeleted) {
             where.deletedAt = null;
@@ -200,10 +210,10 @@ export class OrganizationModel {
         };
     }
 
-    async update(id: number, data: UpdateOrganizationData & any): Promise<Organization | null> {
+    async update(id: number, companyId: number, data: UpdateOrganizationData & any): Promise<Organization | null> {
         try {
             const updated = await prisma.organization.update({
-                where: { id },
+                where: { id, companyId },
                 data: {
                     ...(data.name !== undefined && { name: data.name }),
                     ...(data.description !== undefined && { description: data.description }),
@@ -225,10 +235,10 @@ export class OrganizationModel {
         }
     }
 
-    async softDelete(id: number): Promise<boolean> {
+    async softDelete(id: number, companyId: number): Promise<boolean> {
         try {
             await prisma.organization.update({
-                where: { id },
+                where: { id, companyId },
                 data: { deletedAt: new Date() }
             });
             return true;
@@ -237,10 +247,10 @@ export class OrganizationModel {
         }
     }
 
-    async restore(id: number): Promise<Organization | null> {
+    async restore(id: number, companyId: number): Promise<Organization | null> {
         try {
             const org = await prisma.organization.update({
-                where: { id },
+                where: { id, companyId },
                 data: { deletedAt: null }
             });
             return this.mapPrismaOrgToOrg(org);
@@ -249,10 +259,10 @@ export class OrganizationModel {
         }
     }
 
-    async hardDelete(id: number): Promise<boolean> {
+    async hardDelete(id: number, companyId: number): Promise<boolean> {
         try {
             await prisma.organization.delete({
-                where: { id }
+                where: { id, companyId }
             });
             return true;
         } catch (error) {
@@ -263,7 +273,9 @@ export class OrganizationModel {
     private mapPrismaOrgToOrg(org: any): Organization {
         return {
             id: org.id,
+            companyId: org.companyId,
             name: org.name,
+
             description: org.description || undefined,
             industry: org.industry || undefined,
             website: org.website || undefined,

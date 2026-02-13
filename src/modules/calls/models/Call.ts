@@ -27,6 +27,8 @@ export type CallDisposition =
     | 'other';
 
 export interface Call extends BaseEntity {
+    id: number;
+    companyId: number;
     twilioCallSid: string;
     twilioAccountSid: string;
     direction: CallDirection;
@@ -51,7 +53,9 @@ export interface Call extends BaseEntity {
 }
 
 export interface CallParticipant extends BaseEntity {
+    id: number;
     callId: number;
+    companyId: number;
     participantSid?: string;
     phoneNumber: string;
     name?: string;
@@ -63,7 +67,9 @@ export interface CallParticipant extends BaseEntity {
 }
 
 export interface CallRecording extends BaseEntity {
+    id: number;
     callId: number;
+    companyId: number;
     recordingSid: string;
     recordingUrl?: string;
     localFilePath?: string;
@@ -78,7 +84,9 @@ export interface CallRecording extends BaseEntity {
 }
 
 export interface CallEvent extends BaseEntity {
+    id: number;
     callId: number;
+    companyId: number;
     eventType: string;
     eventData?: string;
     triggeredBy?: number;
@@ -94,6 +102,7 @@ export class CallModel {
     async createCall(callData: Omit<Call, 'id' | 'createdAt' | 'updatedAt' | 'duration'>): Promise<Call> {
         const call = await prisma.call.create({
             data: {
+                companyId: callData.companyId,
                 twilioCallSid: callData.twilioCallSid,
                 twilioAccountSid: callData.twilioAccountSid,
                 direction: callData.direction,
@@ -118,25 +127,34 @@ export class CallModel {
         });
 
         const formatted = this.mapPrismaCallToCall(call);
-        await this.addEvent(formatted.id, 'call-initiated', JSON.stringify({ status: 'initiated', direction: callData.direction }));
+        await this.addEvent(formatted.id, formatted.companyId, 'call-initiated', JSON.stringify({ status: 'initiated', direction: callData.direction }));
         return formatted;
     }
 
-    async findById(id: number): Promise<Call | null> {
-        const call = await prisma.call.findUnique({
-            where: { id, deletedAt: null }
+    async findById(id: number, companyId: number): Promise<Call | null> {
+        const call = await prisma.call.findFirst({
+            where: { id, companyId, deletedAt: null }
         });
         return call ? this.mapPrismaCallToCall(call) : null;
     }
 
-    async findByTwilioSid(twilioCallSid: string): Promise<Call | null> {
-        const call = await prisma.call.findUnique({
+    async findByTwilioSid(twilioCallSid: string, companyId: number): Promise<Call | null> {
+        const where: any = { twilioCallSid, companyId, deletedAt: null };
+
+        const call = await prisma.call.findFirst({
+            where
+        });
+        return call ? this.mapPrismaCallToCall(call) : null;
+    }
+
+    async findByTwilioSidGlobal(twilioCallSid: string): Promise<Call | null> {
+        const call = await prisma.call.findFirst({
             where: { twilioCallSid, deletedAt: null }
         });
         return call ? this.mapPrismaCallToCall(call) : null;
     }
 
-    async findByUserId(userId: number, options: {
+    async findByUserId(userId: number, companyId: number, options: {
         direction?: CallDirection;
         status?: CallStatus;
         contactId?: number;
@@ -148,7 +166,7 @@ export class CallModel {
         offset?: number;
         includeDeleted?: boolean;
     } = {}): Promise<{ calls: Call[]; count: number; total: number }> {
-        const where: any = { userId };
+        const where: any = { userId, companyId };
 
         if (!options.includeDeleted) {
             where.deletedAt = null;
@@ -181,7 +199,7 @@ export class CallModel {
                 skip: options.offset || 0
             }),
             prisma.call.count({ where }),
-            prisma.call.count({ where: { userId, ...(options.includeDeleted ? {} : { deletedAt: null }) } })
+            prisma.call.count({ where: { userId, companyId, ...(options.includeDeleted ? {} : { deletedAt: null }) } })
         ]);
 
         return {
@@ -191,8 +209,8 @@ export class CallModel {
         };
     }
 
-    async updateStatus(id: number, status: CallStatus, additionalData?: Partial<Call>): Promise<Call | null> {
-        const call = await this.findById(id);
+    async updateStatus(id: number, companyId: number, status: CallStatus, additionalData?: Partial<Call>): Promise<Call | null> {
+        const call = await this.findById(id, companyId);
         if (!call) return null;
 
         const now = new Date();
@@ -220,21 +238,21 @@ export class CallModel {
         }
 
         const updated = await prisma.call.update({
-            where: { id },
+            where: { id, companyId },
             data: updateData
         });
 
-        await this.addEvent(id, 'status-change', JSON.stringify({ previousStatus: call.status, newStatus: status }));
+        await this.addEvent(id, companyId, 'status-change', JSON.stringify({ previousStatus: call.status, newStatus: status }));
 
         return this.mapPrismaCallToCall(updated);
     }
 
-    async updateCallDetails(id: number, userId: number, data: { notes?: string; disposition?: CallDisposition; summary?: string }): Promise<Call | null> {
-        const call = await this.findById(id);
+    async updateCallDetails(id: number, userId: number, companyId: number, data: { notes?: string; disposition?: CallDisposition; summary?: string }): Promise<Call | null> {
+        const call = await this.findById(id, companyId);
         if (!call || call.userId !== userId) return null;
 
         const updated = await prisma.call.update({
-            where: { id },
+            where: { id, companyId },
             data: {
                 ...(data.notes !== undefined && { notes: data.notes }),
                 ...(data.disposition !== undefined && { disposition: data.disposition }),
@@ -243,15 +261,15 @@ export class CallModel {
             }
         });
 
-        await this.addEvent(id, 'details-updated', JSON.stringify(data), userId);
+        await this.addEvent(id, companyId, 'details-updated', JSON.stringify(data), userId);
 
         return this.mapPrismaCallToCall(updated);
     }
 
-    async softDelete(id: number, userId: number): Promise<boolean> {
+    async softDelete(id: number, userId: number, companyId: number): Promise<boolean> {
         try {
             await prisma.call.update({
-                where: { id, userId },
+                where: { id, userId, companyId },
                 data: { deletedAt: new Date(), updatedAt: new Date() }
             });
             return true;
@@ -264,6 +282,7 @@ export class CallModel {
         const participant = await prisma.callParticipant.create({
             data: {
                 callId: participantData.callId,
+                companyId: participantData.companyId,
                 participantSid: participantData.participantSid || null,
                 phoneNumber: participantData.phoneNumber,
                 name: participantData.name || null,
@@ -278,16 +297,16 @@ export class CallModel {
         return this.mapPrismaParticipantToParticipant(participant);
     }
 
-    async getParticipantById(id: number): Promise<CallParticipant | null> {
-        const participant = await prisma.callParticipant.findUnique({
-            where: { id }
+    async getParticipantById(id: number, companyId: number): Promise<CallParticipant | null> {
+        const participant = await prisma.callParticipant.findFirst({
+            where: { id, companyId }
         });
         return participant ? this.mapPrismaParticipantToParticipant(participant) : null;
     }
 
-    async getParticipantsByCallId(callId: number): Promise<CallParticipant[]> {
+    async getParticipantsByCallId(callId: number, companyId: number): Promise<CallParticipant[]> {
         const participants = await prisma.callParticipant.findMany({
-            where: { callId }
+            where: { callId, companyId }
         });
         return participants.map((p: any) => this.mapPrismaParticipantToParticipant(p));
     }
@@ -296,6 +315,7 @@ export class CallModel {
         const recording = await prisma.callRecording.create({
             data: {
                 callId: recordingData.callId,
+                companyId: recordingData.companyId,
                 recordingSid: recordingData.recordingSid,
                 recordingUrl: recordingData.recordingUrl || null,
                 localFilePath: recordingData.localFilePath || null,
@@ -313,31 +333,39 @@ export class CallModel {
         return this.mapPrismaRecordingToRecording(recording);
     }
 
-    async getRecordingById(id: number): Promise<CallRecording | null> {
-        const recording = await prisma.callRecording.findUnique({
-            where: { id }
-        });
-        return recording ? this.mapPrismaRecordingToRecording(recording) : null;
-    }
-
-    async getRecordingByCallId(callId: number): Promise<CallRecording | null> {
+    async getRecordingById(id: number, companyId: number): Promise<CallRecording | null> {
         const recording = await prisma.callRecording.findFirst({
-            where: { callId }
+            where: { id, companyId }
         });
         return recording ? this.mapPrismaRecordingToRecording(recording) : null;
     }
 
-    async getRecordingByRecordingSid(recordingSid: string): Promise<CallRecording | null> {
-        const recording = await prisma.callRecording.findUnique({
+    async getRecordingByCallId(callId: number, companyId: number): Promise<CallRecording | null> {
+        const recording = await prisma.callRecording.findFirst({
+            where: { callId, companyId }
+        });
+        return recording ? this.mapPrismaRecordingToRecording(recording) : null;
+    }
+
+    async getRecordingByRecordingSid(recordingSid: string, companyId: number): Promise<CallRecording | null> {
+        const where: any = { recordingSid, companyId };
+        const recording = await prisma.callRecording.findFirst({
+            where
+        });
+        return recording ? this.mapPrismaRecordingToRecording(recording) : null;
+    }
+
+    async getRecordingByRecordingSidGlobal(recordingSid: string): Promise<CallRecording | null> {
+        const recording = await prisma.callRecording.findFirst({
             where: { recordingSid }
         });
         return recording ? this.mapPrismaRecordingToRecording(recording) : null;
     }
 
-    async updateRecording(id: number, data: Partial<CallRecording>): Promise<CallRecording | null> {
+    async updateRecording(id: number, companyId: number, data: Partial<CallRecording>): Promise<CallRecording | null> {
         try {
             const updated = await prisma.callRecording.update({
-                where: { id },
+                where: { id, companyId },
                 data: {
                     ...(data.recordingUrl !== undefined && { recordingUrl: data.recordingUrl }),
                     ...(data.localFilePath !== undefined && { localFilePath: data.localFilePath }),
@@ -357,10 +385,11 @@ export class CallModel {
         }
     }
 
-    async addEvent(callId: number, eventType: string, eventData?: string, triggeredBy?: number): Promise<CallEvent> {
+    async addEvent(callId: number, companyId: number, eventType: string, eventData?: string, triggeredBy?: number): Promise<CallEvent> {
         const event = await prisma.callEvent.create({
             data: {
                 callId,
+                companyId,
                 eventType,
                 eventData: eventData || null,
                 triggeredBy: triggeredBy || null
@@ -370,23 +399,23 @@ export class CallModel {
         return this.mapPrismaEventToEvent(event);
     }
 
-    async getEventById(id: number): Promise<CallEvent | null> {
-        const event = await prisma.callEvent.findUnique({
-            where: { id }
+    async getEventById(id: number, companyId: number): Promise<CallEvent | null> {
+        const event = await prisma.callEvent.findFirst({
+            where: { id, companyId }
         });
         return event ? this.mapPrismaEventToEvent(event) : null;
     }
 
-    async getEventsByCallId(callId: number): Promise<CallEvent[]> {
+    async getEventsByCallId(callId: number, companyId: number): Promise<CallEvent[]> {
         const events = await prisma.callEvent.findMany({
-            where: { callId },
+            where: { callId, companyId },
             orderBy: { createdAt: 'desc' }
         });
         return events.map((e: any) => this.mapPrismaEventToEvent(e));
     }
 
-    async getCallStats(userId: number, options: { startDate?: string; endDate?: string } = {}): Promise<any> {
-        const where: any = { userId, deletedAt: null };
+    async getCallStats(userId: number, companyId: number, options: { startDate?: string; endDate?: string } = {}): Promise<any> {
+        const where: any = { userId, companyId, deletedAt: null };
         if (options.startDate || options.endDate) {
             where.createdAt = {};
             if (options.startDate) where.createdAt.gte = new Date(options.startDate);
@@ -412,26 +441,27 @@ export class CallModel {
         return stats;
     }
 
-    async getCallsByContactId(contactId: number, limit: number = 10): Promise<Call[]> {
+    async getCallsByContactId(contactId: number, companyId: number, limit: number = 10): Promise<Call[]> {
         const calls = await prisma.call.findMany({
-            where: { contactId, deletedAt: null },
+            where: { contactId, companyId, deletedAt: null },
             orderBy: { createdAt: 'desc' },
             take: limit
         });
         return calls.map((c: any) => this.mapPrismaCallToCall(c));
     }
 
-    async getCallsByDealId(dealId: number): Promise<Call[]> {
+    async getCallsByDealId(dealId: number, companyId: number): Promise<Call[]> {
         const calls = await prisma.call.findMany({
-            where: { dealId, deletedAt: null },
+            where: { dealId, companyId, deletedAt: null },
             orderBy: { createdAt: 'desc' }
         });
         return calls.map((c: any) => this.mapPrismaCallToCall(c));
     }
 
-    async findContactByPhoneNumber(phoneNumber: string): Promise<{ contactId: number; name: string; company?: string } | undefined> {
+    async findContactByPhoneNumber(phoneNumber: string, companyId: number): Promise<{ contactId: number; name: string; company?: string } | undefined> {
         const person = await prisma.person.findFirst({
             where: {
+                companyId,
                 OR: [
                     { phones: { path: ['$[*].number'], array_contains: phoneNumber } },
                     { phones: { path: ['$[*].number'], string_contains: phoneNumber } }
@@ -446,7 +476,7 @@ export class CallModel {
 
         if (!person) {
             const phoneResult = await prisma.personPhone.findFirst({
-                where: { phone: { contains: phoneNumber } },
+                where: { phone: { contains: phoneNumber }, person: { companyId } },
                 include: { person: { include: { organization: true } } }
             });
             if (phoneResult) {
@@ -472,6 +502,7 @@ export class CallModel {
     private mapPrismaCallToCall(c: any): Call {
         return {
             id: c.id,
+            companyId: c.companyId,
             twilioCallSid: c.twilioCallSid,
             twilioAccountSid: c.twilioAccountSid,
             direction: c.direction as CallDirection,
@@ -511,7 +542,8 @@ export class CallModel {
             muted: p.muted,
             hold: p.hold,
             createdAt: p.createdAt.toISOString(),
-            updatedAt: p.updatedAt.toISOString()
+            updatedAt: p.updatedAt.toISOString(),
+            companyId: p.companyId
         };
     }
 
@@ -531,7 +563,8 @@ export class CallModel {
             transcriptionStatus: r.transcriptionStatus as any,
             transcriptionUrl: r.transcriptionUrl || undefined,
             createdAt: r.createdAt.toISOString(),
-            updatedAt: r.updatedAt.toISOString()
+            updatedAt: r.updatedAt.toISOString(),
+            companyId: r.companyId
         };
     }
 
@@ -543,7 +576,8 @@ export class CallModel {
             eventData: e.eventData || undefined,
             triggeredBy: e.triggeredBy || undefined,
             createdAt: e.createdAt.toISOString(),
-            updatedAt: e.updatedAt.toISOString()
+            updatedAt: e.updatedAt.toISOString(),
+            companyId: e.companyId
         };
     }
 }

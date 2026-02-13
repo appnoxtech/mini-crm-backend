@@ -31,11 +31,11 @@ interface RunPodJob {
 export class RunPodAsyncService {
     constructor(_dbPath?: string) { }
 
-    async submitForSummarization(threadId: string): Promise<{ jobId: string; status: string }> {
+    async submitForSummarization(threadId: string, companyId: number): Promise<{ jobId: string; status: string }> {
         const config = getRunPodConfig();
 
         const emails = await prisma.email.findMany({
-            where: { threadId },
+            where: { threadId, companyId },
             orderBy: { sentAt: 'asc' }
         });
 
@@ -66,7 +66,7 @@ export class RunPodAsyncService {
         const data = await response.json() as any;
         const jobId = data.id;
 
-        await this.updateJobStatus(threadId, jobId, 'IN_QUEUE');
+        await this.updateJobStatus(threadId, companyId, jobId, 'IN_QUEUE');
 
         return { jobId, status: 'IN_QUEUE' };
     }
@@ -87,8 +87,8 @@ export class RunPodAsyncService {
         return await response.json() as RunPodJob;
     }
 
-    async summarizeAndWait(threadId: string): Promise<SummaryData> {
-        const { jobId } = await this.submitForSummarization(threadId);
+    async summarizeAndWait(threadId: string, companyId: number): Promise<SummaryData> {
+        const { jobId } = await this.submitForSummarization(threadId, companyId);
 
         for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
             await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
@@ -102,7 +102,16 @@ export class RunPodAsyncService {
             }
 
             if (status.status === 'FAILED' || status.status === 'CANCELLED') {
-                await this.updateJobStatus(threadId, jobId, status.status, status.error);
+                // Note: We don't have companyId here easily if called this way, 
+                // but this method (summarizeAndWait) seems unused in updated controller.
+                // For safety, we can query it or just fail.
+                // Assuming this is used in context where record exists, so upsert in updateJobStatus might strictly not need it for update
+                // BUT updateJobStatus signature changes. 
+                // Let's look up companyId from DB first.
+                const existing = await prisma.threadSummary.findUnique({ where: { threadId } });
+                if (existing) {
+                    await this.updateJobStatus(threadId, existing.companyId, jobId, status.status, status.error);
+                }
                 throw new Error(`Job failed: ${status.error || 'Unknown error'}`);
             }
         }
@@ -112,13 +121,13 @@ export class RunPodAsyncService {
 
     async submitPendingThreads(limit: number = 10): Promise<{ submitted: number; jobIds: string[] }> {
         const threadsNeedingSummary = (await prisma.$queryRaw`
-            SELECT DISTINCT e."threadId"
+            SELECT DISTINCT e."threadId", e."companyId"
             FROM emails e
             LEFT JOIN thread_summaries ts ON e."threadId" = ts."threadId"
             WHERE e."threadId" IS NOT NULL
             AND (ts."status" IS NULL OR ts."status" = 'failed' OR ts."lastSummarizedAt" < NOW() - INTERVAL '7 days')
             LIMIT ${limit}
-        `) as { threadId: string }[];
+        `) as { threadId: string; companyId: number }[];
 
         if (threadsNeedingSummary.length === 0) {
             return { submitted: 0, jobIds: [] };
@@ -129,7 +138,7 @@ export class RunPodAsyncService {
 
         for (const thread of threadsNeedingSummary) {
             try {
-                const { jobId } = await this.submitForSummarization(thread.threadId);
+                const { jobId } = await this.submitForSummarization(thread.threadId, thread.companyId);
                 jobIds.push(jobId);
                 submitted++;
             } catch (error) {
@@ -163,7 +172,7 @@ export class RunPodAsyncService {
                     await this.saveCompletedSummary(job.threadId, job.runpodJobId!, result);
                     completed++;
                 } else if (status.status === 'FAILED' || status.status === 'CANCELLED') {
-                    await this.updateJobStatus(job.threadId, job.runpodJobId!, status.status, status.error);
+                    await this.updateJobStatus(job.threadId, job.companyId, job.runpodJobId!, status.status, status.error);
                     failed++;
                 } else {
                     pending++;
@@ -179,9 +188,9 @@ export class RunPodAsyncService {
     /**
      * Get thread summary from DB
      */
-    async getThreadSummary(threadId: string): Promise<any | null> {
-        const row = await prisma.threadSummary.findUnique({
-            where: { threadId }
+    async getThreadSummary(threadId: string, companyId: number): Promise<any | null> {
+        const row = await prisma.threadSummary.findFirst({
+            where: { threadId, companyId }
         });
         if (!row) return null;
 
@@ -217,7 +226,7 @@ export class RunPodAsyncService {
         }));
     }
 
-    private async updateJobStatus(threadId: string, jobId: string, status: string, error?: string): Promise<void> {
+    private async updateJobStatus(threadId: string, companyId: number, jobId: string, status: string, error?: string): Promise<void> {
         await prisma.threadSummary.upsert({
             where: { threadId },
             update: {
@@ -229,6 +238,7 @@ export class RunPodAsyncService {
             },
             create: {
                 threadId,
+                companyId,
                 runpodJobId: jobId,
                 status: status,
                 summary: error || '',

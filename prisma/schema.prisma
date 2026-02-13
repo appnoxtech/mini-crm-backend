@@ -7,8 +7,172 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Company {
+  // PRIMARY KEY
+  id Int @id @default(autoincrement())
+
+  // ══════════════════════════════════════════════
+  // CORE IDENTITY
+  // ══════════════════════════════════════════════
+  name               String
+  companyDomain      String? @unique
+  companyLogo        String?
+  companyDescription String?
+
+  // ══════════════════════════════════════════════
+  // BUSINESS INFORMATION
+  // ══════════════════════════════════════════════
+  industry           String?
+  companySize        String?
+  companyLocation    String?
+  companyWebsite     String?
+  companySocialLinks Json?
+
+  // ══════════════════════════════════════════════
+  // TENANT & SAAS CONTROL
+  // ══════════════════════════════════════════════
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+
+  // ══════════════════════════════════════════════
+  // OWNERSHIP & AUDIT
+  // ══════════════════════════════════════════════
+  ownerUserId     Int?
+  createdByUserId Int?
+
+  // ══════════════════════════════════════════════
+  // BILLING & SUBSCRIPTION
+  // ══════════════════════════════════════════════
+  pricingTierId Int?
+  billingStatus String    @default("TRIAL") // TRIAL | ACTIVE | PAST_DUE | SUSPENDED
+  trialEndsAt   DateTime?
+
+  // ══════════════════════════════════════════════
+  // SYSTEM SETTINGS
+  // ══════════════════════════════════════════════
+  settings Json?
+  timezone String @default("UTC")
+  locale   String @default("en")
+
+  // ══════════════════════════════════════════════
+  // TIMESTAMPS
+  // ══════════════════════════════════════════════
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // ══════════════════════════════════════════════
+  // RELATIONS - OWNERSHIP
+  // ══════════════════════════════════════════════
+  owner     User? @relation("CompanyOwner", fields: [ownerUserId], references: [id])
+  createdBy User? @relation("CompanyCreator", fields: [createdByUserId], references: [id])
+
+  // ══════════════════════════════════════════════
+  // RELATIONS - USERS & IDENTITY
+  // ══════════════════════════════════════════════
+  users User[]
+
+  // ══════════════════════════════════════════════
+  // RELATIONS - CRM CORE
+  // ══════════════════════════════════════════════
+  pipelines      Pipeline[]
+  pipelineStages PipelineStage[]
+  leads          Lead[]
+  deals          Deal[]
+  dealActivities DealActivity[]
+  dealHistories  DealHistory[]
+  leadHistories  LeadHistory[]
+
+  // ══════════════════════════════════════════════
+  // RELATIONS - CONTACTS & ORGANIZATIONS
+  // ══════════════════════════════════════════════
+  organizations Organization[]
+  persons       Person[]
+
+  // ══════════════════════════════════════════════
+  // RELATIONS - PRODUCTS & LABELS
+  // ══════════════════════════════════════════════
+  products Product[]
+  labels   Label[]
+
+  // ══════════════════════════════════════════════
+  // RELATIONS - EMAIL & COMMUNICATION
+  // ══════════════════════════════════════════════
+  emailAccounts    EmailAccount[]
+  emails           Email[]
+  emailDrafts      EmailDraft[]
+  emailSuggestions EmailSuggestion[]
+  threadSummaries  ThreadSummary[]
+  emailTrackingEvents EmailTrackingEvent[]
+  emailContents       EmailContent[]
+  emailSyncStates     EmailSyncState[]
+
+  // ══════════════════════════════════════════════
+  // RELATIONS - CALLS
+  // ══════════════════════════════════════════════
+  calls            Call[]
+  callParticipants CallParticipant[]
+  callRecordings   CallRecording[]
+  callEvents       CallEvent[]
+
+  // ══════════════════════════════════════════════
+  // RELATIONS - CALENDAR & EVENTS
+  // ══════════════════════════════════════════════
+  calendarEvents     CalendarEvent[]
+  eventReminders     EventReminder[]
+  eventShares        EventShare[]
+  eventNotifications EventNotification[]
+
+  // ══════════════════════════════════════════════
+  // RELATIONS - IMPORTS
+  // ══════════════════════════════════════════════
+  imports         Import[]
+  importTemplates ImportTemplate[]
+  importStagings  ImportStaging[]
+  importRecords   ImportRecord[]
+  importErrors    ImportError[]
+
+  // ══════════════════════════════════════════════
+  // RELATIONS - ACTIVITIES & KNOWLEDGE
+  // ══════════════════════════════════════════════
+  activities               Activity[]
+  knowledgeBases           KnowledgeBase[]
+  structuredKnowledgeBases StructuredKnowledgeBase[]
+  clientProfiles           ClientProfile[]
+  structuredKBVersions     StructuredKBVersion[]
+
+  // RELATIONS - INVITATIONS & AUDIT
+  invitations     UserInvitation[]
+  auditLogs       AuditLog[]
+
+  // ══════════════════════════════════════════════
+  // INDEXES
+  // ══════════════════════════════════════════════
+  @@index([ownerUserId])
+  @@index([createdByUserId])
+  @@index([isActive])
+  @@index([billingStatus])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@index([trialEndsAt])
+  @@index([name])
+  @@index([industry])
+  // Composite indexes for common query patterns
+  @@index([isActive, billingStatus])
+  @@index([isActive, deletedAt])
+  @@index([ownerUserId, isActive])
+  @@index([billingStatus, trialEndsAt])
+  @@map("companies")
+}
+
 model User {
-  id                Int             @id @default(autoincrement())
+  id Int @id @default(autoincrement())
+
+  // ── Core Identity ─────────────────────────────
+  companyId         Int
+  // 🔗 Relation
+  company           Company?        @relation(fields: [companyId], references: [id])
+  ownedCompanies    Company[]       @relation("CompanyOwner")
+  createdCompanies  Company[]       @relation("CompanyCreator")
   email             String          @unique
   name              String
   passwordHash      String
@@ -35,12 +199,15 @@ model User {
   labels            Label[]
   leads             Lead[]
   pipelines         Pipeline[]
+  sentInvitations   UserInvitation[] @relation("InvitedBy")
+  auditLogs         AuditLog[]
 
   @@map("users")
 }
 
 model Otp {
-  id        Int      @id @default(autoincrement())
+  id Int @id @default(autoincrement())
+
   email     String
   otp       String
   expiresAt DateTime
@@ -52,6 +219,7 @@ model Otp {
 model EmailAccount {
   id            String       @id @default(uuid())
   userId        Int
+  companyId     Int
   email         String
   provider      String
   accessToken   String?
@@ -66,6 +234,7 @@ model EmailAccount {
   user          User         @relation(fields: [userId], references: [id])
   drafts        EmailDraft[]
   emails        Email[]
+  company       Company      @relation(fields: [companyId], references: [id])
 
   @@map("email_accounts")
 }
@@ -75,6 +244,7 @@ model Email {
   messageId        String
   threadId         String?
   accountId        String
+  companyId        Int
   from             String               @map("from_address")
   to               Json                 @map("to_addresses")
   cc               Json?                @map("cc_addresses")
@@ -103,41 +273,50 @@ model Email {
   opens            Int                  @default(0)
   trackingEvents   EmailTrackingEvent[]
   account          EmailAccount         @relation(fields: [accountId], references: [id])
-  content          EmailContent         @relation(fields: [messageId], references: [messageId])
+  company          Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  content          EmailContent         @relation(fields: [messageId, companyId], references: [messageId, companyId])
 
   @@unique([messageId, accountId])
   @@index([accountId, sentAt(sort: Desc)])
+  @@index([companyId])
   @@map("emails")
 }
 
 model EmailTrackingEvent {
   id        String   @id @default(uuid())
   emailId   String
+  companyId Int
   type      String
   ipAddress String?
   userAgent String?
   metadata  Json?
   createdAt DateTime @default(now())
   email     Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([emailId])
+  @@index([companyId])
   @@map("email_tracking_events")
 }
 
 model EmailContent {
-  messageId   String   @id
+  messageId   String
+  companyId   Int
   body        String
   htmlBody    String?
   attachments Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   emails      Email[]
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@id([messageId, companyId])
   @@map("email_contents")
 }
 
 model ThreadSummary {
   threadId         String    @id @map("thread_id")
+  companyId        Int
   summary          String
   keyPoints        Json?     @map("key_points")
   actionItems      Json?     @map("action_items")
@@ -150,7 +329,9 @@ model ThreadSummary {
   submittedAt      DateTime? @map("submitted_at")
   completedAt      DateTime? @map("completed_at")
   lastSummarizedAt DateTime  @map("last_summarized_at")
+  company          Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@index([companyId])
   @@map("thread_summaries")
 }
 
@@ -158,6 +339,7 @@ model EmailDraft {
   id                   String       @id @default(uuid())
   accountId            String
   userId               Int
+  companyId            Int
   toRecipients         Json         @map("to_recipients")
   ccRecipients         Json?        @map("cc_recipients")
   bccRecipients        Json?        @map("bcc_recipients")
@@ -180,9 +362,11 @@ model EmailDraft {
   from                 String?
   isTrashed            Boolean      @default(false) @map("is_trashed")
   account              EmailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  company              Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([accountId])
+  @@index([companyId])
   @@index([createdAt(sort: Desc)])
   @@index([isScheduled, scheduledFor])
   @@index([isTrashed])
@@ -191,35 +375,40 @@ model EmailDraft {
 }
 
 model Lead {
-  id        Int           @id @default(autoincrement())
-  name      String
-  company   String?
-  value     Float?
-  stage     String        @default("OPEN")
-  notes     String?
-  userId    Int
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-  closedAt  DateTime?
-  history   LeadHistory[]
-  user      User          @relation(fields: [userId], references: [id])
+  id              Int           @id @default(autoincrement())
+  companyId       Int
+  name            String
+  company         String?
+  value           Float?
+  stage           String        @default("OPEN")
+  notes           String?
+  userId          Int
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  closedAt        DateTime?
+  history         LeadHistory[]
+  user            User          @relation(fields: [userId], references: [id])
+  companyRelation Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@map("leads")
 }
 
 model LeadHistory {
-  id     Int      @id @default(autoincrement())
-  leadId Int
-  type   String
-  text   String
-  at     DateTime @default(now())
-  lead   Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  id        Int      @id @default(autoincrement())
+  leadId    Int
+  companyId Int
+  type      String
+  text      String
+  at        DateTime @default(now())
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@map("lead_history")
 }
 
 model Pipeline {
   id          Int             @id @default(autoincrement())
+  companyId   Int
   name        String
   description String?
   userId      Int
@@ -233,13 +422,16 @@ model Pipeline {
   deals       Deal[]
   labels      Label[]
   stages      PipelineStage[]
-  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  company Company @relation(fields: [companyId], references: [id])
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("pipelines")
 }
 
 model PipelineStage {
   id          Int           @id @default(autoincrement())
+  companyId   Int
   pipelineId  Int
   name        String
   orderIndex  Int
@@ -251,6 +443,7 @@ model PipelineStage {
   historyTo   DealHistory[] @relation("HistoryToStage")
   deals       Deal[]
   pipeline    Pipeline      @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  company     Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([pipelineId, orderIndex])
   @@map("pipeline_stages")
@@ -259,6 +452,7 @@ model PipelineStage {
 model Deal {
   id                Int            @id @default(autoincrement())
   title             String
+  companyId         Int
   value             Float?         @default(0)
   currency          String?        @default("USD")
   pipelineId        Int
@@ -289,21 +483,25 @@ model Deal {
   calls             Call[]
   activities        DealActivity[]
   history           DealHistory[]
-  assignedUser      User?          @relation("DealAssigned", fields: [assignedTo], references: [id])
-  organization      Organization?  @relation(fields: [organizationId], references: [id])
-  person            Person?        @relation(fields: [personId], references: [id])
-  pipeline          Pipeline       @relation(fields: [pipelineId], references: [id])
-  stage             PipelineStage  @relation(fields: [stageId], references: [id])
-  user              User           @relation("DealOwner", fields: [userId], references: [id], onDelete: Cascade)
-  products          Product[]
+
+  // ── Relations ───────────────────────────────
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assignedUser User?         @relation("DealAssigned", fields: [assignedTo], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  person       Person?       @relation(fields: [personId], references: [id])
+  pipeline     Pipeline      @relation(fields: [pipelineId], references: [id])
+  stage        PipelineStage @relation(fields: [stageId], references: [id])
+  user         User          @relation("DealOwner", fields: [userId], references: [id], onDelete: Cascade)
+  products     Product[]
 
   @@map("deals")
 }
 
 model DealHistory {
-  id            Int            @id @default(autoincrement())
+  id            Int       @id @default(autoincrement())
   dealId        Int
   userId        Int
+  companyId     Int
   eventType     String
   fromValue     String?
   toValue       String?
@@ -312,12 +510,15 @@ model DealHistory {
   stageDuration Float?
   description   String?
   metadata      String?
-  createdAt     DateTime       @default(now())
+  createdAt     DateTime  @default(now())
   leftAt        DateTime?
-  deal          Deal           @relation(fields: [dealId], references: [id], onDelete: Cascade)
-  fromStage     PipelineStage? @relation("HistoryFromStage", fields: [fromStageId], references: [id])
-  toStage       PipelineStage? @relation("HistoryToStage", fields: [toStageId], references: [id])
-  user          User           @relation(fields: [userId], references: [id])
+
+  // ── Relations ───────────────────────────────
+  deal      Deal           @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  fromStage PipelineStage? @relation("HistoryFromStage", fields: [fromStageId], references: [id])
+  toStage   PipelineStage? @relation("HistoryToStage", fields: [toStageId], references: [id])
+  user      User           @relation(fields: [userId], references: [id])
+  company   Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@map("deal_history")
 }
@@ -326,6 +527,7 @@ model Product {
   id          Int       @id @default(autoincrement())
   dealId      Int
   userId      Int
+  companyId   Int
   title       String
   price       Float
   quantity    Float
@@ -337,6 +539,7 @@ model Product {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deal        Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@map("products")
 }
@@ -345,6 +548,7 @@ model Label {
   id             Int           @id @default(autoincrement())
   value          String
   color          String?
+  companyId      Int
   orderIndex     Int
   pipelineId     Int?
   userId         Int?
@@ -356,6 +560,7 @@ model Label {
   person         Person?       @relation(fields: [personId], references: [id])
   pipeline       Pipeline?     @relation(fields: [pipelineId], references: [id])
   user           User?         @relation(fields: [userId], references: [id])
+  company        Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@map("labels")
 }
@@ -364,6 +569,7 @@ model DealActivity {
   id           Int       @id @default(autoincrement())
   dealId       Int
   userId       Int
+  companyId    Int
   activityType String
   subject      String?
   label        String?
@@ -387,12 +593,14 @@ model DealActivity {
   updatedAt    DateTime  @updatedAt
   dealRelation Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company      Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@map("deal_activities")
 }
 
 model Organization {
   id                Int       @id @default(autoincrement())
+  companyId         Int
   name              String
   description       String?
   industry          String?
@@ -411,12 +619,14 @@ model Organization {
   deals             Deal[]
   labels            Label[]
   persons           Person[]
+  company           Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@map("organisations")
 }
 
 model Person {
   id             Int           @id @default(autoincrement())
+  companyId      Int
   firstName      String
   lastName       String?
   organizationId Int?
@@ -432,6 +642,7 @@ model Person {
   userEmails     PersonEmail[]
   userPhones     PersonPhone[]
   organization   Organization? @relation(fields: [organizationId], references: [id])
+  company        Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@map("persons")
 }
@@ -456,6 +667,7 @@ model PersonPhone {
 
 model Call {
   id               Int               @id @default(autoincrement())
+  companyId        Int
   twilioCallSid    String?           @unique
   twilioAccountSid String?
   direction        String            @default("outbound")
@@ -486,6 +698,7 @@ model Call {
   contact          Person?           @relation(fields: [contactId], references: [id])
   deal             Deal?             @relation(fields: [dealId], references: [id])
   user             User              @relation(fields: [userId], references: [id])
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@map("calls")
 }
@@ -493,6 +706,7 @@ model Call {
 model CallParticipant {
   id             Int       @id @default(autoincrement())
   callId         Int
+  companyId      Int
   participantSid String?
   phoneNumber    String
   name           String?
@@ -504,13 +718,16 @@ model CallParticipant {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   call           Call      @relation(fields: [callId], references: [id], onDelete: Cascade)
+  company        Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@index([companyId])
   @@map("call_participants")
 }
 
 model CallRecording {
   id                  Int      @id @default(autoincrement())
   callId              Int
+  companyId           Int
   recordingSid        String?  @unique
   recordingUrl        String?
   localFilePath       String?
@@ -525,24 +742,29 @@ model CallRecording {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
   call                Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
+  company             Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@index([companyId])
   @@map("call_recordings")
 }
 
 model EmailSyncState {
   id            String   @id @default(uuid())
   accountId     String
+  companyId     Int
   folder        String
   lastSyncedUid Int      @default(0)
   updatedAt     DateTime @updatedAt
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  @@unique([accountId, folder])
+  @@unique([accountId, folder, companyId])
   @@map("email_sync_state")
 }
 
 model CallEvent {
   id          Int      @id @default(autoincrement())
   callId      Int
+  companyId   Int
   eventType   String
   eventData   String?
   triggeredBy Int?
@@ -550,13 +772,16 @@ model CallEvent {
   updatedAt   DateTime @updatedAt
   call        Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
   user        User?    @relation(fields: [triggeredBy], references: [id])
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@index([companyId])
   @@map("call_events")
 }
 
 model Import {
   id                Int             @id @default(autoincrement())
   userId            Int
+  companyId         Int
   entityType        String
   fileName          String
   fileFormat        String
@@ -577,13 +802,16 @@ model Import {
   records           ImportRecord[]
   staging           ImportStaging[]
   user              User            @relation(fields: [userId], references: [id])
+  company           Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@index([companyId])
   @@map("imports")
 }
 
 model ImportError {
   id         Int      @id @default(autoincrement())
   importId   Int
+  companyId  Int
   rowNumber  Int
   columnName String?
   value      String?
@@ -591,46 +819,58 @@ model ImportError {
   message    String
   createdAt  DateTime @default(now())
   import     Import   @relation(fields: [importId], references: [id], onDelete: Cascade)
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@index([companyId])
   @@map("import_errors")
 }
 
 model ImportRecord {
   id        Int      @id @default(autoincrement())
   importId  Int
+  companyId Int
   entityId  Int
   action    String
   createdAt DateTime @default(now())
   import    Import   @relation(fields: [importId], references: [id], onDelete: Cascade)
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@index([companyId])
   @@map("import_records")
 }
 
 model ImportTemplate {
   id         Int      @id @default(autoincrement())
   userId     Int
+  companyId  Int
   name       String
   entityType String
   mapping    Json
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@index([companyId])
   @@map("import_templates")
 }
 
 model ImportStaging {
   id        Int      @id @default(autoincrement())
   importId  Int
+  companyId Int
   data      Json
   rowNumber Int
   createdAt DateTime @default(now())
   import    Import   @relation(fields: [importId], references: [id], onDelete: Cascade)
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@index([companyId])
   @@map("import_staging")
 }
 
 model CalendarEvent {
   id            Int                 @id @default(autoincrement())
+  companyId     Int
   userId        Int
   title         String
   description   String?
@@ -642,6 +882,7 @@ model CalendarEvent {
   updatedAt     DateTime            @updatedAt
   deletedAt     DateTime?
   user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company       Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   notifications EventNotification[]
   reminders     EventReminder[]
   shares        EventShare[]
@@ -652,30 +893,37 @@ model CalendarEvent {
 model EventReminder {
   id                    Int                 @id @default(autoincrement())
   eventId               Int
+  companyId             Int
   reminderMinutesBefore Int
   isDefault             Boolean             @default(false)
   createdAt             DateTime            @default(now())
   notifications         EventNotification[]
   event                 CalendarEvent       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  company               Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@index([companyId])
   @@map("event_reminders")
 }
 
 model EventShare {
   id               Int           @id @default(autoincrement())
   eventId          Int
+  companyId        Int
   sharedWithUserId Int
   participantType  String        @default("user")
   createdAt        DateTime      @default(now())
   event            CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  company          Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([eventId, sharedWithUserId, participantType])
+  @@index([companyId])
   @@map("event_shares")
 }
 
 model EventNotification {
   id            Int           @id @default(autoincrement())
   eventId       Int
+  companyId     Int
   reminderId    Int
   userId        Int
   userType      String        @default("user")
@@ -688,8 +936,10 @@ model EventNotification {
   updatedAt     DateTime      @updatedAt
   event         CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
   reminder      EventReminder @relation(fields: [reminderId], references: [id], onDelete: Cascade)
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([eventId, reminderId, userId, userType])
+  @@index([companyId])
   @@map("event_notifications")
 }
 
@@ -736,17 +986,21 @@ model BrandGuidelines {
 
 model KnowledgeBase {
   id        Int      @id @default(autoincrement())
+  companyId Int
   category  String
   topic     String
   content   String
   keywords  Json?
   updatedAt DateTime @default(now()) @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@index([companyId])
   @@map("knowledge_base")
 }
 
 model ClientProfile {
   id                String   @id @default(uuid())
+  companyId         Int
   dealId            Int?
   personId          Int?
   organizationId    Int?
@@ -761,12 +1015,15 @@ model ClientProfile {
   maturityScore     Float?
   lastUpdated       DateTime @default(now()) @updatedAt
   createdAt         DateTime @default(now())
+  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@index([companyId])
   @@map("client_profiles")
 }
 
 model EmailSuggestion {
   id              String    @id @default(uuid())
+  companyId       Int
   dealId          Int?
   personId        Int?
   subjectLine     String
@@ -781,12 +1038,15 @@ model EmailSuggestion {
   userEdits       String?
   sentAt          DateTime?
   createdAt       DateTime  @default(now())
+  company         Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@index([companyId])
   @@map("email_suggestions")
 }
 
 model Activity {
   id              String   @id @default(uuid())
+  companyId       Int
   title           String
   description     String?
   type            String   @default("meeting")
@@ -802,12 +1062,14 @@ model Activity {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   user            User     @relation(fields: [createdBy], references: [id])
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@map("activities")
 }
 
 model StructuredKnowledgeBase {
-  id                           String   @id @default("default")
+  id                           Int      @id @default(autoincrement())
+  companyId                    Int      @unique
   category_1_company_profile   Json?
   category_2_products_services Json?
   category_3_sales_process     Json?
@@ -820,19 +1082,65 @@ model StructuredKnowledgeBase {
   version                      Int      @default(1)
   completion_percent           Float    @default(0)
   updated_at                   DateTime @default(now()) @updatedAt
+  company                      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@map("structured_knowledge_base")
 }
 
 model StructuredKBVersion {
   id              String   @id @default(uuid())
-  kbId            String   @map("kb_id")
+  companyId       Int
+  kbId            Int      @map("kb_id")
   version         Int
   fullKBSnapshot  Json     @map("full_kb_snapshot")
   changedSections Json     @map("changed_sections")
   changedBy       String?  @map("changed_by")
   changeTimestamp DateTime @default(now()) @map("change_timestamp")
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([kbId, version])
+  @@index([companyId])
   @@map("structured_kb_versions")
+}
+
+model UserInvitation {
+  id        String   @id @default(uuid())
+  email     String
+  token     String   @unique
+  companyId Int
+  role      String   @default("user")
+  invitedBy Int
+  expiresAt DateTime
+  status    String   @default("PENDING") // PENDING | ACCEPTED | EXPIRED | REVOKED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  inviter User    @relation("InvitedBy", fields: [invitedBy], references: [id])
+
+  @@unique([email, companyId, status])
+  @@index([token])
+  @@index([companyId])
+  @@map("user_invitations")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  companyId  Int
+  userId     Int?
+  action     String   // e.g., "USER_INVITED", "INVITATION_ACCEPTED"
+  entityType String   // e.g., "UserInvitation"
+  entityId   String?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id])
+
+  @@index([companyId])
+  @@index([userId])
+  @@index([action])
+  @@map("audit_logs")
 }

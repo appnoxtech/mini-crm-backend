@@ -199,7 +199,7 @@ export class IMAPIdleService {
         try {
             // Queue the sync job instead of processing immediately (non-blocking)
             if (this.emailQueueService) {
-                this.emailQueueService.queueEmailSync(account.id, account.userId, 'high');
+                this.emailQueueService.queueEmailSync(account.id, account.userId, account.companyId, 'high');
             } else if (this.emailService) {
                 // Fallback for immediate processing if queue service is missing (should not happen)
                 console.warn(`[IMAP IDLE] Queue service missing for ${account.email}, falling back to immediate sync`);

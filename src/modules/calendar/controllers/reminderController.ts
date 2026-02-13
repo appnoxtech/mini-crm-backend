@@ -17,7 +17,7 @@ export class ReminderController {
                 return ResponseHandler.badRequest(res, 'Invalid event ID');
             }
 
-            const reminders = this.reminderService.getReminders(eventId);
+            const reminders = await this.reminderService.getReminders(eventId, req.user.companyId);
             return ResponseHandler.success(res, { reminders }, 'Reminders fetched successfully');
         } catch (error: any) {
             console.error('Error fetching reminders:', error);
@@ -38,7 +38,7 @@ export class ReminderController {
                 return ResponseHandler.badRequest(res, 'Event ID and minutesBefore are required');
             }
 
-            const reminder = await this.reminderService.addReminder(eventId, req.user.id, Number(minutesBefore));
+            const reminder = await this.reminderService.addReminder(eventId, req.user.id, req.user.companyId, Number(minutesBefore));
             if (!reminder) {
                 return ResponseHandler.notFound(res, 'Event not found or not authorized');
             }
@@ -63,7 +63,7 @@ export class ReminderController {
                 return ResponseHandler.badRequest(res, 'Reminder ID and minutesBefore are required');
             }
 
-            const reminder = await this.reminderService.updateReminder(reminderId, req.user.id, Number(minutesBefore));
+            const reminder = await this.reminderService.updateReminder(reminderId, req.user.id, req.user.companyId, Number(minutesBefore));
             if (!reminder) {
                 return ResponseHandler.notFound(res, 'Reminder not found or not authorized');
             }
@@ -86,7 +86,7 @@ export class ReminderController {
                 return ResponseHandler.badRequest(res, 'Invalid reminder ID');
             }
 
-            const deleted = await this.reminderService.deleteReminder(reminderId, req.user.id);
+            const deleted = await this.reminderService.deleteReminder(reminderId, req.user.id, req.user.companyId);
             if (!deleted) {
                 return ResponseHandler.notFound(res, 'Reminder not found or not authorized');
             }

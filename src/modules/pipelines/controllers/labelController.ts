@@ -12,7 +12,7 @@ export class LabelController {
                 return ResponseHandler.unauthorized(res, 'User not authenticated');
             }
 
-            const label = await this.labelService.createlabel(req.user.id, req.body);
+            const label = await this.labelService.createlabel(req.user.id, req.user.companyId, req.body);
             return ResponseHandler.created(res, label, 'label created successfully');
         } catch (error: any) {
             console.error('Error creating label:', error);
@@ -33,7 +33,7 @@ export class LabelController {
                 limit: req.query.limit ? Number(req.query.limit) : 20
             };
 
-            const result = await this.labelService.getlabels(req.user.id, filters);
+            const result = await this.labelService.getlabels(req.user.id, req.user.companyId, filters);
             return ResponseHandler.success(res, result, 'labels fetched successfully');
         } catch (error: any) {
             console.error('Error fetching labels:', error);
@@ -49,7 +49,7 @@ export class LabelController {
             }
 
             const pipelineId = Number(req.params.pipelineId);
-            const label = await this.labelService.getlabelByPipelineId(pipelineId, req.user.id);
+            const label = await this.labelService.getlabelByPipelineId(pipelineId, req.user.companyId, req.user.id);
 
             if (!label) {
                 return ResponseHandler.notFound(res, 'label not found');
@@ -69,7 +69,7 @@ export class LabelController {
             }
 
             const organizationId = Number(req.params.organizationId);
-            const label = await this.labelService.getlabelByOrganizationId(organizationId, req.user.id);
+            const label = await this.labelService.getlabelByOrganizationId(organizationId, req.user.companyId, req.user.id);
 
             if (!label) {
                 return ResponseHandler.notFound(res, 'label not found');
@@ -89,7 +89,7 @@ export class LabelController {
             }
 
             const personId = Number(req.params.personId);
-            const label = await this.labelService.getlabelByPersonId(personId, req.user.id);
+            const label = await this.labelService.getlabelByPersonId(personId, req.user.companyId, req.user.id);
 
             if (!label) {
                 return ResponseHandler.notFound(res, 'label not found');
@@ -114,7 +114,7 @@ export class LabelController {
 
 
             for (let i = 0; i < data.length; i++) {
-                const label = await this.labelService.updatelabel(data[i].id, data[i]);
+                const label = await this.labelService.updatelabel(data[i].id, req.user.companyId, data[i]);
                 level.push(label);
             }
 
@@ -136,7 +136,7 @@ export class LabelController {
             }
 
             const levelId = Number(req.params.levelId);
-            const success = await this.labelService.deletelabel(levelId);
+            const success = await this.labelService.deletelabel(levelId, req.user.companyId);
 
             if (!success) {
                 return ResponseHandler.notFound(res, 'label not found');

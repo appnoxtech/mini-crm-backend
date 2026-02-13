@@ -8,7 +8,7 @@ export class CalendarController {
 
     async createEvent(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
-            if (!req.user) {
+            if (!req.user || !req.user.companyId) {
                 return ResponseHandler.unauthorized(res, 'User not authenticated');
             }
 
@@ -18,7 +18,7 @@ export class CalendarController {
                 return ResponseHandler.badRequest(res, 'Title, startTime, and endTime are required');
             }
 
-            const result = await this.calendarService.createEvent(req.user.id, {
+            const result = await this.calendarService.createEvent(req.user.id, req.user.companyId, {
                 title,
                 description,
                 startTime,
@@ -38,13 +38,13 @@ export class CalendarController {
 
     async getEvents(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
-            if (!req.user) {
+            if (!req.user || !req.user.companyId) {
                 return ResponseHandler.unauthorized(res, 'User not authenticated');
             }
 
             const { startDate, endDate, page, limit } = req.query;
 
-            const result = await this.calendarService.getEvents(req.user.id, {
+            const result = await this.calendarService.getEvents(req.user.id, req.user.companyId, {
                 startDate: startDate as string,
                 endDate: endDate as string,
                 page: page ? Number(page) : undefined,
@@ -60,7 +60,7 @@ export class CalendarController {
 
     async getEventById(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
-            if (!req.user) {
+            if (!req.user || !req.user.companyId) {
                 return ResponseHandler.unauthorized(res, 'User not authenticated');
             }
 
@@ -69,7 +69,7 @@ export class CalendarController {
                 return ResponseHandler.badRequest(res, 'Invalid event ID');
             }
 
-            const result = await this.calendarService.getEventById(eventId, req.user.id);
+            const result = await this.calendarService.getEventById(eventId, req.user.id, req.user.companyId);
             if (!result) {
                 return ResponseHandler.notFound(res, 'Event not found');
             }
@@ -83,7 +83,7 @@ export class CalendarController {
 
     async updateEvent(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
-            if (!req.user) {
+            if (!req.user || !req.user.companyId) {
                 return ResponseHandler.unauthorized(res, 'User not authenticated');
             }
 
@@ -94,7 +94,7 @@ export class CalendarController {
 
             const { title, description, startTime, endTime, location, isAllDay, sharedWith } = req.body;
 
-            const result = await this.calendarService.updateEvent(eventId, req.user.id, {
+            const result = await this.calendarService.updateEvent(eventId, req.user.id, req.user.companyId, {
                 title,
                 description,
                 startTime,
@@ -117,7 +117,7 @@ export class CalendarController {
 
     async deleteEvent(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
-            if (!req.user) {
+            if (!req.user || !req.user.companyId) {
                 return ResponseHandler.unauthorized(res, 'User not authenticated');
             }
 
@@ -126,7 +126,7 @@ export class CalendarController {
                 return ResponseHandler.badRequest(res, 'Invalid event ID');
             }
 
-            const deleted = await this.calendarService.deleteEvent(eventId, req.user.id);
+            const deleted = await this.calendarService.deleteEvent(eventId, req.user.id, req.user.companyId);
             if (!deleted) {
                 return ResponseHandler.notFound(res, 'Event not found or not authorized');
             }
@@ -140,7 +140,7 @@ export class CalendarController {
 
     async shareEvent(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
-            if (!req.user) {
+            if (!req.user || !req.user.companyId) {
                 return ResponseHandler.unauthorized(res, 'User not authenticated');
             }
 
@@ -151,7 +151,7 @@ export class CalendarController {
                 return ResponseHandler.badRequest(res, 'Event ID and userId are required');
             }
 
-            const share = await this.calendarService.shareEvent(eventId, req.user.id, Number(userId));
+            const share = await this.calendarService.shareEvent(eventId, req.user.id, req.user.companyId, Number(userId));
             if (!share) {
                 return ResponseHandler.notFound(res, 'Event not found or not authorized');
             }
@@ -165,7 +165,7 @@ export class CalendarController {
 
     async unshareEvent(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
-            if (!req.user) {
+            if (!req.user || !req.user.companyId) {
                 return ResponseHandler.unauthorized(res, 'User not authenticated');
             }
 
@@ -176,7 +176,7 @@ export class CalendarController {
                 return ResponseHandler.badRequest(res, 'Valid event ID and user ID are required');
             }
 
-            const unshared = await this.calendarService.unshareEvent(eventId, req.user.id, userId);
+            const unshared = await this.calendarService.unshareEvent(eventId, req.user.id, req.user.companyId, userId);
             if (!unshared) {
                 return ResponseHandler.notFound(res, 'Event not found or not shared with this user');
             }
@@ -190,7 +190,7 @@ export class CalendarController {
 
     async getSharedUsers(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
-            if (!req.user) {
+            if (!req.user || !req.user.companyId) {
                 return ResponseHandler.unauthorized(res, 'User not authenticated');
             }
 
@@ -199,7 +199,7 @@ export class CalendarController {
                 return ResponseHandler.badRequest(res, 'Invalid event ID');
             }
 
-            const sharedWith = await this.calendarService.getSharedUsers(eventId, req.user.id);
+            const sharedWith = await this.calendarService.getSharedUsers(eventId, req.user.id, req.user.companyId);
             if (sharedWith === null) {
                 return ResponseHandler.notFound(res, 'Event not found');
             }

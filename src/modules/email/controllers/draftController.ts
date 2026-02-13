@@ -16,10 +16,11 @@ export class DraftController {
     createDraft = async (req: Request, res: Response): Promise<void> => {
         try {
             const userId = (req as any).user.id;
+            const companyId = (req as any).user.companyId;
             console.log('DraftController.createDraft - UserID:', userId, 'Body:', JSON.stringify(req.body, null, 2));
             const input: CreateDraftInput = req.body;
 
-            const draft = await this.draftService.createDraft(userId, input);
+            const draft = await this.draftService.createDraft(userId, companyId, input);
 
             res.status(201).json({
                 success: true,
@@ -42,6 +43,7 @@ export class DraftController {
     getDraftById = async (req: Request, res: Response): Promise<void> => {
         try {
             const userId = (req as any).user.id;
+            const companyId = (req as any).user.companyId;
             const { draftId } = req.params;
 
             if (!draftId) {
@@ -52,7 +54,7 @@ export class DraftController {
                 return;
             }
 
-            const draft = await this.draftService.getDraftById(draftId, userId);
+            const draft = await this.draftService.getDraftById(draftId, userId, companyId);
 
             if (!draft) {
                 res.status(404).json({
@@ -82,6 +84,7 @@ export class DraftController {
     listDrafts = async (req: Request, res: Response): Promise<void> => {
         try {
             const userId = (req as any).user.id;
+            const companyId = (req as any).user.companyId;
 
             // Parse query parameters
             const options: ListDraftsOptions = {
@@ -92,7 +95,7 @@ export class DraftController {
                 scheduledOnly: req.query.scheduledOnly === 'true',
             };
 
-            const result = await this.draftService.listDrafts(userId, options);
+            const result = await this.draftService.listDrafts(userId, companyId, options);
 
             res.status(200).json({
                 success: true,
@@ -119,6 +122,7 @@ export class DraftController {
     updateDraft = async (req: Request, res: Response): Promise<void> => {
         try {
             const userId = (req as any).user.id;
+            const companyId = (req as any).user.companyId;
             const { draftId } = req.params;
             const updates: UpdateDraftInput = req.body;
 
@@ -130,7 +134,7 @@ export class DraftController {
                 return;
             }
 
-            const draft = await this.draftService.updateDraft(draftId, userId, updates);
+            const draft = await this.draftService.updateDraft(draftId, userId, companyId, updates);
 
             if (!draft) {
                 res.status(404).json({
@@ -161,6 +165,7 @@ export class DraftController {
     deleteDraft = async (req: Request, res: Response): Promise<void> => {
         try {
             const userId = (req as any).user.id;
+            const companyId = (req as any).user.companyId;
             const { draftId } = req.params;
 
             if (!draftId) {
@@ -171,7 +176,7 @@ export class DraftController {
                 return;
             }
 
-            const deleted = await this.draftService.deleteDraft(draftId, userId);
+            const deleted = await this.draftService.deleteDraft(draftId, userId, companyId);
 
             if (!deleted) {
                 res.status(404).json({
@@ -201,6 +206,7 @@ export class DraftController {
     trashDraft = async (req: Request, res: Response): Promise<void> => {
         try {
             const userId = (req as any).user.id;
+            const companyId = (req as any).user.companyId;
             const { draftId } = req.params;
 
             if (!draftId) {
@@ -211,7 +217,7 @@ export class DraftController {
                 return;
             }
 
-            const draft = await this.draftService.trashDraft(draftId, userId);
+            const draft = await this.draftService.trashDraft(draftId, userId, companyId);
 
             if (!draft) {
                 res.status(404).json({
@@ -242,6 +248,7 @@ export class DraftController {
     trashDraftsBatch = async (req: Request, res: Response): Promise<void> => {
         try {
             const userId = (req as any).user.id;
+            const companyId = (req as any).user.companyId;
             const { draftIds } = req.body;
 
             if (!Array.isArray(draftIds) || draftIds.length === 0) {
@@ -252,7 +259,7 @@ export class DraftController {
                 return;
             }
 
-            const result = await this.draftService.trashDraftsBatch(draftIds, userId);
+            const result = await this.draftService.trashDraftsBatch(draftIds, userId, companyId);
 
             res.status(200).json({
                 success: true,
@@ -275,6 +282,7 @@ export class DraftController {
     restoreDraftFromTrash = async (req: Request, res: Response): Promise<void> => {
         try {
             const userId = (req as any).user.id;
+            const companyId = (req as any).user.companyId;
             const { draftId } = req.params;
 
             if (!draftId) {
@@ -285,7 +293,7 @@ export class DraftController {
                 return;
             }
 
-            const draft = await this.draftService.restoreDraftFromTrash(draftId, userId);
+            const draft = await this.draftService.restoreDraftFromTrash(draftId, userId, companyId);
 
             if (!draft) {
                 res.status(404).json({
@@ -316,10 +324,11 @@ export class DraftController {
     getTrashedDrafts = async (req: Request, res: Response): Promise<void> => {
         try {
             const userId = (req as any).user.id;
+            const companyId = (req as any).user.companyId;
             const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
             const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
 
-            const result = await this.draftService.getTrashedDrafts(userId, limit, offset);
+            const result = await this.draftService.getTrashedDrafts(userId, companyId, limit, offset);
 
             res.status(200).json({
                 success: true,
@@ -346,6 +355,7 @@ export class DraftController {
     deleteTrashedDraft = async (req: Request, res: Response): Promise<void> => {
         try {
             const userId = (req as any).user.id;
+            const companyId = (req as any).user.companyId;
             const { draftId } = req.params;
 
             if (!draftId) {
@@ -356,7 +366,7 @@ export class DraftController {
                 return;
             }
 
-            const deleted = await this.draftService.deleteTrashedDraft(draftId, userId);
+            const deleted = await this.draftService.deleteTrashedDraft(draftId, userId, companyId);
 
             if (!deleted) {
                 res.status(404).json({
@@ -386,8 +396,9 @@ export class DraftController {
     emptyTrash = async (req: Request, res: Response): Promise<void> => {
         try {
             const userId = (req as any).user.id;
+            const companyId = (req as any).user.companyId;
 
-            const result = await this.draftService.deleteAllTrashedDrafts(userId);
+            const result = await this.draftService.deleteAllTrashedDrafts(userId, companyId);
 
             res.status(200).json({
                 success: true,
@@ -410,6 +421,7 @@ export class DraftController {
     sendDraft = async (req: Request, res: Response): Promise<void> => {
         try {
             const userId = (req as any).user.id;
+            const companyId = (req as any).user.companyId;
             const { draftId } = req.params;
 
             if (!draftId) {
@@ -420,7 +432,7 @@ export class DraftController {
                 return;
             }
 
-            const result = await this.draftService.sendDraft(draftId, userId);
+            const result = await this.draftService.sendDraft(draftId, userId, companyId);
 
             if (!result.success) {
                 res.status(400).json({
@@ -451,6 +463,7 @@ export class DraftController {
     duplicateDraft = async (req: Request, res: Response): Promise<void> => {
         try {
             const userId = (req as any).user.id;
+            const companyId = (req as any).user.companyId;
             const { draftId } = req.params;
 
             if (!draftId) {
@@ -461,7 +474,7 @@ export class DraftController {
                 return;
             }
 
-            const draft = await this.draftService.duplicateDraft(draftId, userId);
+            const draft = await this.draftService.duplicateDraft(draftId, userId, companyId);
 
             if (!draft) {
                 res.status(404).json({

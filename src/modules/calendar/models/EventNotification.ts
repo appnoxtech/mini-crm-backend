@@ -6,6 +6,7 @@ export type NotificationStatus = 'pending' | 'sent' | 'failed' | 'cancelled';
 export interface EventNotification {
     id: number;
     eventId: number;
+    companyId: number;
     userId: number;
     reminderId: number;
     userType: string;
@@ -28,6 +29,7 @@ export class EventNotificationModel {
         return {
             id: n.id,
             eventId: n.eventId,
+            companyId: n.companyId,
             userId: n.userId,
             reminderId: n.reminderId,
             userType: n.userType,
@@ -43,6 +45,7 @@ export class EventNotificationModel {
 
     async create(data: {
         eventId: number;
+        companyId: number;
         userId: number;
         reminderId: number;
         scheduledAt: string;
@@ -51,6 +54,7 @@ export class EventNotificationModel {
         const n = await prisma.eventNotification.create({
             data: {
                 eventId: data.eventId,
+                companyId: data.companyId,
                 userId: data.userId,
                 reminderId: data.reminderId,
                 scheduledAt: new Date(data.scheduledAt),
@@ -62,28 +66,28 @@ export class EventNotificationModel {
         return this.mapPrismaToNotification(n);
     }
 
-    async findById(id: number): Promise<EventNotification | null> {
-        const n = await prisma.eventNotification.findUnique({
-            where: { id }
+    async findById(id: number, companyId: number): Promise<EventNotification | null> {
+        const n = await prisma.eventNotification.findFirst({
+            where: { id, companyId }
         });
         return n ? this.mapPrismaToNotification(n) : null;
     }
 
-    async findByEventId(eventId: number): Promise<EventNotification[]> {
+    async findByEventId(eventId: number, companyId: number): Promise<EventNotification[]> {
         const notifications = await prisma.eventNotification.findMany({
-            where: { eventId },
+            where: { eventId, companyId },
             orderBy: { scheduledAt: 'asc' }
         });
 
         return notifications.map((n: any) => this.mapPrismaToNotification(n));
     }
 
-    async findByUserId(userId: number, filters: {
+    async findByUserId(userId: number, companyId: number, filters: {
         status?: string;
         limit?: number;
         offset?: number;
     } = {}): Promise<{ notifications: EventNotification[]; total: number }> {
-        const where: any = { userId };
+        const where: any = { userId, companyId };
         if (filters.status) {
             where.status = filters.status;
         }
@@ -107,6 +111,7 @@ export class EventNotificationModel {
     async findAll(filters: {
         status?: string;
         userId?: number;
+        companyId?: number;
         limit?: number;
         offset?: number;
     } = {}): Promise<{ notifications: EventNotification[]; total: number }> {
@@ -116,6 +121,9 @@ export class EventNotificationModel {
         }
         if (filters.userId) {
             where.userId = filters.userId;
+        }
+        if (filters.companyId) {
+            where.companyId = filters.companyId;
         }
 
         const [notifications, total] = await Promise.all([
@@ -148,24 +156,24 @@ export class EventNotificationModel {
         return notifications.map((n: any) => this.mapPrismaToNotification(n));
     }
 
-    async updateStatus(id: number, status: string, failureReason?: string): Promise<boolean> {
+    async updateStatus(id: number, companyId: number, status: string, failureReason?: string): Promise<boolean> {
         const updateData: any = { status };
         if (failureReason) {
             updateData.failureReason = failureReason;
         }
 
         try {
-            await prisma.eventNotification.update({
-                where: { id },
+            const updated = await prisma.eventNotification.updateMany({
+                where: { id, companyId },
                 data: updateData
             });
-            return true;
+            return updated.count > 0;
         } catch (error) {
             return false;
         }
     }
 
-    async markSent(id: number, channel: 'inApp' | 'email'): Promise<boolean> {
+    async markSent(id: number, companyId: number, channel: 'inApp' | 'email'): Promise<boolean> {
         const updateData: any = {};
         if (channel === 'inApp') {
             updateData.inAppSentAt = new Date();
@@ -173,21 +181,22 @@ export class EventNotificationModel {
             updateData.emailSentAt = new Date();
         }
 
-        // If both are sent, or if it's just the one we care about, we might mark as completed
-        // For now, let's just update the timestamp. If all requested channels are sent, we can mark as 'sent'
-        // Actually, let's check if it's fully sent
         try {
-            const current = await prisma.eventNotification.findUnique({ where: { id } });
+            const current = await prisma.eventNotification.findFirst({
+                where: { id, companyId }
+            });
             if (current) {
                 const isEmailSent = channel === 'email' || !!current.emailSentAt;
                 const isInAppSent = channel === 'inApp' || !!current.inAppSentAt;
                 if (isEmailSent && isInAppSent) {
                     updateData.status = 'sent';
                 }
+            } else {
+                return false;
             }
 
-            await prisma.eventNotification.update({
-                where: { id },
+            await prisma.eventNotification.updateMany({
+                where: { id, companyId },
                 data: updateData
             });
             return true;
@@ -196,25 +205,25 @@ export class EventNotificationModel {
         }
     }
 
-    async markFailed(id: number, reason: string): Promise<boolean> {
+    async markFailed(id: number, companyId: number, reason: string): Promise<boolean> {
         try {
-            await prisma.eventNotification.update({
-                where: { id },
+            const updated = await prisma.eventNotification.updateMany({
+                where: { id, companyId },
                 data: {
                     status: 'failed',
                     failureReason: reason
                 }
             });
-            return true;
+            return updated.count > 0;
         } catch (error) {
             return false;
         }
     }
 
-    async cancelByReminderId(reminderId: number): Promise<boolean> {
+    async cancelByReminderId(reminderId: number, companyId: number): Promise<boolean> {
         try {
             await prisma.eventNotification.updateMany({
-                where: { reminderId, status: 'pending' },
+                where: { reminderId, companyId, status: 'pending' },
                 data: { status: 'cancelled' }
             });
             return true;
@@ -223,10 +232,10 @@ export class EventNotificationModel {
         }
     }
 
-    async deleteByReminderId(reminderId: number): Promise<boolean> {
+    async deleteByReminderId(reminderId: number, companyId: number): Promise<boolean> {
         try {
             await prisma.eventNotification.deleteMany({
-                where: { reminderId }
+                where: { reminderId, companyId }
             });
             return true;
         } catch (error) {
@@ -234,10 +243,10 @@ export class EventNotificationModel {
         }
     }
 
-    async cancelByEventId(eventId: number): Promise<boolean> {
+    async cancelByEventId(eventId: number, companyId: number): Promise<boolean> {
         try {
             await prisma.eventNotification.updateMany({
-                where: { eventId, status: 'pending' },
+                where: { eventId, companyId, status: 'pending' },
                 data: { status: 'cancelled' }
             });
             return true;
@@ -246,10 +255,10 @@ export class EventNotificationModel {
         }
     }
 
-    async deleteByEventId(eventId: number): Promise<boolean> {
+    async deleteByEventId(eventId: number, companyId: number): Promise<boolean> {
         try {
             await prisma.eventNotification.deleteMany({
-                where: { eventId }
+                where: { eventId, companyId }
             });
             return true;
         } catch (error) {

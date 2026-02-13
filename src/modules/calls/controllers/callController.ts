@@ -28,7 +28,7 @@ export class CallController {
      */
     initiateCall = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
         try {
-            if (!req.user) {
+            if (!req.user || !req.user.companyId) {
                 ResponseHandler.unauthorized(res);
                 return;
             }
@@ -42,6 +42,7 @@ export class CallController {
 
             const result = await this.callService.initiateCall(
                 req.user.id,
+                req.user.companyId,
                 validationResult.data
             );
 
@@ -61,7 +62,7 @@ export class CallController {
      */
     listCalls = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
         try {
-            if (!req.user) {
+            if (!req.user || !req.user.companyId) {
                 ResponseHandler.unauthorized(res);
                 return;
             }
@@ -73,7 +74,7 @@ export class CallController {
                 return;
             }
 
-            const result = await this.callService.listCalls(req.user.id, validationResult.data);
+            const result = await this.callService.listCalls(req.user.id, req.user.companyId, validationResult.data);
 
             ResponseHandler.success(res, result);
         } catch (error: any) {
@@ -88,7 +89,7 @@ export class CallController {
      */
     getCall = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
         try {
-            if (!req.user) {
+            if (!req.user || !req.user.companyId) {
                 ResponseHandler.unauthorized(res);
                 return;
             }
@@ -99,14 +100,14 @@ export class CallController {
                 return;
             }
 
-            const call = await this.callService.getCallById(callId, req.user.id);
+            const call = await this.callService.getCallById(callId, req.user.id, req.user.companyId);
             if (!call) {
                 ResponseHandler.notFound(res, 'Call not found');
                 return;
             }
 
             // Also get events and recording
-            const events = await this.callService.getCallEvents(callId);
+            const events = await this.callService.getCallEvents(callId, req.user.companyId);
 
             ResponseHandler.success(res, { ...call, events });
         } catch (error: any) {
@@ -121,7 +122,7 @@ export class CallController {
      */
     updateCall = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
         try {
-            if (!req.user) {
+            if (!req.user || !req.user.companyId) {
                 ResponseHandler.unauthorized(res);
                 return;
             }
@@ -142,6 +143,7 @@ export class CallController {
             const call = await this.callService.updateCallDetails(
                 callId,
                 req.user.id,
+                req.user.companyId,
                 validationResult.data
             );
 
@@ -163,7 +165,7 @@ export class CallController {
      */
     deleteCall = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
         try {
-            if (!req.user) {
+            if (!req.user || !req.user.companyId) {
                 ResponseHandler.unauthorized(res);
                 return;
             }
@@ -174,7 +176,7 @@ export class CallController {
                 return;
             }
 
-            const deleted = await this.callService.deleteCall(callId, req.user.id);
+            const deleted = await this.callService.deleteCall(callId, req.user.id, req.user.companyId);
             if (!deleted) {
                 ResponseHandler.notFound(res, 'Call not found');
                 return;
@@ -193,7 +195,7 @@ export class CallController {
      */
     endCall = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
         try {
-            if (!req.user) {
+            if (!req.user || !req.user.companyId) {
                 ResponseHandler.unauthorized(res);
                 return;
             }
@@ -204,7 +206,7 @@ export class CallController {
                 return;
             }
 
-            const call = await this.callService.endCall(callId, req.user.id);
+            const call = await this.callService.endCall(callId, req.user.id, req.user.companyId);
             if (!call) {
                 ResponseHandler.notFound(res, 'Call not found');
                 return;
@@ -243,13 +245,13 @@ export class CallController {
      */
     getStats = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
         try {
-            if (!req.user) {
+            if (!req.user || !req.user.companyId) {
                 ResponseHandler.unauthorized(res);
                 return;
             }
 
             const { startDate, endDate } = req.query as { startDate?: string; endDate?: string };
-            const stats = await this.callService.getCallStats(req.user.id, { startDate, endDate });
+            const stats = await this.callService.getCallStats(req.user.id, req.user.companyId, { startDate, endDate });
 
             ResponseHandler.success(res, stats);
         } catch (error: any) {
@@ -264,7 +266,7 @@ export class CallController {
      */
     getCallsForContact = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
         try {
-            if (!req.user) {
+            if (!req.user || !req.user.companyId) {
                 ResponseHandler.unauthorized(res);
                 return;
             }
@@ -276,7 +278,7 @@ export class CallController {
             }
 
             const limit = parseInt(req.query.limit as string, 10) || 10;
-            const calls = await this.callService.getCallsForContact(contactId, limit);
+            const calls = await this.callService.getCallsForContact(contactId, req.user.companyId, limit);
 
             ResponseHandler.success(res, { calls });
         } catch (error: any) {
@@ -291,7 +293,7 @@ export class CallController {
      */
     getCallsForDeal = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
         try {
-            if (!req.user) {
+            if (!req.user || !req.user.companyId) {
                 ResponseHandler.unauthorized(res);
                 return;
             }
@@ -302,7 +304,7 @@ export class CallController {
                 return;
             }
 
-            const calls = await this.callService.getCallsForDeal(dealId);
+            const calls = await this.callService.getCallsForDeal(dealId, req.user.companyId);
 
             ResponseHandler.success(res, { calls });
         } catch (error: any) {
@@ -317,7 +319,7 @@ export class CallController {
      */
     getRecording = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
         try {
-            if (!req.user) {
+            if (!req.user || !req.user.companyId) {
                 ResponseHandler.unauthorized(res);
                 return;
             }
@@ -329,13 +331,13 @@ export class CallController {
             }
 
             // Verify user has access to this call
-            const call = await this.callService.getCallById(callId, req.user.id);
+            const call = await this.callService.getCallById(callId, req.user.id, req.user.companyId);
             if (!call) {
                 ResponseHandler.notFound(res, 'Call not found');
                 return;
             }
 
-            const recording = await this.callService.getCallRecording(callId);
+            const recording = await this.callService.getCallRecording(callId, req.user.companyId);
             if (!recording) {
                 ResponseHandler.notFound(res, 'Recording not found');
                 return;

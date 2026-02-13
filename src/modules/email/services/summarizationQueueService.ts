@@ -9,6 +9,7 @@ const MAX_CONCURRENT_JOBS = parseInt(process.env.MAX_CONCURRENT_JOBS || '3');
 
 interface SummarizationJobData {
     threadId: string;
+    companyId: number;
     userId?: string;
     subject?: string;
     priority?: number;
@@ -53,7 +54,7 @@ export class SummarizationQueueService {
             return;
         }
         this.queue.process(MAX_CONCURRENT_JOBS, async (job: Job<SummarizationJobData>) => {
-            const { threadId } = job.data;
+            const { threadId, companyId } = job.data;
             const startTime = Date.now();
 
             try {
@@ -64,19 +65,19 @@ export class SummarizationQueueService {
                 }
 
                 const emails = await prisma.email.findMany({
-                    where: { threadId },
+                    where: { threadId, companyId },
                     orderBy: { sentAt: 'asc' }
                 });
 
                 if (emails.length === 0) throw new Error(`No emails found for thread ${threadId}`);
 
                 const emailContent = this.formatEmailsForSummarization(emails);
-                await this.updateSummaryStatus(threadId, 'processing', job.id?.toString());
+                await this.updateSummaryStatus(threadId, companyId, 'processing', job.id?.toString());
 
                 const summaryData = await this.callRunPodSummarization(emailContent, emails);
                 const participants = this.extractParticipants(emails);
 
-                await this.saveEnhancedSummary(threadId, {
+                await this.saveEnhancedSummary(threadId, companyId, {
                     ...summaryData,
                     participants,
                     processingTime: Date.now() - startTime,
@@ -88,7 +89,7 @@ export class SummarizationQueueService {
                 return { success: true, threadId, processingTime: Date.now() - startTime };
             } catch (error: any) {
                 console.error(`❌ [Queue] Failed thread ${threadId}:`, error.message);
-                await this.updateSummaryStatus(threadId, 'failed', job.id?.toString());
+                await this.updateSummaryStatus(threadId, companyId, 'failed', job.id?.toString());
                 throw error;
             }
         });
@@ -105,7 +106,7 @@ export class SummarizationQueueService {
             throw new Error('Redis queue is not available');
         }
         const jobOptions: JobOptions = { jobId: `thread-${data.threadId}`, removeOnComplete: true, ...options };
-        await this.updateSummaryStatus(data.threadId, 'queued');
+        await this.updateSummaryStatus(data.threadId, data.companyId, 'queued');
         return await this.queue.add(data, jobOptions);
     }
 
@@ -126,9 +127,9 @@ export class SummarizationQueueService {
     /**
      * Get thread summary from DB
      */
-    async getThreadSummary(threadId: string): Promise<any | null> {
-        const row = await prisma.threadSummary.findUnique({
-            where: { threadId }
+    async getThreadSummary(threadId: string, companyId: number): Promise<any | null> {
+        const row = await prisma.threadSummary.findFirst({
+            where: { threadId, companyId }
         });
         if (!row) return null;
 
@@ -152,17 +153,34 @@ export class SummarizationQueueService {
     /**
      * Get threads that need summarization
      */
-    async getThreadsNeedingSummary(limit: number = 50): Promise<string[]> {
+    async getThreadsNeedingSummary(companyId: number, limit: number = 50): Promise<string[]> {
         // Use raw SQL to find threads without summaries since the relation was removed
         const threads = await prisma.$queryRaw<{ threadId: string }[]>`
             SELECT DISTINCT e."threadId"
+            FROM emails e
+            WHERE e."threadId" IS NOT NULL
+              AND e."companyId" = ${companyId}
+              AND e."threadId" NOT IN (SELECT ts."thread_id" FROM thread_summaries ts WHERE ts."companyId" = ${companyId})
+            LIMIT ${limit}
+        `;
+
+        return threads.map((t: any) => t.threadId);
+    }
+
+    /**
+     * Get threads that need summarization (Global/System-wide)
+     */
+    async getThreadsNeedingSummaryGlobal(limit: number = 50): Promise<{ threadId: string; companyId: number }[]> {
+        // Use raw SQL to find threads without summaries since the relation was removed
+        const threads = await prisma.$queryRaw<{ threadId: string; companyId: number }[]>`
+            SELECT DISTINCT e."threadId", e."companyId"
             FROM emails e
             WHERE e."threadId" IS NOT NULL
               AND e."threadId" NOT IN (SELECT ts."thread_id" FROM thread_summaries ts)
             LIMIT ${limit}
         `;
 
-        return threads.map((t: any) => t.threadId);
+        return threads;
     }
 
     /**
@@ -199,15 +217,15 @@ export class SummarizationQueueService {
         };
     }
 
-    private async updateSummaryStatus(threadId: string, status: string, jobId?: string): Promise<void> {
+    private async updateSummaryStatus(threadId: string, companyId: number, status: string, jobId?: string): Promise<void> {
         await prisma.threadSummary.upsert({
             where: { threadId },
             update: { status, runpodJobId: jobId, lastSummarizedAt: new Date() },
-            create: { threadId, summary: '', status, runpodJobId: jobId, lastSummarizedAt: new Date() }
+            create: { threadId, companyId, summary: '', status, runpodJobId: jobId, lastSummarizedAt: new Date() }
         });
     }
 
-    private async saveEnhancedSummary(threadId: string, data: any): Promise<void> {
+    private async saveEnhancedSummary(threadId: string, companyId: number, data: any): Promise<void> {
         await prisma.threadSummary.upsert({
             where: { threadId },
             update: {
@@ -225,6 +243,7 @@ export class SummarizationQueueService {
             },
             create: {
                 threadId,
+                companyId,
                 summary: data.summary,
                 keyPoints: (data.keyPoints as any) || null,
                 actionItems: (data.actionItems as any) || null,

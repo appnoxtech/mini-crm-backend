@@ -3,6 +3,7 @@ import { prisma } from '../../../shared/prisma';
 export interface EventShare {
     id: number;
     eventId: number;
+    companyId: number;
     sharedWithUserId: number;
     participantType: 'user' | 'person';
     createdAt: string;
@@ -17,13 +18,14 @@ export class EventShareModel {
         return {
             id: share.id,
             eventId: share.eventId,
+            companyId: share.companyId,
             sharedWithUserId: share.sharedWithUserId,
             participantType: share.participantType as 'user' | 'person',
             createdAt: share.createdAt.toISOString()
         };
     }
 
-    async share(eventId: number, sharedWithUserId: number, participantType: 'user' | 'person' = 'user'): Promise<EventShare | null> {
+    async share(eventId: number, companyId: number, sharedWithUserId: number, participantType: 'user' | 'person' = 'user'): Promise<EventShare | null> {
         try {
             const share = await prisma.eventShare.upsert({
                 where: {
@@ -33,9 +35,10 @@ export class EventShareModel {
                         participantType
                     }
                 },
-                update: {},
+                update: { companyId },
                 create: {
                     eventId,
+                    companyId,
                     sharedWithUserId,
                     participantType
                 }
@@ -67,40 +70,39 @@ export class EventShareModel {
         return share ? this.mapPrismaToShare(share) : null;
     }
 
-    async findByEventId(eventId: number): Promise<EventShare[]> {
+    async findByEventId(eventId: number, companyId: number): Promise<EventShare[]> {
         const shares = await prisma.eventShare.findMany({
-            where: { eventId }
+            where: { eventId, companyId }
         });
 
         return shares.map((s: any) => this.mapPrismaToShare(s));
     }
 
-    async findSharedWithUser(userId: number): Promise<EventShare[]> {
+    async findSharedWithUser(userId: number, companyId: number): Promise<EventShare[]> {
         const shares = await prisma.eventShare.findMany({
-            where: { sharedWithUserId: userId, participantType: 'user' }
+            where: { sharedWithUserId: userId, companyId, participantType: 'user' }
         });
 
         return shares.map((s: any) => this.mapPrismaToShare(s));
     }
 
-    async getSharedUserIds(eventId: number): Promise<number[]> {
+    async getSharedUserIds(eventId: number, companyId: number): Promise<number[]> {
         const shares = await prisma.eventShare.findMany({
-            where: { eventId, participantType: 'user' },
+            where: { eventId, companyId, participantType: 'user' },
             select: { sharedWithUserId: true }
         });
 
         return shares.map((s: any) => s.sharedWithUserId);
     }
 
-    async unshare(eventId: number, sharedWithUserId: number, participantType: string = 'user'): Promise<boolean> {
+    async unshare(eventId: number, companyId: number, sharedWithUserId: number, participantType: string = 'user'): Promise<boolean> {
         try {
-            await prisma.eventShare.delete({
+            await prisma.eventShare.deleteMany({
                 where: {
-                    eventId_sharedWithUserId_participantType: {
-                        eventId,
-                        sharedWithUserId,
-                        participantType
-                    }
+                    eventId,
+                    companyId,
+                    sharedWithUserId,
+                    participantType
                 }
             });
             return true;
@@ -109,10 +111,10 @@ export class EventShareModel {
         }
     }
 
-    async unshareAll(eventId: number): Promise<boolean> {
+    async unshareAll(eventId: number, companyId: number): Promise<boolean> {
         try {
             await prisma.eventShare.deleteMany({
-                where: { eventId }
+                where: { eventId, companyId }
             });
             return true;
         } catch (error) {
@@ -120,10 +122,11 @@ export class EventShareModel {
         }
     }
 
-    async isSharedWith(eventId: number, userId: number, type: string = 'user'): Promise<boolean> {
+    async isSharedWith(eventId: number, companyId: number, userId: number, type: string = 'user'): Promise<boolean> {
         const count = await prisma.eventShare.count({
             where: {
                 eventId,
+                companyId,
                 sharedWithUserId: userId,
                 participantType: type
             }
@@ -132,9 +135,9 @@ export class EventShareModel {
         return count > 0;
     }
 
-    async getSharedUsersDetails(eventId: number): Promise<{ id: number, name: string, email: string, type: string }[]> {
+    async getSharedUsersDetails(eventId: number, companyId: number): Promise<{ id: number, name: string, email: string, type: string }[]> {
         const shares = await prisma.eventShare.findMany({
-            where: { eventId, participantType: 'user' }
+            where: { eventId, companyId, participantType: 'user' }
         });
 
         const userIds = shares.map((s: any) => s.sharedWithUserId);

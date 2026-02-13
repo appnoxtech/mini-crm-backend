@@ -60,6 +60,7 @@ export class WebhookController {
             // Get optional query params (set when we initiate calls)
             const callId = req.query.callId ? parseInt(req.query.callId as string, 10) : undefined;
             const userId = req.query.userId ? parseInt(req.query.userId as string, 10) : undefined;
+            const companyId = req.query.companyId ? parseInt(req.query.companyId as string, 10) : undefined;
             const direction = req.query.direction as string || Direction;
 
             let twiml: string;
@@ -76,6 +77,7 @@ export class WebhookController {
                     CallSid,
                     From,
                     To,
+                    companyId || 1, // Defaulting to 1 for now if not provided via query
                     userId
                 );
 
@@ -205,7 +207,7 @@ export class WebhookController {
                 // Emit real-time update
                 if (this.io) {
                     // Find the call to get its ID
-                    const call = await this.callService.getCallByTwilioSid(CallSid);
+                    const call = await this.callService.getCallByTwilioSidGlobal(CallSid);
                     if (call) {
                         this.io.emit('call:recording-ready', {
                             type: 'call:recording-ready',

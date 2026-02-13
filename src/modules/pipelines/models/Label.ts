@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 export interface Label extends BaseEntity {
     value: string;
     color: string;
+    companyId: number;
     orderIndex: number;
     pipelineId?: number;
     userId?: number;
@@ -24,6 +25,7 @@ export class LabelModel {
             data: {
                 value: data.value,
                 color: data.color,
+                companyId: data.companyId,
                 orderIndex: data.orderIndex,
                 pipelineId: data.pipelineId || null,
                 userId: data.userId || null,
@@ -35,35 +37,38 @@ export class LabelModel {
         return this.mapPrismaLabelToLabel(label);
     }
 
-    async findByPipelineId(pipelineId: number): Promise<Label[]> {
+    async findByPipelineId(pipelineId: number, companyId: number): Promise<Label[]> {
         const rows = await prisma.label.findMany({
-            where: { pipelineId }
+            where: { pipelineId, companyId }
         });
         return rows.map((r: any) => this.mapPrismaLabelToLabel(r));
     }
 
-    async findByOrganizationId(organizationId: number): Promise<Label[]> {
+    async findByOrganizationId(organizationId: number, companyId: number): Promise<Label[]> {
         const rows = await prisma.label.findMany({
-            where: { organizationId }
+            where: { organizationId, companyId }
         });
         return rows.map((r: any) => this.mapPrismaLabelToLabel(r));
     }
 
-    async findByPersonId(personId: number): Promise<Label[]> {
+    async findByPersonId(personId: number, companyId: number): Promise<Label[]> {
         const rows = await prisma.label.findMany({
-            where: { personId }
+            where: { personId, companyId }
         });
         return rows.map((r: any) => this.mapPrismaLabelToLabel(r));
     }
 
-    async findById(id: number): Promise<Label | null> {
-        const label = await prisma.label.findUnique({
-            where: { id }
+    async findById(id: number, companyId?: number): Promise<Label | null> {
+        const label = await prisma.label.findFirst({
+            where: {
+                id,
+                ...(companyId && { companyId })
+            }
         });
         return label ? this.mapPrismaLabelToLabel(label) : null;
     }
 
-    async findByUserId(userId: number, filters: {
+    async findByUserId(userId: number, companyId: number, filters: {
         pipelineId?: number;
         stageId?: number;
         status?: string;
@@ -71,16 +76,12 @@ export class LabelModel {
         limit?: number;
         offset?: number;
     } = {}): Promise<{ label: Label[]; total: number }> {
-        const where: any = { userId };
+        const where: any = { userId, companyId };
 
         if (filters.pipelineId) {
             where.pipelineId = filters.pipelineId;
         }
 
-        // stageId is not directly on label in the new schema, if it was intended to filter by it
-        // we might need a relation, but the original code was:
-        // if (filters.stageId) { query += ' AND pipelineId = ?'; params.push(filters.stageId); }
-        // which seems to reuse pipelineId.
         if (filters.stageId) {
             where.pipelineId = filters.stageId;
         }
@@ -105,10 +106,13 @@ export class LabelModel {
         };
     }
 
-    async update(id: number, data: Partial<Label>): Promise<Label | null> {
+    async update(id: number, companyId: number, data: Partial<Label>): Promise<Label | null> {
         try {
             const updated = await prisma.label.update({
-                where: { id },
+                where: {
+                    id,
+                    companyId
+                },
                 data: {
                     ...(data.value !== undefined && { value: data.value }),
                     ...(data.color !== undefined && { color: data.color }),
@@ -126,10 +130,13 @@ export class LabelModel {
         }
     }
 
-    async delete(id: number): Promise<boolean> {
+    async delete(id: number, companyId: number): Promise<boolean> {
         try {
             await prisma.label.delete({
-                where: { id }
+                where: {
+                    id,
+                    companyId
+                }
             });
             return true;
         } catch (error) {
@@ -142,6 +149,7 @@ export class LabelModel {
             id: l.id,
             value: l.value,
             color: l.color || '',
+            companyId: l.companyId,
             orderIndex: l.orderIndex,
             pipelineId: l.pipelineId || undefined,
             userId: l.userId || undefined,

@@ -16,6 +16,7 @@ export class OrganizationController {
             const { q, limit = 100, offset = 0, includeDeleted } = req.query as any;
 
             const result = await this.organizationService.getAll({
+                companyId: req.user.companyId,
                 search: q as string,
                 limit: Number(limit),
                 offset: Number(offset),
@@ -36,7 +37,7 @@ export class OrganizationController {
             }
 
             const { id } = req.params;
-            const organisation = await this.organizationService.getById(Number(id));
+            const organisation = await this.organizationService.getById(Number(id), req.user.companyId);
 
             if (!organisation) {
                 return ResponseHandler.notFound(res, 'Organisation not found');
@@ -57,6 +58,7 @@ export class OrganizationController {
 
             // Pass the entire body (or only the fields you need)
             const organisationData: CreateOrganizationData = {
+                companyId: req.user.companyId,
                 name: req.body.name,
                 description: req.body.description,
                 website: req.body.website,
@@ -91,7 +93,7 @@ export class OrganizationController {
             const { id } = req.params;
             const { name, description, website, industry, status, emails, phones, annualRevenue, numberOfEmployees, linkedinProfile, address } = req.body;
 
-            const organisation = await this.organizationService.update(Number(id), {
+            const organisation = await this.organizationService.update(Number(id), req.user.companyId, {
                 name,
                 description,
                 website,
@@ -126,7 +128,7 @@ export class OrganizationController {
             }
 
             const { id } = req.params;
-            const success = await this.organizationService.delete(Number(id));
+            const success = await this.organizationService.delete(Number(id), req.user.companyId);
 
             if (!success) {
                 return ResponseHandler.notFound(res, 'Organisation not found');
@@ -147,7 +149,7 @@ export class OrganizationController {
 
             const { q } = req.query;
 
-            const organisations = await this.organizationService.searchByOrgName(q as string);
+            const organisations = await this.organizationService.searchByOrgName(q as string, req.user.companyId);
 
             return ResponseHandler.success(res, organisations);
         } catch (error) {
@@ -163,7 +165,7 @@ export class OrganizationController {
             }
 
             const { id } = req.params;
-            const organisation = await this.organizationService.restore(Number(id));
+            const organisation = await this.organizationService.restore(Number(id), req.user.companyId);
 
             if (!organisation) {
                 return ResponseHandler.notFound(res, 'Organisation not found or not deleted');

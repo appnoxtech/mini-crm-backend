@@ -33,16 +33,17 @@ export class StructuredKBService {
     // BASIC CRUD OPERATIONS
     // ==========================================
 
-    async getFullKB(kbId: string = 'default'): Promise<StructuredKnowledgeBase | null> {
-        return await this.model.getKB(kbId);
+    async getFullKB(companyId: number): Promise<StructuredKnowledgeBase | null> {
+        await this.model.initialize(companyId);
+        return await this.model.getKB(companyId);
     }
 
-    async updateCategory(categoryNumber: number, data: any, kbId: string = 'default'): Promise<boolean> {
-        return await this.model.updateCategory(categoryNumber, data, kbId);
+    async updateCategory(categoryNumber: number, data: any, companyId: number): Promise<boolean> {
+        return await this.model.updateCategory(companyId, categoryNumber, data);
     }
 
-    async getCompletionStatus(kbId: string = 'default') {
-        return await this.model.getCompletionStatus(kbId);
+    async getCompletionStatus(companyId: number) {
+        return await this.model.getCompletionStatus(companyId);
     }
 
     // ==========================================
@@ -56,7 +57,7 @@ export class StructuredKBService {
     async getContextForGeneration(
         profile: ClientProfile,
         inference: InferenceResult,
-        kbId: string = 'default'
+        companyId: number
     ): Promise<{
         companyProfile: CompanyProfile | null;
         matchedSegment: CustomerSegment | null;
@@ -69,7 +70,7 @@ export class StructuredKBService {
         supportInfo: Operations['support_and_slas'] | null;
         implementationDetails: Operations['implementation'] | null;
     }> {
-        const kb = await this.model.getKB(kbId);
+        const kb = await this.model.getKB(companyId);
         if (!kb) {
             return {
                 companyProfile: null,
@@ -324,9 +325,9 @@ export class StructuredKBService {
     async buildPromptContext(
         profile: ClientProfile,
         inference: InferenceResult,
-        kbId: string = 'default'
+        companyId: number
     ): Promise<string> {
-        const context = await this.getContextForGeneration(profile, inference, kbId);
+        const context = await this.getContextForGeneration(profile, inference, companyId);
         const parts: string[] = [];
 
         // Company Profile
@@ -479,9 +480,9 @@ export class StructuredKBService {
     async buildIntentBasedContext(
         requiredCategories: number[],
         requiredFields: string[],
-        kbId: string = 'default'
+        companyId: number
     ): Promise<string> {
-        const kb = await this.model.getKB(kbId);
+        const kb = await this.model.getKB(companyId);
         if (!kb) return '';
 
         const parts: string[] = [];

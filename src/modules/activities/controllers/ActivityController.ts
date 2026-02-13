@@ -10,7 +10,14 @@ export class ActivityController {
 
     getActivities = async (req: Request, res: Response) => {
         try {
-            const userId = (req as any).user.id;
+            const user = (req as any).user;
+            if (!user || !user.id || !user.companyId) {
+                return res.status(401).json({ error: 'Unauthorized' });
+            }
+
+            const userId = user.id;
+            const companyId = user.companyId;
+
             const filters = {
                 fromDate: req.query.fromDate as string,
                 toDate: req.query.toDate as string,
@@ -19,7 +26,7 @@ export class ActivityController {
                 offset: req.query.offset ? Number(req.query.offset) : undefined
             };
 
-            const result = await this.service.getActivities(userId, filters);
+            const result = await this.service.getActivities(userId, companyId, filters);
             res.json(result);
         } catch (error: any) {
             res.status(500).json({ error: error.message });
@@ -28,8 +35,15 @@ export class ActivityController {
 
     createActivity = async (req: Request, res: Response) => {
         try {
-            const userId = (req as any).user.id;
-            const activity = await this.service.createActivity(userId, req.body);
+            const user = (req as any).user;
+            if (!user || !user.id || !user.companyId) {
+                return res.status(401).json({ error: 'Unauthorized' });
+            }
+
+            const userId = user.id;
+            const companyId = user.companyId;
+
+            const activity = await this.service.createActivity(userId, companyId, req.body);
             res.status(201).json({
                 message: "Activity created successfully",
                 activity
@@ -41,11 +55,17 @@ export class ActivityController {
 
     searchActivities = async (req: Request, res: Response) => {
         try {
-            const userId = (req as any).user.id;
+            const user = (req as any).user;
+            if (!user || !user.id || !user.companyId) {
+                return res.status(401).json({ error: 'Unauthorized' });
+            }
+
+            const userId = user.id;
+            const companyId = user.companyId;
             const query = req.query.query as string;
             const type = req.query.type as string;
 
-            const results = await this.service.searchActivities(userId, query, type);
+            const results = await this.service.searchActivities(userId, companyId, query, type);
             res.json(results);
         } catch (error: any) {
             res.status(400).json({ error: error.message });
@@ -54,11 +74,17 @@ export class ActivityController {
 
     updateActivity = async (req: Request, res: Response) => {
         try {
-            const userId = (req as any).user.id;
+            const user = (req as any).user;
+            if (!user || !user.id || !user.companyId) {
+                return res.status(401).json({ error: 'Unauthorized' });
+            }
+
+            const userId = user.id;
+            const companyId = user.companyId;
             const { activityId } = req.params;
             if (!activityId) throw new Error('Activity ID is required');
 
-            const updated = await this.service.updateActivity(activityId, userId, req.body);
+            const updated = await this.service.updateActivity(activityId, userId, companyId, req.body);
             res.json(updated);
         } catch (error: any) {
             res.status(400).json({ error: error.message });
@@ -67,11 +93,17 @@ export class ActivityController {
 
     deleteActivity = async (req: Request, res: Response) => {
         try {
-            const userId = (req as any).user.id;
+            const user = (req as any).user;
+            if (!user || !user.id || !user.companyId) {
+                return res.status(401).json({ error: 'Unauthorized' });
+            }
+
+            const userId = user.id;
+            const companyId = user.companyId;
             const { activityId } = req.params;
             if (!activityId) throw new Error('Activity ID is required');
 
-            await this.service.deleteActivity(activityId, userId);
+            await this.service.deleteActivity(activityId, userId, companyId);
             res.status(200).json({ message: "Activity deleted successfully" });
         } catch (error: any) {
             res.status(400).json({ error: error.message });
@@ -80,11 +112,17 @@ export class ActivityController {
 
     markAsDone = async (req: Request, res: Response) => {
         try {
-            const userId = (req as any).user.id;
+            const user = (req as any).user;
+            if (!user || !user.id || !user.companyId) {
+                return res.status(401).json({ error: 'Unauthorized' });
+            }
+
+            const userId = user.id;
+            const companyId = user.companyId;
             const { activityId } = req.params;
             if (!activityId) throw new Error('Activity ID is required');
 
-            const updated = await this.service.markAsDone(activityId, userId);
+            const updated = await this.service.markAsDone(activityId, userId, companyId);
             res.json(updated);
         } catch (error: any) {
             res.status(400).json({ error: error.message });
@@ -97,8 +135,14 @@ export class ActivityController {
 
     checkAvailability = async (req: Request, res: Response) => {
         try {
+            const user = (req as any).user;
+            if (!user || !user.id || !user.companyId) {
+                return res.status(401).json({ error: 'Unauthorized' });
+            }
+
+            const companyId = user.companyId;
             const { startAt, endAt, userIds } = req.body;
-            const result = await this.service.checkAvailability(startAt, endAt, userIds || []);
+            const result = await this.service.checkAvailability(companyId, startAt, endAt, userIds || []);
             res.json(result);
         } catch (error: any) {
             res.status(400).json({ error: error.message });
@@ -107,12 +151,18 @@ export class ActivityController {
 
     getCalendarView = async (req: Request, res: Response) => {
         try {
-            const userId = (req as any).user.id;
+            const user = (req as any).user;
+            if (!user || !user.id || !user.companyId) {
+                return res.status(401).json({ error: 'Unauthorized' });
+            }
+
+            const userId = user.id;
+            const companyId = user.companyId;
             const date = req.query.date as string;
             if (!date) {
                 return res.status(400).json({ error: 'Date parameter required (YYYY-MM-DD)' });
             }
-            const result = await this.service.getCalendarView(userId, date);
+            const result = await this.service.getCalendarView(userId, companyId, date);
             res.json(result);
         } catch (error: any) {
             res.status(400).json({ error: error.message });

@@ -7,7 +7,7 @@ export class PipelineService {
         private stageModel: PipelineStageModel
     ) { }
 
-    async createPipeline(userId: number, data: {
+    async createPipeline(userId: number, companyId: number, data: {
         name: string;
         description?: string;
         isDefault?: boolean;
@@ -34,6 +34,7 @@ export class PipelineService {
         }
 
         const pipeline = await this.pipelineModel.create({
+            companyId,
             name: data.name.trim(),
             description: data.description?.trim(),
             userId,
@@ -54,8 +55,11 @@ export class PipelineService {
                 { name: 'Negotiation', probability: 75 },
             ];
 
-        for (const [index, stage] of stagesToCreate.entries()) {
+        for (let index = 0; index < stagesToCreate.length; index++) {
+            const stage = stagesToCreate[index];
+            if (!stage) continue;
             await this.stageModel.create({
+                companyId: pipeline.companyId,
                 pipelineId: pipeline.id,
                 name: stage.name,
                 orderIndex: index,
@@ -66,13 +70,13 @@ export class PipelineService {
         return pipeline;
     }
 
-    async getPipelines(userId: number, includeStages: boolean = false, includeInactive: boolean = false): Promise<any[]> {
-        const pipelines = await this.pipelineModel.findByUserId(userId, includeInactive);
+    async getPipelines(userId: number, companyId: number, includeStages: boolean = false, includeInactive: boolean = false): Promise<any[]> {
+        const pipelines = await this.pipelineModel.findByUserId(userId, companyId, includeInactive);
 
         if (!includeStages) {
             const result = [];
             for (const p of pipelines) {
-                const stages = await this.stageModel.findByPipelineId(p.id);
+                const stages = await this.stageModel.findByPipelineId(p.id, companyId);
                 result.push({
                     ...p,
                     stageCount: stages.length
@@ -83,8 +87,8 @@ export class PipelineService {
 
         const result = [];
         for (const p of pipelines) {
-            const stages = await this.stageModel.getStageWithDealCount(p.id);
-            const stats = await this.pipelineModel.getStats(p.id);
+            const stages = await this.stageModel.getStageWithDealCount(p.id, companyId);
+            const stats = await this.pipelineModel.getStats(p.id, companyId);
 
             result.push({
                 ...p,
@@ -98,15 +102,15 @@ export class PipelineService {
         return result;
     }
 
-    async getPipelineById(id: number, userId: number): Promise<any | null> {
-        const pipeline = await this.pipelineModel.findById(id, userId);
+    async getPipelineById(id: number, companyId: number, userId: number): Promise<any | null> {
+        const pipeline = await this.pipelineModel.findById(id, companyId, userId);
 
         if (!pipeline) {
             return null;
         }
 
-        const stages = await this.stageModel.getStageWithDealCount(id);
-        const stats = await this.pipelineModel.getStats(id);
+        const stages = await this.stageModel.getStageWithDealCount(id, companyId);
+        const stats = await this.pipelineModel.getStats(id, companyId);
 
         // Calculate conversion rate
         const conversionRate = stats.totalDeals > 0
@@ -123,7 +127,7 @@ export class PipelineService {
         };
     }
 
-    async updatePipeline(id: number, userId: number, data: {
+    async updatePipeline(id: number, companyId: number, userId: number, data: {
         name?: string;
         description?: string;
         isDefault?: boolean;
@@ -154,7 +158,7 @@ export class PipelineService {
         }
 
         // Update pipeline basic info
-        const pipeline = await this.pipelineModel.update(id, userId, {
+        const pipeline = await this.pipelineModel.update(id, companyId, userId, {
             name: data.name,
             description: data.description,
             isDefault: data.isDefault,
@@ -173,9 +177,9 @@ export class PipelineService {
                 const moveDealsToStageId = stageToDelete.moveDealsToStageId;
                 const stageId = stageToDelete.stageId;
 
-                const stage = await this.stageModel.findById(Number(stageId));
+                const stage = await this.stageModel.findById(Number(stageId), companyId);
                 if (stage && stage.pipelineId === id) {
-                    await this.stageModel.delete(Number(stageId), Number(moveDealsToStageId));
+                    await this.stageModel.delete(Number(stageId), companyId, Number(moveDealsToStageId));
                 }
             }
         }
@@ -196,12 +200,13 @@ export class PipelineService {
                     rottenDays: s.rottenDays
                 }));
 
-                await this.stageModel.bulkUpdate(id, stagesToUpdate);
+                await this.stageModel.bulkUpdate(id, companyId, stagesToUpdate);
             }
 
             // Create new stages
             for (const stageInfo of newStages) {
                 await this.stageModel.create({
+                    companyId: pipeline.companyId,
                     pipelineId: id,
                     name: stageInfo.name,
                     orderIndex: stageInfo.orderIndex,
@@ -214,27 +219,27 @@ export class PipelineService {
         return pipeline;
     }
 
-    async deletePipeline(id: number, userId: number): Promise<{ success: boolean; dealsAffected: number }> {
+    async deletePipeline(id: number, companyId: number, userId: number): Promise<{ success: boolean; dealsAffected: number }> {
 
-        const pipeline = await this.pipelineModel.findById(id, userId);
+        const pipeline = await this.pipelineModel.findById(id, companyId, userId);
 
         if (!pipeline) {
             throw new Error('Pipeline not found');
         }
 
-        const stats = await this.pipelineModel.getStats(id);
+        const stats = await this.pipelineModel.getStats(id, companyId);
 
         if (stats.totalDeals > 0) {
             throw new Error(`Cannot delete pipeline with ${stats.totalDeals} existing deals`);
         }
 
         // Ensure user has at least one other pipeline
-        const userPipelines = await this.pipelineModel.findByUserId(userId);
+        const userPipelines = await this.pipelineModel.findByUserId(userId, companyId);
         if (userPipelines.length <= 1) {
             throw new Error('Cannot delete the only pipeline. Create another pipeline first.');
         }
 
-        const success = await this.pipelineModel.delete(id, userId);
+        const success = await this.pipelineModel.delete(id, companyId, userId);
 
         return {
             success,
@@ -242,8 +247,8 @@ export class PipelineService {
         };
     }
 
-    async getDefaultPipeline(userId: number): Promise<Pipeline | null> {
-        const pipelines = await this.pipelineModel.findByUserId(userId);
+    async getDefaultPipeline(userId: number, companyId: number): Promise<Pipeline | null> {
+        const pipelines = await this.pipelineModel.findByUserId(userId, companyId);
         return pipelines.find(p => p.isDefault) || pipelines[0] || null;
     }
 }

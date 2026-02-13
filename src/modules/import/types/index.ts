@@ -30,6 +30,7 @@ export type DuplicateHandling =
 export interface ImportJob {
     id: number;
     userId: number;
+    companyId: number;
     entityType: ImportEntityType;
     fileName: string;
     fileFormat: ImportFileFormat;
@@ -88,6 +89,7 @@ export interface ImportError {
 export interface ImportTemplate {
     id: number;
     userId: number;
+    companyId: number;
     name: string;
     entityType: ImportEntityType;
     mapping: FieldMapping[];

@@ -14,7 +14,7 @@ export class ActivityController {
 
             const { dealId } = req.params;
 
-            const activity = await this.activityService.createActivity(Number(dealId), req.user.id, req.body);
+            const activity = await this.activityService.createActivity(Number(dealId), req.user.companyId, req.user.id, req.body);
 
             return ResponseHandler.created(res, activity, 'Activity created successfully');
         } catch (error: any) {
@@ -34,7 +34,7 @@ export class ActivityController {
 
 
 
-            const result = await this.activityService.getAllActivitiesOfDeal(Number(dealId), {
+            const result = await this.activityService.getAllActivitiesOfDeal(Number(dealId), req.user.companyId, {
                 activityType: activityType as string,
                 isDone: isDone === 'true' ? true : isDone === 'false' ? false : undefined,
                 limit: limit ? Number(limit) : undefined
@@ -56,7 +56,7 @@ export class ActivityController {
             const { dealId } = req.params;
             const { note } = req.body;
 
-            const activity = await this.activityService.createNoteActivity(req.user.id, Number(dealId), note);
+            const activity = await this.activityService.createNoteActivity(req.user.id, Number(dealId), req.user.companyId, note);
 
             return ResponseHandler.created(res, activity, 'Activity created successfully');
         } catch (error: any) {
@@ -76,7 +76,7 @@ export class ActivityController {
 
 
 
-            const result = await this.activityService.getActivitiesForDeal(Number(dealId), {
+            const result = await this.activityService.getActivitiesForDeal(Number(dealId), req.user.companyId, {
                 activityType: activityType as string,
                 isDone: isDone === 'true' ? true : isDone === 'false' ? false : undefined,
                 limit: limit ? Number(limit) : undefined
@@ -97,7 +97,7 @@ export class ActivityController {
 
             const { activityType, isDone, upcoming, limit } = req.query;
 
-            const activities = await this.activityService.getActivitiesForUser(req.user.id, {
+            const activities = await this.activityService.getActivitiesForUser(req.user.id, req.user.companyId, {
                 activityType: activityType as string,
                 isDone: isDone === 'true' ? true : isDone === 'false' ? false : undefined,
                 upcoming: upcoming === 'true',
@@ -119,7 +119,7 @@ export class ActivityController {
 
             const { dealId, activityId } = req.params;
 
-            const activity = await this.activityService.updateActivity(Number(activityId), req.user.id, req.body);
+            const activity = await this.activityService.updateActivity(Number(activityId), req.user.companyId, req.user.id, req.body);
 
             if (!activity) {
                 return ResponseHandler.notFound(res, 'Activity not found');
@@ -140,7 +140,7 @@ export class ActivityController {
 
             const { dealId, activityId } = req.params;
 
-            const activity = await this.activityService.markActivityAsComplete(Number(activityId), req.user.id);
+            const activity = await this.activityService.markActivityAsComplete(Number(activityId), req.user.companyId, req.user.id);
 
             if (!activity) {
                 return ResponseHandler.notFound(res, 'Activity not found');
@@ -161,7 +161,7 @@ export class ActivityController {
 
             const { dealId, activityId } = req.params;
 
-            const success = await this.activityService.deleteActivity(Number(activityId), req.user.id);
+            const success = await this.activityService.deleteActivity(Number(activityId), req.user.companyId, req.user.id);
 
             if (!success) {
                 return ResponseHandler.notFound(res, 'Activity not found');
@@ -184,6 +184,7 @@ export class ActivityController {
 
             const activities = await this.activityService.getUpcomingActivities(
                 req.user.id,
+                req.user.companyId,
                 days ? Number(days) : 7
             );
 
@@ -202,7 +203,7 @@ export class ActivityController {
 
             const { dealId } = req.params;
 
-            const dealHistory = await this.activityService.getDealHistory(Number(dealId));
+            const dealHistory = await this.activityService.getDealHistory(Number(dealId), req.user.companyId);
 
             if (!dealHistory) {
                 return ResponseHandler.notFound(res, 'Deal history not found');
@@ -220,7 +221,7 @@ export class ActivityController {
         try {
             const { dealId } = req.params;
             const userId = req?.user?.id;
-            const files = req.processedFiles;
+            const files = (req as any).processedFiles;
 
             if (!files || files.length === 0) {
                 return ResponseHandler.validationError(res, 'No files were processed');
@@ -228,7 +229,7 @@ export class ActivityController {
 
 
 
-            await this.activityService.createFileActivity(Number(dealId), Number(userId), files);
+            await this.activityService.createFileActivity(Number(dealId), req.user!.companyId, Number(userId), files);
 
             return ResponseHandler.success(res, { dealId, files }, 'Files uploaded and processed successfully');
         } catch (error: any) {

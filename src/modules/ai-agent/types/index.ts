@@ -57,6 +57,7 @@ export interface SuggestionIssue {
 
 export interface EmailSuggestion {
     id: string;
+    companyId: number;
     dealId?: number;
     personId?: number;
     subjectLine: string;
@@ -84,4 +85,6 @@ export interface SuggestionRequest {
     lastEmailContent?: string;
     lastEmailSubject?: string;
     userName?: string;
+    companyId?: number;
+    userId?: number;
 }

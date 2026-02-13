@@ -2,8 +2,11 @@ import { Request, Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../types';
 import { verifyToken } from '../../modules/auth/services/authService';
 import { ResponseHandler } from '../responses/responses';
+import { CompanyModel } from '../../modules/companies/models/company';
 
-export function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+const companyModel = new CompanyModel();
+
+export async function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   const authHeader = (req.headers as any).authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -15,6 +18,15 @@ export function authMiddleware(req: AuthenticatedRequest, res: Response, next: N
 
   if (!user) {
     return ResponseHandler.unauthorized(res, 'Invalid or expired token');
+  }
+
+  // check company is active
+  const company = await companyModel.findById(user.companyId);
+  if (!company) {
+    return ResponseHandler.unauthorized(res, 'Company not found');
+  }
+  if (!company.isActive) {
+    return ResponseHandler.unauthorized(res, 'Company is not active');
   }
 
   req.user = user;

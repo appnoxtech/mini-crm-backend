@@ -33,6 +33,7 @@ export class ImportController {
 
             const preview = await this.importService.uploadFile(
                 userId,
+                req.user!.companyId,
                 {
                     originalname: file.originalname,
                     buffer: file.buffer,
@@ -69,7 +70,7 @@ export class ImportController {
                 return res.status(400).json({ success: false, error: 'Mapping is required' });
             }
 
-            const result = await this.importService.validateMapping(userId, importId, mapping);
+            const result = await this.importService.validateMapping(userId, req.user!.companyId, importId, mapping);
 
             res.json({ success: true, data: result });
         } catch (error: any) {
@@ -101,6 +102,7 @@ export class ImportController {
 
             const result = await this.importService.startImport(
                 userId,
+                req.user!.companyId,
                 importId,
                 { duplicateHandling: duplicateHandling as DuplicateHandling }
             );
@@ -128,7 +130,7 @@ export class ImportController {
                 return res.status(400).json({ success: false, error: 'Invalid import ID' });
             }
 
-            const job = await this.importService.getImportJob(userId, importId);
+            const job = await this.importService.getImportJob(userId, req.user!.companyId, importId);
             if (!job) {
                 return res.status(404).json({ success: false, error: 'Import job not found' });
             }
@@ -157,7 +159,7 @@ export class ImportController {
             }
 
             const limit = parseInt(req.query.limit as string) || 100;
-            const errors = await this.importService.getImportErrors(userId, importId, limit);
+            const errors = await this.importService.getImportErrors(userId, req.user!.companyId, importId, limit);
 
             res.json({ success: true, data: errors });
         } catch (error: any) {
@@ -180,7 +182,7 @@ export class ImportController {
             const limit = parseInt(req.query.limit as string) || 20;
             const offset = parseInt(req.query.offset as string) || 0;
 
-            const history = await this.importService.getImportHistory(userId, limit, offset);
+            const history = await this.importService.getImportHistory(userId, req.user!.companyId, limit, offset);
 
             res.json({ success: true, data: history });
         } catch (error: any) {
@@ -205,7 +207,7 @@ export class ImportController {
                 return res.status(400).json({ success: false, error: 'Invalid import ID' });
             }
 
-            const deleted = await this.importService.cancelImport(userId, importId);
+            const deleted = await this.importService.cancelImport(userId, req.user!.companyId, importId);
 
             res.json({ success: true, data: { deleted } });
         } catch (error: any) {
@@ -230,7 +232,7 @@ export class ImportController {
                 return res.status(400).json({ success: false, error: 'Invalid import ID' });
             }
 
-            const result = await this.importService.rollbackImport(userId, importId);
+            const result = await this.importService.rollbackImport(userId, req.user!.companyId, importId);
 
             res.json({ success: true, data: result });
         } catch (error: any) {
@@ -255,7 +257,7 @@ export class ImportController {
                 return res.status(400).json({ success: false, error: 'Invalid import ID' });
             }
 
-            const result = await this.importService.mergeImport(userId, importId);
+            const result = await this.importService.mergeImport(userId, req.user!.companyId, importId);
 
             res.json({ success: true, data: result });
         } catch (error: any) {
@@ -332,7 +334,7 @@ export class ImportController {
                 return res.status(400).json({ success: false, error: 'Name, entityType, and mapping are required' });
             }
 
-            const templateId = await this.importService.saveTemplate(userId, name, entityType, mapping);
+            const templateId = await this.importService.saveTemplate(userId, req.user!.companyId, name, entityType, mapping);
 
             res.json({ success: true, data: { id: templateId } });
         } catch (error: any) {
@@ -353,7 +355,7 @@ export class ImportController {
             }
 
             const entityType = req.query.entityType as ImportEntityType | undefined;
-            const templates = await this.importService.getTemplates(userId, entityType);
+            const templates = await this.importService.getTemplates(userId, req.user!.companyId, entityType);
 
             res.json({ success: true, data: templates });
         } catch (error: any) {
@@ -378,7 +380,7 @@ export class ImportController {
                 return res.status(400).json({ success: false, error: 'Invalid template ID' });
             }
 
-            const deleted = await this.importService.deleteTemplate(userId, templateId);
+            const deleted = await this.importService.deleteTemplate(userId, req.user!.companyId, templateId);
 
             res.json({ success: true, data: { deleted } });
         } catch (error: any) {

@@ -101,6 +101,7 @@ export class HistoricalSyncService {
                             id: `${account.id}-${parsed.messageId}`,
                             messageId: parsed.messageId,
                             accountId: account.id,
+                            companyId: account.companyId,
                             from: parsed.from || '',
                             to: parsed.to || [],
                             subject: parsed.subject || '',
@@ -129,7 +130,7 @@ export class HistoricalSyncService {
                 }
 
                 // Update last synced UID for incremental sync later
-                await this.emailModel.updateLastSyncedUid(account.id, folder, highestUid);
+                await this.emailModel.updateLastSyncedUid(account.id, account.companyId, folder, highestUid);
             } catch (error) {
                 console.error(`[QuickLoad] Error in folder ${folder}:`, error);
             }
@@ -141,7 +142,7 @@ export class HistoricalSyncService {
         }
 
         // Update lastSyncAt
-        await this.emailModel.updateEmailAccount(account.id, {
+        await this.emailModel.updateEmailAccount(account.id, account.companyId, {
             lastSyncAt: new Date(),
             updatedAt: new Date()
         });
@@ -183,7 +184,7 @@ export class HistoricalSyncService {
                 this.notificationService.notifySyncStatus(userId, accountId, 'completed', stats);
             }
 
-            await this.emailModel.updateEmailAccount(accountId, {
+            await this.emailModel.updateEmailAccount(accountId, account.companyId, {
                 lastSyncAt: new Date(),
                 updatedAt: new Date()
             });
@@ -203,7 +204,7 @@ export class HistoricalSyncService {
 
         try {
             const highestUid = await this.connectorService.getHighestUid(account, folder);
-            const lastSyncedUid = (await this.emailModel.getLastSyncedUid(account.id, folder)) || 0;
+            const lastSyncedUid = (await this.emailModel.getLastSyncedUid(account.id, account.companyId, folder)) || 0;
 
             // Start from where quick load left off (go backwards from lastSyncedUid - 1 down to 1)
             let endUid = Math.max(0, lastSyncedUid - 1);
@@ -231,6 +232,7 @@ export class HistoricalSyncService {
                                 id: `${account.id}-${parsed.messageId}`,
                                 messageId: parsed.messageId,
                                 accountId: account.id,
+                                companyId: account.companyId,
                                 from: parsed.from || '',
                                 to: parsed.to || [],
                                 subject: parsed.subject || '',
@@ -295,7 +297,7 @@ export class HistoricalSyncService {
 
         for (const folderConfig of resolvedFolders) {
             const folder = folderConfig.path;
-            const lastUid = (await this.emailModel.getLastSyncedUid(account.id, folder)) || 0;
+            const lastUid = (await this.emailModel.getLastSyncedUid(account.id, account.companyId, folder)) || 0;
             console.log(`[IncrementalSync] ${account.email} folder ${folder} since UID ${lastUid}`);
 
             const rawMessages = await this.connectorService.fetchEmailsIncrementalByUid(account, folder, lastUid);
@@ -313,6 +315,7 @@ export class HistoricalSyncService {
                     id: `${account.id}-${parsed.messageId}`,
                     messageId: parsed.messageId,
                     accountId: account.id,
+                    companyId: account.companyId,
                     from: parsed.from || '',
                     to: parsed.to || [],
                     subject: parsed.subject || '',
@@ -337,11 +340,11 @@ export class HistoricalSyncService {
 
             if (emailsToSave.length > 0) {
                 await this.emailModel.bulkCreateEmails(emailsToSave);
-                await this.emailModel.updateLastSyncedUid(account.id, folder, maxUid);
+                await this.emailModel.updateLastSyncedUid(account.id, account.companyId, folder, maxUid);
             }
         }
 
-        await this.emailModel.updateEmailAccount(account.id, {
+        await this.emailModel.updateEmailAccount(account.id, account.companyId, {
             lastSyncAt: new Date(),
             updatedAt: new Date()
         });

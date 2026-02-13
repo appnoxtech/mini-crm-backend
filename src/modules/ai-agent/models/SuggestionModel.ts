@@ -8,6 +8,7 @@ export class SuggestionModel {
     private mapPrismaToSuggestion(s: any): EmailSuggestion {
         return {
             id: s.id,
+            companyId: s.companyId,
             dealId: s.dealId || undefined,
             personId: s.personId || undefined,
             subjectLine: s.subjectLine,
@@ -28,6 +29,7 @@ export class SuggestionModel {
     async createSuggestion(data: Omit<EmailSuggestion, 'id'>): Promise<string> {
         const row = await prisma.emailSuggestion.create({
             data: {
+                companyId: data.companyId,
                 dealId: data.dealId || null,
                 personId: data.personId || null,
                 subjectLine: data.subjectLine,
@@ -45,37 +47,37 @@ export class SuggestionModel {
         return row.id;
     }
 
-    async findById(id: string): Promise<EmailSuggestion | null> {
-        const row = await prisma.emailSuggestion.findUnique({
-            where: { id }
+    async findById(id: string, companyId: number): Promise<EmailSuggestion | null> {
+        const row = await prisma.emailSuggestion.findFirst({
+            where: { id, companyId }
         });
         return row ? this.mapPrismaToSuggestion(row) : null;
     }
 
-    async findByDealId(dealId: number): Promise<EmailSuggestion[]> {
+    async findByDealId(dealId: number, companyId: number): Promise<EmailSuggestion[]> {
         const rows = await prisma.emailSuggestion.findMany({
-            where: { dealId },
+            where: { dealId, companyId },
             orderBy: { createdAt: 'desc' }
         });
         return rows.map((row: any) => this.mapPrismaToSuggestion(row));
     }
 
-    async findByPersonId(personId: number): Promise<EmailSuggestion[]> {
+    async findByPersonId(personId: number, companyId: number): Promise<EmailSuggestion[]> {
         const rows = await prisma.emailSuggestion.findMany({
-            where: { personId },
+            where: { personId, companyId },
             orderBy: { createdAt: 'desc' }
         });
         return rows.map((row: any) => this.mapPrismaToSuggestion(row));
     }
 
-    async updateSuggestion(id: string, data: Partial<EmailSuggestion>): Promise<void> {
+    async updateSuggestion(id: string, companyId: number, data: Partial<EmailSuggestion>): Promise<void> {
         const updateData: any = {};
         if (data.status) updateData.status = data.status;
         if (data.userEdits) updateData.userEdits = typeof data.userEdits === 'object' ? JSON.stringify(data.userEdits) : data.userEdits;
         if (data.sentAt) updateData.sentAt = new Date(data.sentAt);
 
-        await prisma.emailSuggestion.update({
-            where: { id },
+        await prisma.emailSuggestion.updateMany({
+            where: { id, companyId },
             data: updateData
         });
     }

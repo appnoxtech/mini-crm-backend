@@ -13,7 +13,7 @@ export class DealController {
                 return ResponseHandler.unauthorized(res, 'User not authenticated');
             }
 
-            const deal = await this.dealService.createDeal(req.user.id, req.body);
+            const deal = await this.dealService.createDeal(req.user.id, req.user.companyId, req.body);
 
             return ResponseHandler.created(res, deal, 'Deal created successfully');
         } catch (error: any) {
@@ -33,6 +33,7 @@ export class DealController {
 
             const result = await this.dealService.searchDeals(
                 req.user.id,
+                req.user.companyId,
                 search.trim(),
                 includeDeleted
             );
@@ -53,7 +54,7 @@ export class DealController {
 
             const { pipelineId, stageId, status, search, page, limit } = req.query;
 
-            const result = await this.dealService.getDeals(req.user.id, {
+            const result = await this.dealService.getDeals(req.user.id, req.user.companyId, {
                 pipelineId: pipelineId ? Number(pipelineId) : undefined,
                 stageId: stageId ? Number(stageId) : undefined,
                 status: status as string,
@@ -78,7 +79,7 @@ export class DealController {
 
             const { id } = req.params;
 
-            const deal = await this.dealService.getDealById(Number(id), req.user.id);
+            const deal = await this.dealService.getDealById(Number(id), req.user.companyId, req.user.id);
 
             if (!deal) {
                 return ResponseHandler.notFound(res, 'Deal not found');
@@ -99,7 +100,7 @@ export class DealController {
 
             const { dealId } = req.params;
 
-            const dealData = await this.dealService.updateDeal(Number(dealId), req.user.id, req.body);
+            const dealData = await this.dealService.updateDeal(Number(dealId), req.user.companyId, req.user.id, req.body);
 
             if (!dealData) {
                 return ResponseHandler.notFound(res, 'Deal not found');
@@ -125,7 +126,7 @@ export class DealController {
                 return ResponseHandler.validationError(res, { toStageId: 'Target stage ID is required' });
             }
 
-            const result = await this.dealService.moveDealToStage(Number(dealId), req.user.id, Number(toStageId), note);
+            const result = await this.dealService.moveDealToStage(Number(dealId), req.user.companyId, req.user.id, Number(toStageId), note);
 
             return ResponseHandler.success(res, result, 'Deal moved successfully');
         } catch (error: any) {
@@ -147,7 +148,7 @@ export class DealController {
                 return ResponseHandler.validationError(res, { status: 'Status must be either "won" or "lost"' });
             }
 
-            const deal = await this.dealService.closeDeal(Number(dealId), req.user.id, status, lostReason);
+            const deal = await this.dealService.closeDeal(Number(dealId), req.user.companyId, req.user.id, status, lostReason);
 
             if (!deal) {
                 return ResponseHandler.notFound(res, 'Deal not found');
@@ -168,7 +169,7 @@ export class DealController {
 
             const { dealId } = req.params;
 
-            const success = await this.dealService.deleteDeal(Number(dealId), req.user.id);
+            const success = await this.dealService.deleteDeal(Number(dealId), req.user.companyId, req.user.id);
 
             if (!success) {
                 return ResponseHandler.notFound(res, 'Deal not found');
@@ -191,6 +192,7 @@ export class DealController {
 
             const deals = await this.dealService.getRottenDeals(
                 req.user.id,
+                req.user.companyId,
                 pipelineId ? Number(pipelineId) : undefined
             );
 
@@ -209,7 +211,7 @@ export class DealController {
 
             const { dealId } = req.params;
 
-            const deal = await this.dealService.makeDealAsWon(Number(dealId), req.user.id);
+            const deal = await this.dealService.makeDealAsWon(Number(dealId), req.user.companyId, req.user.id);
 
             if (!deal) {
                 return ResponseHandler.notFound(res, 'Deal not found');
@@ -231,7 +233,7 @@ export class DealController {
             const { dealId } = req.params;
             const info = req.body;
 
-            const deal = await this.dealService.makeDealAsLost(Number(dealId), req.user.id, info);
+            const deal = await this.dealService.makeDealAsLost(Number(dealId), req.user.companyId, req.user.id, info);
 
             if (!deal) {
                 return ResponseHandler.notFound(res, 'Deal not found');
@@ -252,7 +254,7 @@ export class DealController {
 
             const { dealId } = req.params;
 
-            const deal = await this.dealService.resetDeal(Number(dealId), req.user.id);
+            const deal = await this.dealService.resetDeal(Number(dealId), req.user.companyId, req.user.id);
 
             if (!deal) {
                 return ResponseHandler.notFound(res, 'Deal not found');
@@ -272,7 +274,7 @@ export class DealController {
 
             const { dealId } = req.params;
 
-            const deal = await this.dealService.getDealHistory(Number(dealId));
+            const deal = await this.dealService.getDealHistory(Number(dealId), req.user.companyId);
 
             if (!deal) {
                 return ResponseHandler.notFound(res, 'Deal not found');
@@ -288,7 +290,7 @@ export class DealController {
     async uploadDealFiles(req: Request, res: Response): Promise<void> {
         try {
             const { dealId } = req.params;
-            const files = req.processedFiles;
+            const files = (req as any).processedFiles;
 
             if (!files || files.length === 0) {
                 return ResponseHandler.validationError(res, 'No files were processed');
@@ -311,7 +313,7 @@ export class DealController {
             const { dealId } = req.params;
             const { labelId } = req.body;
 
-            const deal = await this.dealService.removeLabelFromDeal(Number(dealId), Number(labelId), req.user.id);
+            const deal = await this.dealService.removeLabelFromDeal(Number(dealId), req.user.companyId, Number(labelId), req.user.id);
 
             if (!deal) {
                 return ResponseHandler.notFound(res, 'Deal not found');
@@ -330,7 +332,7 @@ export class DealController {
             }
 
             const { dealId } = req.params;
-            const durations = await this.dealService.getDealStageDurations(Number(dealId));
+            const durations = await this.dealService.getDealStageDurations(Number(dealId), req.user.companyId);
 
             return ResponseHandler.success(res, durations, 'Deal stage durations fetched successfully');
         } catch (error: any) {
@@ -350,7 +352,7 @@ export class DealController {
                 return ResponseHandler.validationError(res, 'dealIds must be a non-empty array');
             }
 
-            const result = await this.dealService.archiveDeals(dealIds, req.user.id);
+            const result = await this.dealService.archiveDeals(dealIds, req.user.companyId, req.user.id);
             return ResponseHandler.success(res, { success: result }, 'Deals archived successfully');
         } catch (error: any) {
             console.error('Error archiving deals:', error);
@@ -369,7 +371,7 @@ export class DealController {
                 return ResponseHandler.validationError(res, 'dealIds must be a non-empty array');
             }
 
-            const result = await this.dealService.unarchiveDeals(dealIds, req.user.id);
+            const result = await this.dealService.unarchiveDeals(dealIds, req.user.companyId, req.user.id);
             return ResponseHandler.success(res, { success: result }, 'Deals unarchived successfully');
         } catch (error: any) {
             console.error('Error unarchiving deals:', error);
@@ -385,7 +387,7 @@ export class DealController {
 
             const { pipelineId, stageId, page, limit } = req.query;
 
-            const result = await this.dealService.getArchivedDeals(req.user.id, {
+            const result = await this.dealService.getArchivedDeals(req.user.id, req.user.companyId, {
                 pipelineId: pipelineId ? Number(pipelineId) : undefined,
                 stageId: stageId ? Number(stageId) : undefined,
                 page: page ? Number(page) : undefined,
@@ -411,7 +413,7 @@ export class DealController {
                 return ResponseHandler.validationError(res, 'dealIds must be a non-empty array');
             }
 
-            const result = await this.dealService.permanentDeleteArchivedDeals(dealIds, req.user.id);
+            const result = await this.dealService.permanentDeleteArchivedDeals(dealIds, req.user.companyId, req.user.id);
             return ResponseHandler.success(res, { success: result }, 'Archived deals permanently deleted successfully');
         } catch (error: any) {
             console.error('Error permanently deleting archived deals:', error);

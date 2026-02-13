@@ -234,6 +234,7 @@ export class OAuthService {
   // Helper method to create email account from OAuth tokens
   createEmailAccountFromOAuth(
     userId: string,
+    companyId: number,
     email: string,
     provider: 'gmail' | 'outlook',
     accessToken: string,
@@ -242,6 +243,7 @@ export class OAuthService {
     return {
       id: `${userId}-${email}-${Date.now()}`, // Add timestamp to ensure uniqueness
       userId: userId,
+      companyId: companyId,
       email: email,
       provider: provider,
       accessToken: this.encryptToken(accessToken),

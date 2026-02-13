@@ -12,7 +12,7 @@ export class ProductController {
                 return ResponseHandler.unauthorized(res, 'User not authenticated');
             }
 
-            const product = await this.productService.createProduct(req.user.id, req.body);
+            const product = await this.productService.createProduct(req.user.id, req.user.companyId, req.body);
             return ResponseHandler.created(res, product, 'Product created successfully');
         } catch (error: any) {
             console.error('Error creating product:', error);
@@ -27,7 +27,7 @@ export class ProductController {
             }
 
             const { id } = req.params;
-            const product = await this.productService.updateProduct(Number(id), req.user.id, req.body);
+            const product = await this.productService.updateProduct(Number(id), req.user.id, req.user.companyId, req.body);
 
             if (!product) {
                 return ResponseHandler.notFound(res, 'Product not found');
@@ -47,7 +47,7 @@ export class ProductController {
             }
 
             const { dealId } = req.params;
-            const products = await this.productService.getProductsByDealId(Number(dealId));
+            const products = await this.productService.getProductsByDealId(Number(dealId), req.user.companyId);
 
             return ResponseHandler.success(res, products, 'Products fetched successfully');
         } catch (error: any) {
@@ -63,7 +63,7 @@ export class ProductController {
             }
 
             const { id } = req.params;
-            const success = await this.productService.deleteProduct(Number(id));
+            const success = await this.productService.deleteProduct(Number(id), req.user.companyId);
 
             if (!success) {
                 return ResponseHandler.notFound(res, 'Product not found');

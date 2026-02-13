@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 
 export interface Deal extends BaseEntity {
     title: string;
+    companyId: number;
     value: number;
     currency: string;
     pipelineId: number;
@@ -43,6 +44,7 @@ export class DealModel {
         const deal = await prisma.deal.create({
             data: {
                 title: data.title,
+                companyId: data.companyId,
                 value: data.value || 0,
                 currency: data.currency || 'USD',
                 pipelineId: data.pipelineId,
@@ -71,9 +73,9 @@ export class DealModel {
         return this.mapPrismaDealToDeal(deal);
     }
 
-    async findById(id: number, userId?: number): Promise<Deal | null> {
-        const deal = await prisma.deal.findUnique({
-            where: { id }
+    async findById(id: number, companyId: number, userId?: number): Promise<Deal | null> {
+        const deal = await prisma.deal.findFirst({
+            where: { id, companyId }
         });
         if (!deal) return null;
         if (userId && deal.userId !== userId && !((deal.ownerIds as number[]) || []).includes(userId) && !deal.isVisibleToAll) {
@@ -82,7 +84,7 @@ export class DealModel {
         return this.mapPrismaDealToDeal(deal);
     }
 
-    async findByUserId(userId: number, options: {
+    async findByUserId(userId: number, companyId: number, options: {
         pipelineId?: number;
         stageId?: number;
         status?: string;
@@ -91,6 +93,7 @@ export class DealModel {
         search?: string;
     } = {}): Promise<{ deals: Deal[]; total: number }> {
         const where: any = {
+            companyId,
             deletedAt: null,
             archivedAt: null,
             OR: [
@@ -139,8 +142,9 @@ export class DealModel {
         };
     }
 
-    async searchDeals(userId: number, search: string, includeDeleted: boolean = false): Promise<Deal[]> {
+    async searchDeals(userId: number, companyId: number, search: string, includeDeleted: boolean = false): Promise<Deal[]> {
         const where: any = {
+            companyId,
             OR: [
                 { title: { contains: search, mode: 'insensitive' } },
                 { description: { contains: search, mode: 'insensitive' } }
@@ -160,7 +164,7 @@ export class DealModel {
         return deals.map((d: any) => this.mapPrismaDealToDeal(d));
     }
 
-    async update(id: number, userId: number, data: Partial<Deal>): Promise<Deal | null> {
+    async update(id: number, companyId: number, userId: number, data: Partial<Deal>): Promise<Deal | null> {
         try {
             const updateData: any = {
                 ...(data.title !== undefined && { title: data.title }),
@@ -189,7 +193,7 @@ export class DealModel {
             };
 
             const deal = await prisma.deal.update({
-                where: { id },
+                where: { id, companyId },
                 data: updateData
             });
 
@@ -199,26 +203,26 @@ export class DealModel {
         }
     }
 
-    async makeDealAsWon(id: number): Promise<Deal | null> {
-        return this.update(id, 0, { status: 'WON', actualCloseDate: new Date().toISOString() });
+    async makeDealAsWon(id: number, companyId: number): Promise<Deal | null> {
+        return this.update(id, companyId, 0, { status: 'WON', actualCloseDate: new Date().toISOString() });
     }
 
-    async makeDealAsLost(id: number, info: { reason?: string, comment?: string }): Promise<Deal | null> {
-        return this.update(id, 0, {
+    async makeDealAsLost(id: number, companyId: number, info: { reason?: string, comment?: string }): Promise<Deal | null> {
+        return this.update(id, companyId, 0, {
             status: 'LOST',
             actualCloseDate: new Date().toISOString(),
             lostReason: info.reason || info.comment
         });
     }
 
-    async resetDeal(id: number): Promise<Deal | null> {
-        return this.update(id, 0, { status: 'OPEN', actualCloseDate: undefined, lostReason: undefined });
+    async resetDeal(id: number, companyId: number): Promise<Deal | null> {
+        return this.update(id, companyId, 0, { status: 'OPEN', actualCloseDate: undefined, lostReason: undefined });
     }
 
-    async delete(id: number, userId: number): Promise<boolean> {
+    async delete(id: number, companyId: number, userId: number): Promise<boolean> {
         try {
             await prisma.deal.update({
-                where: { id },
+                where: { id, companyId },
                 data: { deletedAt: new Date() }
             });
             return true;
@@ -227,10 +231,10 @@ export class DealModel {
         }
     }
 
-    async archive(ids: number[], userId: number): Promise<boolean> {
+    async archive(ids: number[], companyId: number, userId: number): Promise<boolean> {
         try {
             await prisma.deal.updateMany({
-                where: { id: { in: ids } },
+                where: { id: { in: ids }, companyId },
                 data: { archivedAt: new Date() }
             });
             return true;
@@ -239,10 +243,10 @@ export class DealModel {
         }
     }
 
-    async unarchive(ids: number[], userId: number): Promise<boolean> {
+    async unarchive(ids: number[], companyId: number, userId: number): Promise<boolean> {
         try {
             await prisma.deal.updateMany({
-                where: { id: { in: ids } },
+                where: { id: { in: ids }, companyId },
                 data: { archivedAt: null }
             });
             return true;
@@ -251,13 +255,14 @@ export class DealModel {
         }
     }
 
-    async getArchivedDeals(userId: number, options: {
+    async getArchivedDeals(userId: number, companyId: number, options: {
         pipelineId?: number;
         stageId?: number;
         limit?: number;
         offset?: number;
     } = {}): Promise<{ deals: Deal[]; total: number }> {
         const where: any = {
+            companyId,
             archivedAt: { not: null },
             deletedAt: null,
             userId
@@ -282,10 +287,10 @@ export class DealModel {
         };
     }
 
-    async hardDeleteArchived(ids: number[], userId: number): Promise<boolean> {
+    async hardDeleteArchived(ids: number[], companyId: number, userId: number): Promise<boolean> {
         try {
             await prisma.deal.deleteMany({
-                where: { id: { in: ids }, archivedAt: { not: null }, userId }
+                where: { id: { in: ids }, companyId, archivedAt: { not: null }, userId }
             });
             return true;
         } catch (error) {
@@ -293,8 +298,9 @@ export class DealModel {
         }
     }
 
-    async getRottenDeals(userId: number, pipelineId?: number): Promise<Deal[]> {
+    async getRottenDeals(userId: number, companyId: number, pipelineId?: number): Promise<Deal[]> {
         const where: any = {
+            companyId,
             isRotten: true,
             deletedAt: null,
             userId
@@ -305,25 +311,26 @@ export class DealModel {
         return deals.map((d: any) => this.mapPrismaDealToDeal(d));
     }
 
-    async removeLabelFromDeal(dealId: number, labelId: number): Promise<Deal | null> {
-        const deal = await prisma.deal.findUnique({ where: { id: dealId } });
+    async removeLabelFromDeal(dealId: number, companyId: number, labelId: number): Promise<Deal | null> {
+        const deal = await prisma.deal.findFirst({ where: { id: dealId, companyId } });
         if (!deal) return null;
 
         const labels = (deal.labelIds as number[]) || [];
         const updatedLabels = labels.filter(id => id !== labelId);
 
         const updated = await prisma.deal.update({
-            where: { id: dealId },
+            where: { id: dealId, companyId },
             data: { labelIds: updatedLabels as any }
         });
 
         return this.mapPrismaDealToDeal(updated);
     }
 
-    async getStats(userId: number): Promise<any> {
+    async getStats(userId: number, companyId: number): Promise<any> {
         const stats = await prisma.deal.groupBy({
             by: ['status'],
             where: {
+                companyId,
                 deletedAt: null,
                 OR: [
                     { userId },
@@ -362,9 +369,10 @@ export class DealModel {
         return result;
     }
 
-    async searchByTitle(title: string): Promise<Deal[]> {
+    async searchByTitle(title: string, companyId: number): Promise<Deal[]> {
         const deals = await prisma.deal.findMany({
             where: {
+                companyId,
                 title: { contains: title, mode: 'insensitive' },
                 deletedAt: null
             },
@@ -373,9 +381,10 @@ export class DealModel {
         return deals.map((d: any) => this.mapPrismaDealToDeal(d));
     }
 
-    async findExistingByTitle(title: string): Promise<{ dealId: number; title: string } | null> {
+    async findExistingByTitle(title: string, companyId: number): Promise<{ dealId: number; title: string } | null> {
         const deal = await prisma.deal.findFirst({
             where: {
+                companyId,
                 title: { equals: title, mode: 'insensitive' },
                 deletedAt: null
             },
@@ -384,10 +393,10 @@ export class DealModel {
         return deal ? { dealId: deal.id, title: deal.title } : null;
     }
 
-    async hardDelete(id: number): Promise<boolean> {
+    async hardDelete(id: number, companyId: number): Promise<boolean> {
         try {
             await prisma.deal.delete({
-                where: { id }
+                where: { id, companyId }
             });
             return true;
         } catch (error) {
@@ -398,6 +407,7 @@ export class DealModel {
     private mapPrismaDealToDeal(d: any): Deal {
         return {
             id: d.id,
+            companyId: d.companyId,
             title: d.title,
             value: d.value || 0,
             currency: d.currency || 'USD',

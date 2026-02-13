@@ -35,11 +35,12 @@ export class AuthService {
     return jwt.sign(
       {
         id: user.id,
-        email: user.email,
-        name: user.name
+        companyId: user.companyId,
+        role: user.role,
+        email: user.email
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: '1d' }
     );
   }
 
@@ -52,12 +53,13 @@ export class AuthService {
     }
   }
 
-  async createUser(email: string, name: string, password: string, role: string = 'user'): Promise<AuthUser> {
+  async createUser(email: string, name: string, password: string, phone: string, role: string = 'user', companyId: number): Promise<AuthUser> {
     const passwordHash = await this.hashPassword(password);
-    const user = await this.userModel.createUser(email, name, passwordHash, role);
+    const user = await this.userModel.createUser(email, name, passwordHash, phone, role, companyId);
 
     return {
       id: user.id,
+      companyId: user.companyId,
       email: user.email,
       name: user.name,
       createdAt: user.createdAt
@@ -83,8 +85,8 @@ export class AuthService {
     }
   }
 
-  async getProfile(id: number): Promise<AuthUser | null> {
-    const user = await this.userModel.findById(id);
+  async getProfile(id: number, companyId: number): Promise<AuthUser | null> {
+    const user = await this.userModel.findById(id, companyId);
     if (!user) return null;
 
     return {
@@ -92,8 +94,8 @@ export class AuthService {
     } as unknown as AuthUser;
   }
 
-  async updateUser(id: number, updates: Partial<{ name: string; email: string }>): Promise<AuthUser | null> {
-    const user = await this.userModel.updateUser(id, updates as any);
+  async updateUser(id: number, companyId: number, updates: Partial<{ name: string; email: string }>): Promise<AuthUser | null> {
+    const user = await this.userModel.updateUser(id, companyId, updates as any);
     if (!user) return null;
 
     return {
@@ -101,9 +103,9 @@ export class AuthService {
     } as unknown as AuthUser;
   }
 
-  async changePassword(id: number, currentPassword: string, newPassword: string): Promise<boolean> {
+  async changePassword(id: number, companyId: number, currentPassword: string, newPassword: string): Promise<boolean> {
     try {
-      const user = await this.userModel.findById(id);
+      const user = await this.userModel.findById(id, companyId);
       if (!user) {
         return false;
       }
@@ -114,23 +116,23 @@ export class AuthService {
       }
 
       const newPasswordHash = await this.hashPassword(newPassword);
-      return await this.userModel.updatePassword(id, newPasswordHash);
+      return await this.userModel.updatePassword(id, companyId, newPasswordHash);
     } catch (error) {
       console.error('Password change error:', error);
       return false;
     }
   }
 
-  async changeAccountRole(id: number, role: string): Promise<boolean> {
+  async changeAccountRole(id: number, role: string, companyId: number): Promise<boolean> {
     try {
-      return await this.userModel.updateAccountRole(id, role);
+      return await this.userModel.updateAccountRole(id, role, companyId);
     } catch (error) {
       console.error('Account role change error:', error);
       return false;
     }
   }
 
-  async searchByPersonName(searchTerm: string): Promise<any> {
+  async searchByPersonName(searchTerm: string, companyId: number): Promise<any> {
     if (!searchTerm || !searchTerm.trim()) {
       return [];
     }
@@ -138,7 +140,7 @@ export class AuthService {
     const trimmedSearch = searchTerm.trim();
 
     // Search in users table
-    const users = await this.userModel.searchByPersonName(trimmedSearch);
+    const users = await this.userModel.searchByPersonName(trimmedSearch, companyId);
     const formattedUsers = users.map(user => ({
       id: user.id,
       name: user.name,
@@ -148,7 +150,7 @@ export class AuthService {
     }));
 
     // Search in persons table
-    const persons = await this.personModel.searchByPersonName(trimmedSearch);
+    const persons = await this.personModel.searchByPersonName(trimmedSearch, companyId);
     const formattedPersons = persons.map((person: any) => ({
       id: person.id,
       name: `${person.firstName} ${person.lastName || ''}`.trim(),
@@ -415,7 +417,7 @@ export class AuthService {
       if (!user) return false;
 
       const newPasswordHash = await this.hashPassword(newPassword);
-      const updated = await this.userModel.updatePassword(user.id, newPasswordHash);
+      const updated = await this.userModel.updatePassword(user.id, user.companyId, newPasswordHash);
 
       // OTP is already deleted by verifyOtp(..., true)
 
@@ -440,6 +442,7 @@ export function generateToken(user: AuthUser): string {
   return jwt.sign(
     {
       id: user.id,
+      companyId: user.companyId,
       email: user.email,
       name: user.name
     },

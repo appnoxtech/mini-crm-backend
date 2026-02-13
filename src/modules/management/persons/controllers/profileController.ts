@@ -13,7 +13,7 @@ export class ProfileController {
                 return ResponseHandler.validationError(res, 'User not authenticated');
             }
 
-            const profile = await this.profileService.getProfile(req.user.id);
+            const profile = await this.profileService.getProfile(req.user.id, req.user.companyId);
 
             if (!profile) {
                 return ResponseHandler.notFound(res, 'Profile not found');
@@ -32,7 +32,7 @@ export class ProfileController {
                 return ResponseHandler.validationError(res, 'User not authenticated');
             }
 
-            const existingProfile = await this.profileService.getProfile(req.user.id);
+            const existingProfile = await this.profileService.getProfile(req.user.id, req.user.companyId);
             if (!existingProfile) {
                 return ResponseHandler.notFound(res, 'Profile not found');
             }
@@ -68,7 +68,7 @@ export class ProfileController {
                 updateData.profileImg = JSON.stringify(req.processedFiles);
             }
 
-            const profile = await this.profileService.updateProfile(req.user.id, updateData);
+            const profile = await this.profileService.updateProfile(req.user.id, req.user.companyId, updateData);
 
             return ResponseHandler.success(res, profile, 'Profile updated successfully');
         } catch (error) {
@@ -82,7 +82,7 @@ export class ProfileController {
             if (!req.user) {
                 return ResponseHandler.validationError(res, 'User not authenticated');
             }
-            const existingProfile = await this.profileService.getProfile(req.user.id);
+            const existingProfile = await this.profileService.getProfile(req.user.id, req.user.companyId);
             if (!existingProfile) {
                 return ResponseHandler.notFound(res, 'Profile not found');
             }
@@ -107,7 +107,7 @@ export class ProfileController {
             }
 
 
-            await this.profileService.deleteProfile(req.user.id);
+            await this.profileService.deleteProfile(req.user.id, req.user.companyId);
 
             return ResponseHandler.success(res, null, 'Profile deleted successfully');
         } catch (error) {

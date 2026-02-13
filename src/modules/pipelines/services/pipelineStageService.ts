@@ -7,14 +7,14 @@ export class PipelineStageService {
         private pipelineModel: PipelineModel
     ) { }
 
-    async createStage(pipelineId: number, userId: number, data: {
+    async createStage(pipelineId: number, companyId: number, userId: number, data: {
         name: string;
         orderIndex?: number;
         probability?: number;
         rottenDays?: number;
     }): Promise<PipelineStage> {
         // Verify pipeline ownership
-        const pipeline = await this.pipelineModel.findById(pipelineId, userId);
+        const pipeline = await this.pipelineModel.findById(pipelineId, companyId, userId);
 
         if (!pipeline) {
             throw new Error('Pipeline not found');
@@ -34,13 +34,14 @@ export class PipelineStageService {
         }
 
         // Get current stages to determine order index
-        const existingStages = await this.stageModel.findByPipelineId(pipelineId);
+        const existingStages = await this.stageModel.findByPipelineId(pipelineId, companyId);
 
         const orderIndex = data.orderIndex !== undefined
             ? data.orderIndex
             : existingStages.length;
 
         return this.stageModel.create({
+            companyId: pipeline.companyId,
             pipelineId,
             name: data.name.trim(),
             orderIndex,
@@ -49,30 +50,30 @@ export class PipelineStageService {
         });
     }
 
-    async getStages(pipelineId: number, userId: number): Promise<any[]> {
+    async getStages(pipelineId: number, companyId: number, userId: number): Promise<any[]> {
         // Verify pipeline ownership
-        const pipeline = await this.pipelineModel.findById(pipelineId, userId);
+        const pipeline = await this.pipelineModel.findById(pipelineId, companyId, userId);
         if (!pipeline) {
             throw new Error('Pipeline not found');
         }
 
-        return this.stageModel.getStageWithDealCount(pipelineId);
+        return this.stageModel.getStageWithDealCount(pipelineId, companyId);
     }
 
-    async updateStage(pipelineId: number, stageId: number, userId: number, data: {
+    async updateStage(pipelineId: number, stageId: number, companyId: number, userId: number, data: {
         name?: string;
         probability?: number;
         rottenDays?: number;
     }): Promise<PipelineStage | null> {
         // Verify pipeline ownership
 
-        const pipeline = await this.pipelineModel.findById(pipelineId, userId);
+        const pipeline = await this.pipelineModel.findById(pipelineId, companyId, userId);
         if (!pipeline) {
             throw new Error('Pipeline not found');
         }
 
         // Verify stage belongs to pipeline
-        const stage = await this.stageModel.findById(stageId);
+        const stage = await this.stageModel.findById(stageId, companyId);
         if (!stage || stage.pipelineId !== pipelineId) {
             throw new Error('Stage not found');
         }
@@ -91,18 +92,18 @@ export class PipelineStageService {
             throw new Error('Probability must be between 0 and 100');
         }
 
-        return this.stageModel.update(stageId, data);
+        return this.stageModel.update(stageId, companyId, data);
     }
 
-    async reorderStages(pipelineId: number, userId: number, stageOrder: number[]): Promise<PipelineStage[]> {
+    async reorderStages(pipelineId: number, companyId: number, userId: number, stageOrder: number[]): Promise<PipelineStage[]> {
         // Verify pipeline ownership
-        const pipeline = await this.pipelineModel.findById(pipelineId, userId);
+        const pipeline = await this.pipelineModel.findById(pipelineId, companyId, userId);
         if (!pipeline) {
             throw new Error('Pipeline not found');
         }
 
         // Verify all stages belong to this pipeline
-        const existingStages = await this.stageModel.findByPipelineId(pipelineId);
+        const existingStages = await this.stageModel.findByPipelineId(pipelineId, companyId);
         const existingStageIds = existingStages.map((s: any) => s.id);
 
         for (const stageId of stageOrder) {
@@ -115,40 +116,40 @@ export class PipelineStageService {
             throw new Error('Stage order must include all stages');
         }
 
-        await this.stageModel.reorder(pipelineId, stageOrder);
+        await this.stageModel.reorder(pipelineId, companyId, stageOrder);
 
-        return await this.stageModel.findByPipelineId(pipelineId);
+        return await this.stageModel.findByPipelineId(pipelineId, companyId);
     }
 
-    async deleteStage(pipelineId: number, stageId: number, userId: number, moveDealsToStageId?: number): Promise<{ success: boolean; dealsMoved: number }> {
+    async deleteStage(pipelineId: number, stageId: number, companyId: number, userId: number, moveDealsToStageId?: number): Promise<{ success: boolean; dealsMoved: number }> {
         // Verify pipeline ownership
 
-        const pipeline = await this.pipelineModel.findById(pipelineId, userId);
+        const pipeline = await this.pipelineModel.findById(pipelineId, companyId, userId);
         if (!pipeline) {
             throw new Error('Pipeline not found');
         }
 
         // Verify stage belongs to pipeline
-        const stage = await this.stageModel.findById(stageId);
+        const stage = await this.stageModel.findById(stageId, companyId);
         if (!stage || stage.pipelineId !== pipelineId) {
             throw new Error('Stage not found');
         }
 
         // Ensure pipeline has at least 1 stages
-        const stages = await this.stageModel.findByPipelineId(pipelineId);
+        const stages = await this.stageModel.findByPipelineId(pipelineId, companyId);
         if (stages.length <= 1) {
             throw new Error('Pipeline must have at least 2 stages');
         }
 
         // If moveDealsToStageId is provided, verify it belongs to same pipeline
         if (moveDealsToStageId) {
-            const targetStage = await this.stageModel.findById(moveDealsToStageId);
+            const targetStage = await this.stageModel.findById(moveDealsToStageId, companyId);
             if (!targetStage || targetStage.pipelineId !== pipelineId) {
                 throw new Error('Target stage must belong to the same pipeline');
             }
         }
 
-        const success = await this.stageModel.delete(stageId, moveDealsToStageId);
+        const success = await this.stageModel.delete(stageId, companyId, moveDealsToStageId);
 
         return {
             success,

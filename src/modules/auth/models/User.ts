@@ -3,6 +3,7 @@ import { prisma } from '../../../shared/prisma';
 
 type LoginUserResponse = {
   id: number;
+  companyId: number;
   email: string;
   name: string;
   profileImg: any[];
@@ -21,13 +22,15 @@ export class UserModel {
 
   initialize(): void { }
 
-  async createUser(email: string, name: string, passwordHash: string, role: string): Promise<User> {
+  async createUser(email: string, name: string, passwordHash: string, phone: string, role: string, companyId: number): Promise<User> {
     const user = await prisma.user.create({
       data: {
         email: email.toLowerCase(),
         name,
         passwordHash,
+        phone,
         role,
+        companyId,
       }
     });
 
@@ -52,9 +55,9 @@ export class UserModel {
     } as unknown as User;
   }
 
-  async findById(id: number): Promise<User | undefined> {
+  async findById(id: number, companyId: number): Promise<User | undefined> {
     const user = await prisma.user.findUnique({
-      where: { id }
+      where: { id, companyId }
     });
     if (!user) return undefined;
 
@@ -79,7 +82,7 @@ export class UserModel {
     } as unknown as User));
   }
 
-  async updateUser(id: number, updates: Partial<User>): Promise<AuthUser | null> {
+  async updateUser(id: number, companyId: number, updates: Partial<User>): Promise<AuthUser | null> {
     try {
       const data: any = {};
       const allowedUpdates: (keyof User)[] = [
@@ -96,7 +99,7 @@ export class UserModel {
       if (Object.keys(data).length === 0) return null;
 
       const updatedUser = await prisma.user.update({
-        where: { id },
+        where: { id, companyId },
         data
       });
 
@@ -113,9 +116,9 @@ export class UserModel {
     }
   }
 
-  async getProfile(id: number): Promise<AuthUser | null> {
+  async getProfile(id: number, companyId: number): Promise<AuthUser | null> {
     const user = await prisma.user.findUnique({
-      where: { id }
+      where: { id, companyId }
     });
     if (!user) return null;
 
@@ -128,10 +131,10 @@ export class UserModel {
     } as unknown as AuthUser;
   }
 
-  async updatePassword(id: number, passwordHash: string): Promise<boolean> {
+  async updatePassword(id: number, companyId: number, passwordHash: string): Promise<boolean> {
     try {
       await prisma.user.update({
-        where: { id },
+        where: { id, companyId },
         data: { passwordHash }
       });
       return true;
@@ -141,10 +144,10 @@ export class UserModel {
     }
   }
 
-  async updateAccountRole(id: number, role: string): Promise<boolean> {
+  async updateAccountRole(id: number, role: string, companyId: number): Promise<boolean> {
     try {
       await prisma.user.update({
-        where: { id },
+        where: { id, companyId },
         data: { role }
       });
       return true;
@@ -154,9 +157,10 @@ export class UserModel {
     }
   }
 
-  async searchByPersonName(search: string): Promise<LoginUserResponse[]> {
+  async searchByPersonName(search: string, companyId: number): Promise<LoginUserResponse[]> {
     const users = await prisma.user.findMany({
       where: {
+        companyId,
         OR: [
           { name: { contains: search, mode: 'insensitive' } },
           { email: { contains: search, mode: 'insensitive' } }
@@ -170,6 +174,7 @@ export class UserModel {
   private mapToLoginUser(user: any): LoginUserResponse {
     return {
       id: user.id,
+      companyId: user.companyId,
       email: user.email,
       name: user.name,
       profileImg: typeof user.profileImg === 'string' ? JSON.parse(user.profileImg || '[]') : (user.profileImg || []),

@@ -1,14 +1,17 @@
 import { EmailService } from './emailService';
 import { EmailModel } from '../models/emailModel';
+import { EmailAccount } from '../models/types';
 
 export interface EmailSyncJob {
   accountId: string;
   userId: string;
+  companyId: number;
   priority: 'high' | 'normal' | 'low';
 }
 
 export interface EmailSendJob {
   accountId: string;
+  companyId: number;
   emailData: {
     to: string[];
     cc?: string[];
@@ -86,7 +89,7 @@ export class EmailQueueService {
 
   private async processSingleSyncJob(job: EmailSyncJob): Promise<void> {
     try {
-      const account = await this.emailModel.getEmailAccountById(job.accountId);
+      const account = await this.emailModel.getEmailAccountById(job.accountId, job.companyId);
       if (!account || !account.isActive) {
         return;
       }
@@ -108,7 +111,7 @@ export class EmailQueueService {
         errorMessage.includes('re-authenticate');
 
       if (!isPermanentFailure && job.priority !== 'low') {
-        this.queueEmailSync(job.accountId, job.userId, 'low');
+        this.queueEmailSync(job.accountId, job.userId, job.companyId, 'low');
       }
     }
   }
@@ -127,7 +130,7 @@ export class EmailQueueService {
 
 
       // For sending, we can use the accountId directly as the service handles fetching
-      const messageId = await this.emailService.sendEmail(job.accountId, job.emailData);
+      const messageId = await this.emailService.sendEmail(job.accountId, job.emailData, job.companyId);
 
     } catch (error: any) {
       console.error(`Failed to send email for account ${job.accountId}:`, error);
@@ -135,7 +138,7 @@ export class EmailQueueService {
     }
   }
 
-  public queueEmailSync(accountId: string, userId: string, priority: 'high' | 'normal' | 'low' = 'normal'): void {
+  public queueEmailSync(accountId: string, userId: string, companyId: number, priority: 'high' | 'normal' | 'low' = 'normal'): void {
     // Check if already queued to avoid duplicates
     const existingJob = this.syncQueue.find(job => job.accountId === accountId);
     if (existingJob) {
@@ -146,7 +149,7 @@ export class EmailQueueService {
       return;
     }
 
-    this.syncQueue.push({ accountId, userId, priority });
+    this.syncQueue.push({ accountId, userId, companyId, priority });
 
     // Sort queue by priority (high first)
     this.syncQueue.sort((a, b) => {
@@ -157,9 +160,8 @@ export class EmailQueueService {
 
   }
 
-  public queueEmailSend(accountId: string, emailData: EmailSendJob['emailData']): void {
-    this.sendQueue.push({ accountId, emailData });
-
+  public queueEmailSend(accountId: string, companyId: number, emailData: EmailSendJob['emailData']): void {
+    this.sendQueue.push({ accountId, companyId, emailData });
   }
 
   private async scheduleEmailSyncForAllAccounts(): Promise<void> {
@@ -168,17 +170,19 @@ export class EmailQueueService {
       const accounts = await this.getAllActiveAccountsForSync();
 
       for (const account of accounts) {
-        this.queueEmailSync(account.id, account.userId, 'normal');
+        this.queueEmailSync(account.id, account.userId, account.companyId, 'normal');
       }
     } catch (error) {
       console.error('Failed to schedule email sync for all accounts:', error);
     }
   }
 
-  private async getAllActiveAccountsForSync(): Promise<any[]> {
+  private async getAllActiveAccountsForSync(): Promise<EmailAccount[]> {
     try {
       // Get all active accounts from model
-      const allAccounts = await this.emailModel.getAllActiveAccounts();
+      // Note: This fetches ALL active accounts across companies for background sync
+      // Each account already has companyId, which is passed through the sync jobs
+      const allAccounts = await this.emailModel.getAllActiveAccountsGlobal();
 
       // Filter for accounts that haven't been synced in the last 15 minutes
       const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);

@@ -14,6 +14,7 @@ export interface Email {
   messageId: string;
   threadId?: string;
   accountId: string;
+  companyId: number;
   from: string;
   to: string[];
   cc?: string[];
@@ -65,6 +66,7 @@ export interface EmailContent {
 export interface EmailAccount {
   id: string;
   userId: string;
+  companyId: number;
   email: string;
   provider: 'gmail' | 'outlook' | 'imap' | 'custom';
   accessToken?: string;

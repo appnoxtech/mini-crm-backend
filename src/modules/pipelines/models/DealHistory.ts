@@ -5,6 +5,7 @@ export interface DealHistory {
   id: number;
   dealId: number;
   userId: number;
+  companyId: number;
   eventType: string;
   fromValue?: string;
   toValue?: string;
@@ -29,6 +30,7 @@ export class DealHistoryModel {
       data: {
         dealId: data.dealId,
         userId: data.userId,
+        companyId: data.companyId,
         eventType: data.eventType,
         fromValue: data.fromValue || null,
         toValue: data.toValue || null,
@@ -36,7 +38,7 @@ export class DealHistoryModel {
         toStageId: data.toStageId || null,
         stageDuration: data.stageDuration || null,
         description: data.description || null,
-        metadata: data.metadata ? JSON.stringify(data.metadata) : null,
+        metadata: data.metadata ? (typeof data.metadata === 'string' ? data.metadata : JSON.stringify(data.metadata)) : null,
         createdAt: data.createdAt ? new Date(data.createdAt) : new Date(),
         leftAt: data.leftAt ? new Date(data.leftAt) : null
       }
@@ -45,42 +47,45 @@ export class DealHistoryModel {
     return this.mapPrismaHistoryToHistory(history);
   }
 
-  async findById(id: number): Promise<DealHistory | null> {
-    const history = await prisma.dealHistory.findUnique({
-      where: { id }
+  async findById(id: number, companyId?: number): Promise<DealHistory | null> {
+    const history = await prisma.dealHistory.findFirst({
+      where: {
+        id,
+        ...(companyId && { companyId })
+      }
     });
     return history ? this.mapPrismaHistoryToHistory(history) : null;
   }
 
-  async findByDealId(dealId: number, limit?: number): Promise<DealHistory[]> {
+  async findByDealId(dealId: number, companyId: number, limit?: number): Promise<DealHistory[]> {
     const rows = await prisma.dealHistory.findMany({
-      where: { dealId },
+      where: { dealId, companyId },
       orderBy: { createdAt: 'desc' },
       take: limit
     });
     return rows.map((r: any) => this.mapPrismaHistoryToHistory(r));
   }
 
-  async findLastStageChange(dealId: number): Promise<DealHistory | null> {
+  async findLastStageChange(dealId: number, companyId: number): Promise<DealHistory | null> {
     const history = await prisma.dealHistory.findFirst({
-      where: { dealId, eventType: 'stage_change' },
+      where: { dealId, companyId, eventType: 'stage_change' },
       orderBy: { createdAt: 'desc' }
     });
     return history ? this.mapPrismaHistoryToHistory(history) : null;
   }
 
-  async findByEventType(dealId: number, eventType: string): Promise<DealHistory[]> {
+  async findByEventType(dealId: number, companyId: number, eventType: string): Promise<DealHistory[]> {
     const rows = await prisma.dealHistory.findMany({
-      where: { dealId, eventType },
+      where: { dealId, companyId, eventType },
       orderBy: { createdAt: 'desc' }
     });
     return rows.map((r: any) => this.mapPrismaHistoryToHistory(r));
   }
 
-  async closeOpenStageRecord(dealId: number, closedAt?: string): Promise<void> {
+  async closeOpenStageRecord(dealId: number, companyId: number, closedAt?: string): Promise<void> {
     const now = closedAt ? new Date(closedAt) : new Date();
     const openRecords = await prisma.dealHistory.findMany({
-      where: { dealId, eventType: 'stage_change', leftAt: null }
+      where: { dealId, companyId, eventType: 'stage_change', leftAt: null }
     });
 
     for (const record of openRecords) {
@@ -88,7 +93,7 @@ export class DealHistoryModel {
       const durationInDays = (now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24);
 
       await prisma.dealHistory.update({
-        where: { id: record.id },
+        where: { id: record.id, companyId },
         data: {
           leftAt: now,
           stageDuration: durationInDays
@@ -97,9 +102,9 @@ export class DealHistoryModel {
     }
   }
 
-  async getStageDurations(dealId: number): Promise<Array<{ stageId: number; stageName: string; totalDuration: number }>> {
+  async getStageDurations(dealId: number, companyId: number): Promise<Array<{ stageId: number; stageName: string; totalDuration: number }>> {
     const records = await prisma.dealHistory.findMany({
-      where: { dealId, eventType: 'stage_change' },
+      where: { dealId, companyId, eventType: 'stage_change' },
       include: {
         toStage: true
       }
@@ -132,9 +137,9 @@ export class DealHistoryModel {
     }));
   }
 
-  async getTimeInStages(dealId: number): Promise<Array<{ stageId: number; stageName: string; duration: number }>> {
+  async getTimeInStages(dealId: number, companyId: number): Promise<Array<{ stageId: number; stageName: string; duration: number }>> {
     const records = await prisma.dealHistory.findMany({
-      where: { dealId, eventType: 'stage_change', stageDuration: { not: null } },
+      where: { dealId, companyId, eventType: 'stage_change', stageDuration: { not: null } },
       include: { toStage: true },
       orderBy: { createdAt: 'asc' }
     });
@@ -146,11 +151,17 @@ export class DealHistoryModel {
     }));
   }
 
-  async delete(id: number): Promise<boolean> {
+  async delete(id: number, companyId?: number): Promise<boolean> {
     try {
-      await prisma.dealHistory.delete({
-        where: { id }
-      });
+      if (companyId) {
+        await prisma.dealHistory.deleteMany({
+          where: { id, companyId }
+        });
+      } else {
+        await prisma.dealHistory.delete({
+          where: { id }
+        });
+      }
       return true;
     } catch (error) {
       return false;
@@ -162,6 +173,7 @@ export class DealHistoryModel {
       id: h.id,
       dealId: h.dealId,
       userId: h.userId,
+      companyId: h.companyId,
       eventType: h.eventType,
       fromValue: h.fromValue || undefined,
       toValue: h.toValue || undefined,
@@ -169,7 +181,7 @@ export class DealHistoryModel {
       toStageId: h.toStageId || undefined,
       stageDuration: h.stageDuration || undefined,
       description: h.description || undefined,
-      metadata: h.metadata ? JSON.parse(h.metadata as string) : undefined,
+      metadata: h.metadata ? (typeof h.metadata === 'string' ? JSON.parse(h.metadata) : h.metadata) : undefined,
       createdAt: h.createdAt.toISOString(),
       leftAt: h.leftAt?.toISOString() || undefined
     };

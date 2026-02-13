@@ -3,7 +3,7 @@ import { Product, ProductModel } from "../models/Product";
 export class ProductService {
     constructor(private productModel: ProductModel) { }
 
-    async createProduct(userId: number, data: {
+    async createProduct(userId: number, companyId: number, data: {
         dealId: number;
         item: string;
         price: number;
@@ -18,6 +18,7 @@ export class ProductService {
         return this.productModel.create({
             dealId: (data.dealId),
             userId,
+            companyId,
             title: data.item,
             price: Number(data.price),
             quantity: Number(data.quantity),
@@ -29,7 +30,7 @@ export class ProductService {
 
         });
     }
-    async updateProduct(id: number, userId: number, data: {
+    async updateProduct(id: number, userId: number, companyId: number, data: {
         dealId: number;
         item: string;
         price: number;
@@ -41,9 +42,10 @@ export class ProductService {
         description?: string;
 
     }): Promise<Product | null> {
-        return this.productModel.update(id, {
+        return this.productModel.update(id, companyId, {
             dealId: (data.dealId),
             userId,
+            companyId,
             title: data.item,
             price: Number(data.price),
             quantity: Number(data.quantity),
@@ -58,11 +60,11 @@ export class ProductService {
 
 
     // get all products by deal id
-    async getProductsByDealId(dealId: number): Promise<Product[]> {
-        return this.productModel.findByDealId(dealId);
+    async getProductsByDealId(dealId: number, companyId: number): Promise<Product[]> {
+        return this.productModel.findByDealId(dealId, companyId);
     }
 
-    async deleteProduct(id: number): Promise<boolean> {
-        return this.productModel.delete(id);
+    async deleteProduct(id: number, companyId: number): Promise<boolean> {
+        return this.productModel.delete(id, companyId);
     }
 }

@@ -35,6 +35,7 @@ export function startTokenRefreshJob() {
                     const account = {
                         id: accountRow.id,
                         userId: accountRow.userId,
+                        companyId: accountRow.companyId,
                         email: accountRow.email,
                         provider: accountRow.provider,
                         accessToken: accountRow.accessToken,
@@ -49,7 +50,7 @@ export function startTokenRefreshJob() {
 
                     if (refreshResult) {
                         // Update the account with new tokens
-                        await emailModel.updateEmailAccount(account.id, {
+                        await emailModel.updateEmailAccount(account.id, account.companyId, {
                             accessToken: oauthService.encryptToken(refreshResult.accessToken),
                             refreshToken: refreshResult.refreshToken
                                 ? oauthService.encryptToken(refreshResult.refreshToken)

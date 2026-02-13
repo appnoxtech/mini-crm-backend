@@ -28,6 +28,7 @@ import { OrganizationModel } from './modules/management/organisations/models/Org
 import { PersonModel } from './modules/management/persons/models/Person';
 import { ProductModel } from './modules/pipelines/models/Product';
 import { LabelModel } from './modules/pipelines/models/Label';
+import { CompanyModel } from './modules/companies/models/company';
 
 // Import call module
 import { CallModel } from './modules/calls/models/Call';
@@ -55,6 +56,7 @@ import { PersonService } from './modules/management/persons/services/PersonServi
 import { ProfileService } from './modules/management/persons/services/profileService';
 import { OrganizationService } from './modules/management/organisations/services/OrganizationService';
 import { LabelService } from './modules/pipelines/services/labelService';
+import { CompanyService } from './modules/companies/services/companyService';
 
 // Import enhanced email services
 import { MailSystemConfigService } from './modules/email/services/mailSystemConfig';
@@ -78,6 +80,7 @@ import { ActivityController } from './modules/pipelines/controllers/activityCont
 import { PersonController } from './modules/management/persons/controllers/PersonController';
 import { OrganizationController } from './modules/management/organisations/controllers/OrganizationController';
 import { LabelController } from './modules/pipelines/controllers/labelController';
+import { CompanyController } from './modules/companies/controllers/companyController';
 import { ProfileController } from './modules/management/persons/controllers/profileController';
 
 // Import routes
@@ -93,7 +96,11 @@ import { createOrganizationRoutes } from './modules/management/organisations/rou
 import { createPersonRoutes } from './modules/management/persons/routes/personRoutes';
 import { createLabelRoutes } from './modules/pipelines/routes/labelRoutes';
 import { createProfileRoutes } from './modules/management/persons/routes/profileRoutes';
+import { createCompanyRoutes } from './modules/companies/routes/companyRoutes';
 import { createEmailWebhookRoutes } from './modules/email/routes/emailWebhookRoutes';
+import { createInvitationRoutes } from './modules/invitations/routes/invitationRoutes';
+import { InvitationService } from './modules/invitations/services/invitationService';
+import { InvitationController } from './modules/invitations/controllers/invitationController';
 
 // Import summarization module
 import { SummarizationController } from './modules/email/controllers/summarizationController';
@@ -171,6 +178,7 @@ const personModel = new PersonModel();
 const productModel = new ProductModel();
 const callModel = new CallModel();
 const labelModel = new LabelModel();
+const companyModel = new CompanyModel();
 
 // Initialize calendar models
 const calendarEventModel = new CalendarEventModel();
@@ -205,6 +213,7 @@ const personService = new PersonService(personModel, organisationModel);
 const labelService = new LabelService(labelModel);
 const profileService = new ProfileService(userModel);
 const callService = new CallService(callModel);
+const companyService = new CompanyService(companyModel);
 const importService = new ImportService();
 
 // Initialize calendar services
@@ -232,7 +241,7 @@ imapIdleService.initialize(emailService, notificationService, emailQueueService)
 gmailPushService.initialize(emailService, notificationService);
 
 // Initialize controllers
-const authController = new AuthController(authService, userModel);
+const authController = new AuthController(authService, userModel, companyModel);
 const leadController = new LeadController(leadService);
 const emailController = new EmailController(emailService, draftService, oauthService, emailQueueService, notificationService, quotaService);
 const trackingController = new EmailTrackingController(emailModel, notificationService);
@@ -247,9 +256,14 @@ const labelController = new LabelController(labelService);
 const profileController = new ProfileController(profileService);
 const importController = new ImportController(importService);
 const callController = new CallController(callService);
+const companyController = new CompanyController(companyService);
 const draftController = new DraftController(draftService);
 const webhookController = new WebhookController(callService);
 webhookController.setSocketIO(io);
+
+// Initialize invitation module
+const invitationService = new InvitationService();
+const invitationController = new InvitationController(invitationService);
 
 // Initialize AI agent module
 const suggestionOrchestrator = new SuggestionOrchestratorService();
@@ -282,6 +296,8 @@ app.use((req, res, next) => {
 });
 
 // Routes
+app.use('/api/companies', createCompanyRoutes(companyController));
+
 app.use('/api/auth', createAuthRoutes(authController));
 app.use('/api/leads', createLeadRoutes(leadController));
 app.use('/api/emails', createEmailRoutes(emailController, trackingController));
@@ -311,10 +327,12 @@ const schedulerActivityController = new SchedulerActivityController(schedulerAct
 app.use('/api/activities', createSchedulerRoutes(schedulerActivityController));
 
 // Import module routes
+
 app.use('/api/import', createImportRoutes(importController));
 app.use('/api/ai', createSuggestionRoutes(suggestionController, aiConfigController));
 app.use('/api/webhooks/email', createEmailWebhookRoutes());
 app.use('/api/calendar', createCalendarRoutes(calendarController, reminderCalendarController, notificationCalendarController));
+app.use('/api/invitations', createInvitationRoutes(invitationController));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -389,9 +407,9 @@ startEmailSyncJob(notificationService);
 startReminderProcessor(notificationDispatcherService);
 startTrashCleanupJob();
 
-// Helper function to get all active email accounts via EmailModel
+// Helper function to get all active email accounts across all companies
 const getActiveEmailAccounts = async () => {
-  return await emailModel.getAllActiveAccounts();
+  return await emailModel.getAllActiveAccountsGlobal();
 };
 
 // Start IMAP IDLE for all IMAP accounts

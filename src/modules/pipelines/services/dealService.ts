@@ -32,7 +32,7 @@ export class DealService {
         private labelModel: LabelModel
     ) { }
 
-    async createDeal(userId: number,
+    async createDeal(userId: number, companyId: number,
         data: {
             title: string;
             pipelineId: number;
@@ -77,7 +77,7 @@ export class DealService {
         }
 
         // Verify pipeline exists and belongs to user
-        const pipeline = await this.pipelineModel.findById(data.pipelineId, userId);
+        const pipeline = await this.pipelineModel.findById(data.pipelineId, companyId, userId);
         if (!pipeline) {
             throw new Error('Pipeline not found');
         }
@@ -92,6 +92,7 @@ export class DealService {
         if (organizationData) {
             if (!organizationData.organizationId) {
                 organization = await this.organizationModel.create({
+                    companyId,
                     name: organizationData.name,
                     industry: organizationData.industry,
                     website: organizationData.website,
@@ -102,7 +103,7 @@ export class DealService {
                     status: organizationData.status
                 });
             } else {
-                organization = await this.organizationModel.findById(organizationData.organizationId);
+                organization = await this.organizationModel.findById(organizationData.organizationId, companyId);
             }
         }
 
@@ -112,14 +113,15 @@ export class DealService {
         if (personData) {
             if (!personData.personId) {
                 person = await this.personModel.create({
+                    companyId,
                     firstName: personData.firstName,
                     lastName: personData.lastName,
-                    emails: personData.emails,
-                    phones: personData.phones,
+                    emails: (personData.emails as any) || [],
+                    phones: (personData.phones as any) || [],
                     organizationId: organization?.id
                 });
             } else {
-                person = await this.personModel.findById(personData.personId);
+                person = await this.personModel.findById(personData.personId, companyId);
             }
         }
 
@@ -133,6 +135,7 @@ export class DealService {
 
         const deal = await this.dealModel.create({
             title: data.title.trim(),
+            companyId,
             value: data.value || 0,
             currency: data.currency || 'USD',
             pipelineId: data.pipelineId,
@@ -154,7 +157,7 @@ export class DealService {
         });
 
         if (deal && deal.ownerIds) {
-            await this.pipelineModel.addOwnersToPipeline(deal.pipelineId, deal.ownerIds);
+            await this.pipelineModel.addOwnersToPipeline(deal.pipelineId, companyId, deal.ownerIds);
         }
 
         let products: Product[] = [];
@@ -163,6 +166,7 @@ export class DealService {
                 const product = await this.productModel.create({
                     dealId: deal.id,
                     userId,
+                    companyId,
                     title: p.item,
                     price: p.price,
                     quantity: p.quantity,
@@ -181,6 +185,7 @@ export class DealService {
         await this.historyModel.create({
             dealId: deal.id,
             userId,
+            companyId,
             eventType: 'stage_change',
             toStageId: data.stageId,
             description: `Deal created in stage: ${stage.name}`,
@@ -191,6 +196,7 @@ export class DealService {
         await this.historyModel.create({
             dealId: deal.id,
             userId,
+            companyId,
             eventType: `created deal ${deal.title}`,
             description: `Created deal ${deal.title}`,
             createdAt: nowStr
@@ -204,6 +210,7 @@ export class DealService {
 
     async searchDeals(
         userId: number,
+        companyId: number,
         search: string,
         includeDeleted: boolean = false
     ): Promise<{
@@ -226,11 +233,11 @@ export class DealService {
         }
 
         const [deals, pipeline, stage, person, organization] = await Promise.all([
-            this.dealModel.searchDeals(userId, searchTerm, includeDeleted),
-            this.pipelineModel.searchByPipelineName(searchTerm),
-            this.stageModel.searchByStageName(searchTerm),
-            this.personModel.searchByPersonName(searchTerm),
-            this.organizationModel.searchByOrganizationName(searchTerm)
+            this.dealModel.searchDeals(userId, companyId, searchTerm, includeDeleted),
+            this.pipelineModel.searchByPipelineName(searchTerm, companyId),
+            this.stageModel.searchByStageName(searchTerm, companyId),
+            this.personModel.searchByPersonName(searchTerm, companyId),
+            this.organizationModel.searchByOrganizationName(searchTerm, companyId)
         ]);
 
         return {
@@ -242,11 +249,11 @@ export class DealService {
         };
     }
 
-    async getDealHistory(dealId: number): Promise<DealHistory[]> {
-        return await this.historyModel.findByDealId(dealId);
+    async getDealHistory(dealId: number, companyId: number): Promise<DealHistory[]> {
+        return await this.historyModel.findByDealId(dealId, companyId);
     }
 
-    async getDeals(userId: number, filters: {
+    async getDeals(userId: number, companyId: number, filters: {
         pipelineId?: number;
         stageId?: number;
         status?: string;
@@ -259,7 +266,7 @@ export class DealService {
         const limit = filters.limit || 20;
         const offset = (page - 1) * limit;
 
-        const result = await this.dealModel.findByUserId(userId, {
+        const result = await this.dealModel.findByUserId(userId, companyId, {
             ...filters,
             limit,
             offset
@@ -268,18 +275,18 @@ export class DealService {
         const enrichedDeals = [];
         for (const deal of result.deals) {
             const [pipeline, stage] = await Promise.all([
-                this.pipelineModel.findById(deal.pipelineId, userId),
-                this.stageModel.findById(deal.stageId)
+                this.pipelineModel.findById(deal.pipelineId, companyId, userId),
+                this.stageModel.findById(deal.stageId, companyId)
             ]);
 
             let person = null;
             if (deal.personId) {
-                person = await this.personModel.findById(deal.personId);
+                person = await this.personModel.findById(deal.personId, companyId);
             }
 
             let organization = null;
             if (deal.organizationId) {
-                organization = await this.organizationModel.findById(deal.organizationId);
+                organization = await this.organizationModel.findById(deal.organizationId, companyId);
             }
 
             enrichedDeals.push({
@@ -311,26 +318,26 @@ export class DealService {
         };
     }
 
-    async getDealById(id: number, userId: number): Promise<any | null> {
-        const deal = await this.dealModel.findById(id, userId);
+    async getDealById(id: number, companyId: number, userId: number): Promise<any | null> {
+        const deal = await this.dealModel.findById(id, companyId, userId);
 
         if (!deal) {
             return null;
         }
 
         const [pipeline, stage, products, history, lastStageChange] = await Promise.all([
-            this.pipelineModel.findById(deal.pipelineId, userId),
-            this.stageModel.findById(deal.stageId),
-            this.productModel.findByDealId(id),
-            this.historyModel.findByDealId(id),
-            this.historyModel.findLastStageChange(id)
+            this.pipelineModel.findById(deal.pipelineId, companyId, userId),
+            this.stageModel.findById(deal.stageId, companyId),
+            this.productModel.findByDealId(id, companyId),
+            this.historyModel.findByDealId(id, companyId),
+            this.historyModel.findLastStageChange(id, companyId)
         ]);
 
         let personInfo: { person?: Person | null; labels?: Label[] } = {};
         if (deal.personId) {
             const [person, labels] = await Promise.all([
-                this.personModel.findById(deal.personId),
-                this.labelModel.findByPersonId(deal.personId)
+                this.personModel.findById(deal.personId, companyId),
+                this.labelModel.findByPersonId(deal.personId, companyId)
             ]);
             personInfo.person = person;
             personInfo.labels = labels;
@@ -339,8 +346,8 @@ export class DealService {
         let organizationInfo: { organization?: Organization | null; labels?: Label[] } = {};
         if (deal.organizationId) {
             const [org, labels] = await Promise.all([
-                this.organizationModel.findById(deal.organizationId),
-                this.labelModel.findByOrganizationId(deal.organizationId)
+                this.organizationModel.findById(deal.organizationId, companyId),
+                this.labelModel.findByOrganizationId(deal.organizationId, companyId)
             ]);
             organizationInfo.organization = org;
             organizationInfo.labels = labels;
@@ -371,11 +378,11 @@ export class DealService {
         };
     }
 
-    async updateDeal(dealId: number, userId: number, data: Partial<Deal>): Promise<Deal | null> {
-        const oldDeal = await this.dealModel.findById(dealId, userId);
+    async updateDeal(dealId: number, companyId: number, userId: number, data: Partial<Deal>): Promise<Deal | null> {
+        const oldDeal = await this.dealModel.findById(dealId, companyId, userId);
         if (!oldDeal) return null;
 
-        const updatedDeal = await this.dealModel.update(dealId, userId, data);
+        const updatedDeal = await this.dealModel.update(dealId, companyId, userId, data);
 
         if (updatedDeal) {
             const oldStageId = Number(oldDeal.stageId);
@@ -383,7 +390,7 @@ export class DealService {
 
             if (newStageId !== oldStageId) {
                 const now = new Date().toISOString();
-                await this.historyModel.closeOpenStageRecord(dealId, now);
+                await this.historyModel.closeOpenStageRecord(dealId, companyId, now);
 
                 const [fromStage, toStage] = await Promise.all([
                     this.stageModel.findById(oldStageId),
@@ -393,6 +400,7 @@ export class DealService {
                 await this.historyModel.create({
                     dealId: updatedDeal.id,
                     userId,
+                    companyId,
                     eventType: 'stage_change',
                     fromStageId: oldStageId,
                     toStageId: newStageId,
@@ -404,15 +412,16 @@ export class DealService {
             }
 
             if (data.ownerIds || data.pipelineId) {
-                await this.pipelineModel.recalculatePipelineOwners(updatedDeal.pipelineId);
+                await this.pipelineModel.recalculatePipelineOwners(updatedDeal.pipelineId, companyId);
                 if (data.pipelineId && data.pipelineId !== oldDeal.pipelineId) {
-                    await this.pipelineModel.recalculatePipelineOwners(oldDeal.pipelineId);
+                    await this.pipelineModel.recalculatePipelineOwners(oldDeal.pipelineId, companyId);
                 }
             }
 
             await this.historyModel.create({
                 dealId: updatedDeal.id,
                 userId,
+                companyId,
                 toValue: "Updated",
                 eventType: `updated deal ${updatedDeal.title}`,
                 toStageId: updatedDeal.stageId,
@@ -423,18 +432,19 @@ export class DealService {
         return updatedDeal;
     }
 
-    async makeDealAsWon(dealId: number, userId: number): Promise<Deal | null> {
-        const deal = await this.dealModel.findById(dealId, userId);
+    async makeDealAsWon(dealId: number, companyId: number, userId: number): Promise<Deal | null> {
+        const deal = await this.dealModel.findById(dealId, companyId, userId);
         if (!deal) return null;
 
-        const data = await this.dealModel.makeDealAsWon(dealId);
+        const data = await this.dealModel.makeDealAsWon(dealId, companyId);
 
         if (data) {
             const now = new Date().toISOString();
-            await this.historyModel.closeOpenStageRecord(dealId, now);
+            await this.historyModel.closeOpenStageRecord(dealId, companyId, now);
             await this.historyModel.create({
                 dealId: data.id,
                 userId,
+                companyId,
                 toValue: "Won",
                 eventType: `won deal ${data.title}`,
                 toStageId: data.stageId,
@@ -445,18 +455,19 @@ export class DealService {
         return data;
     }
 
-    async makeDealAsLost(dealId: number, userId: number, info: { reason?: string, comment?: string }): Promise<Deal | null> {
-        const deal = await this.dealModel.findById(dealId, userId);
+    async makeDealAsLost(dealId: number, companyId: number, userId: number, info: { reason?: string, comment?: string }): Promise<Deal | null> {
+        const deal = await this.dealModel.findById(dealId, companyId, userId);
         if (!deal) return null;
 
-        const data = await this.dealModel.makeDealAsLost(dealId, info);
+        const data = await this.dealModel.makeDealAsLost(dealId, companyId, info);
 
         if (data) {
             const now = new Date().toISOString();
-            await this.historyModel.closeOpenStageRecord(dealId, now);
+            await this.historyModel.closeOpenStageRecord(dealId, companyId, now);
             await this.historyModel.create({
                 dealId: data.id,
                 userId,
+                companyId,
                 toValue: "Lost",
                 eventType: `lost deal ${data.title}`,
                 toStageId: data.stageId,
@@ -467,16 +478,17 @@ export class DealService {
         return data;
     }
 
-    async resetDeal(dealId: number, userId: number): Promise<Deal | null> {
-        const deal = await this.dealModel.findById(dealId, userId);
+    async resetDeal(dealId: number, companyId: number, userId: number): Promise<Deal | null> {
+        const deal = await this.dealModel.findById(dealId, companyId, userId);
         if (!deal) return null;
 
-        const data = await this.dealModel.resetDeal(dealId);
+        const data = await this.dealModel.resetDeal(dealId, companyId);
 
         if (data) {
             await this.historyModel.create({
                 dealId: data.id,
                 userId,
+                companyId,
                 eventType: 'stage_change',
                 toStageId: data.stageId,
                 description: `Deal reopened in stage: ${data.title}`,
@@ -486,6 +498,7 @@ export class DealService {
             await this.historyModel.create({
                 dealId: data.id,
                 userId,
+                companyId,
                 toValue: "Reopened",
                 eventType: `reset deal ${data.title}`,
                 toStageId: data.stageId,
@@ -496,8 +509,8 @@ export class DealService {
         return data;
     }
 
-    async moveDealToStage(dealId: number, userId: number, toStageId: number, note?: string): Promise<any> {
-        const deal = await this.dealModel.findById(dealId);
+    async moveDealToStage(dealId: number, companyId: number, userId: number, toStageId: number, note?: string): Promise<any> {
+        const deal = await this.dealModel.findById(dealId, companyId);
         if (!deal) {
             throw new Error('Deal not found');
         }
@@ -513,9 +526,9 @@ export class DealService {
         const nowStr = new Date().toISOString();
 
         if (fromStageId !== toStageIdNum) {
-            await this.historyModel.closeOpenStageRecord(dealId, nowStr);
+            await this.historyModel.closeOpenStageRecord(dealId, companyId, nowStr);
 
-            const updatedDeal = await this.dealModel.update(dealId, userId, {
+            const updatedDeal = await this.dealModel.update(dealId, companyId, userId, {
                 stageId: toStageIdNum,
                 probability: toStage.probability,
                 lastActivityAt: nowStr
@@ -524,6 +537,7 @@ export class DealService {
             await this.historyModel.create({
                 dealId,
                 userId,
+                companyId,
                 fromValue: fromStage?.name,
                 toValue: toStage.name,
                 eventType: 'stage_change',
@@ -542,7 +556,7 @@ export class DealService {
                 }
             };
         } else {
-            const updatedDeal = await this.dealModel.update(dealId, userId, {
+            const updatedDeal = await this.dealModel.update(dealId, companyId, userId, {
                 lastActivityAt: nowStr
             });
 
@@ -554,8 +568,8 @@ export class DealService {
         }
     }
 
-    async closeDeal(dealId: number, userId: number, status: 'WON' | 'LOST', lostReason?: string): Promise<Deal | null> {
-        const deal = await this.dealModel.findById(dealId);
+    async closeDeal(dealId: number, companyId: number, userId: number, status: 'WON' | 'LOST', lostReason?: string): Promise<Deal | null> {
+        const deal = await this.dealModel.findById(dealId, companyId);
         if (!deal || deal.userId !== userId) {
             throw new Error('Deal not found');
         }
@@ -565,19 +579,20 @@ export class DealService {
         }
 
         const now = new Date().toISOString();
-        const updatedDeal = await this.dealModel.update(dealId, userId, {
+        const updatedDeal = await this.dealModel.update(dealId, companyId, userId, {
             status,
             actualCloseDate: now,
             lostReason: status === 'LOST' ? lostReason : undefined
         });
 
         if (updatedDeal) {
-            await this.historyModel.closeOpenStageRecord(dealId, now);
+            await this.historyModel.closeOpenStageRecord(dealId, companyId, now);
         }
 
         await this.historyModel.create({
             dealId: dealId,
             userId,
+            companyId,
             toValue: status === 'WON' ? 'Won' : 'Lost',
             eventType: status === 'WON' ? 'deal_won' : 'deal_lost',
             description: status === 'WON'
@@ -589,19 +604,20 @@ export class DealService {
         return updatedDeal;
     }
 
-    async deleteDeal(dealId: number, userId: number): Promise<boolean> {
-        const deal = await this.dealModel.findById(dealId, userId);
+    async deleteDeal(dealId: number, companyId: number, userId: number): Promise<boolean> {
+        const deal = await this.dealModel.findById(dealId, companyId, userId);
         if (!deal) return false;
 
-        const success = await this.dealModel.delete(dealId, userId);
+        const success = await this.dealModel.delete(dealId, companyId, userId);
 
         if (success) {
             const now = new Date().toISOString();
-            await this.historyModel.closeOpenStageRecord(dealId, now);
-            await this.pipelineModel.recalculatePipelineOwners(deal.pipelineId);
+            await this.historyModel.closeOpenStageRecord(dealId, companyId, now);
+            await this.pipelineModel.recalculatePipelineOwners(deal.pipelineId, companyId);
             await this.historyModel.create({
                 dealId: dealId,
                 userId,
+                companyId,
                 toValue: "Deleted",
                 eventType: 'deal_deleted',
                 description: 'Deal deleted',
@@ -612,24 +628,24 @@ export class DealService {
         return success;
     }
 
-    async getRottenDeals(userId: number, pipelineId?: number): Promise<any[]> {
-        const deals = await this.dealModel.getRottenDeals(userId, pipelineId);
+    async getRottenDeals(userId: number, companyId: number, pipelineId?: number): Promise<any[]> {
+        const deals = await this.dealModel.getRottenDeals(userId, companyId, pipelineId);
 
         const enrichedDeals = [];
         for (const deal of deals) {
             const [pipeline, stage] = await Promise.all([
-                this.pipelineModel.findById(deal.pipelineId, userId),
+                this.pipelineModel.findById(deal.pipelineId, companyId, userId),
                 this.stageModel.findById(deal.stageId)
             ]);
 
             let person = null;
             if (deal.personId) {
-                person = await this.personModel.findById(deal.personId);
+                person = await this.personModel.findById(deal.personId, companyId);
             }
 
             let organization = null;
             if (deal.organizationId) {
-                organization = await this.organizationModel.findById(deal.organizationId);
+                organization = await this.organizationModel.findById(deal.organizationId, companyId);
             }
 
             enrichedDeals.push({
@@ -650,14 +666,15 @@ export class DealService {
         return enrichedDeals;
     }
 
-    async archiveDeals(dealIds: number[], userId: number): Promise<boolean> {
-        const success = await this.dealModel.archive(dealIds, userId);
+    async archiveDeals(dealIds: number[], companyId: number, userId: number): Promise<boolean> {
+        const success = await this.dealModel.archive(dealIds, companyId, userId);
         if (success) {
             const now = new Date().toISOString();
             for (const dealId of dealIds) {
                 await this.historyModel.create({
                     dealId,
                     userId,
+                    companyId,
                     toValue: "Archived",
                     eventType: 'deal_archived',
                     description: 'Deal archived',
@@ -668,14 +685,15 @@ export class DealService {
         return success;
     }
 
-    async unarchiveDeals(dealIds: number[], userId: number): Promise<boolean> {
-        const success = await this.dealModel.unarchive(dealIds, userId);
+    async unarchiveDeals(dealIds: number[], companyId: number, userId: number): Promise<boolean> {
+        const success = await this.dealModel.unarchive(dealIds, companyId, userId);
         if (success) {
             const now = new Date().toISOString();
             for (const dealId of dealIds) {
                 await this.historyModel.create({
                     dealId,
                     userId,
+                    companyId,
                     toValue: "Unarchived",
                     eventType: 'deal_unarchived',
                     description: 'Deal unarchived',
@@ -686,7 +704,7 @@ export class DealService {
         return success;
     }
 
-    async getArchivedDeals(userId: number, filters: {
+    async getArchivedDeals(userId: number, companyId: number, filters: {
         pipelineId?: number;
         stageId?: number;
         page?: number;
@@ -696,7 +714,7 @@ export class DealService {
         const limit = filters.limit || 20;
         const offset = (page - 1) * limit;
 
-        const result = await this.dealModel.getArchivedDeals(userId, {
+        const result = await this.dealModel.getArchivedDeals(userId, companyId, {
             ...filters,
             limit,
             offset
@@ -705,18 +723,18 @@ export class DealService {
         const enrichedDeals = [];
         for (const deal of result.deals) {
             const [pipeline, stage] = await Promise.all([
-                this.pipelineModel.findById(deal.pipelineId, userId),
+                this.pipelineModel.findById(deal.pipelineId, companyId, userId),
                 this.stageModel.findById(deal.stageId)
             ]);
 
             let person = null;
             if (deal.personId) {
-                person = await this.personModel.findById(deal.personId);
+                person = await this.personModel.findById(deal.personId, companyId);
             }
 
             let organization = null;
             if (deal.organizationId) {
-                organization = await this.organizationModel.findById(deal.organizationId);
+                organization = await this.organizationModel.findById(deal.organizationId, companyId);
             }
 
             enrichedDeals.push({
@@ -748,18 +766,18 @@ export class DealService {
         };
     }
 
-    async permanentDeleteArchivedDeals(dealIds: number[], userId: number): Promise<boolean> {
-        return await this.dealModel.hardDeleteArchived(dealIds, userId);
+    async permanentDeleteArchivedDeals(dealIds: number[], companyId: number, userId: number): Promise<boolean> {
+        return await this.dealModel.hardDeleteArchived(dealIds, companyId, userId);
     }
 
-    async removeLabelFromDeal(dealId: number, labelId: number, userId: number): Promise<Deal | null> {
-        const deal = await this.dealModel.findById(dealId, userId);
+    async removeLabelFromDeal(dealId: number, companyId: number, labelId: number, userId: number): Promise<Deal | null> {
+        const deal = await this.dealModel.findById(dealId, companyId, userId);
         if (!deal) return null;
 
-        return await this.dealModel.removeLabelFromDeal(dealId, labelId);
+        return await this.dealModel.removeLabelFromDeal(dealId, companyId, labelId);
     }
 
-    async getDealStageDurations(dealId: number): Promise<Array<{ stageId: number; stageName: string; totalDuration: number }>> {
-        return await this.historyModel.getStageDurations(dealId);
+    async getDealStageDurations(dealId: number, companyId: number): Promise<Array<{ stageId: number; stageName: string; totalDuration: number }>> {
+        return await this.historyModel.getStageDurations(dealId, companyId);
     }
 }

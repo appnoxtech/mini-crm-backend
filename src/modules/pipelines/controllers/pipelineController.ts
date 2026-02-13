@@ -19,7 +19,7 @@ export class PipelineController {
 
             const { name, description, isDefault, dealRotting, rottenDays, stagesData } = req.body;
 
-            const pipeline = await this.pipelineService.createPipeline(req.user.id, {
+            const pipeline = await this.pipelineService.createPipeline(req.user.id, req.user.companyId, {
                 name,
                 description,
                 isDefault,
@@ -45,6 +45,7 @@ export class PipelineController {
 
             const pipelines = await this.pipelineService.getPipelines(
                 req.user.id,
+                req.user.companyId,
                 includeStages === 'true',
                 includeInactive === 'true'
             );
@@ -64,14 +65,13 @@ export class PipelineController {
 
             const { id } = req.params;
 
-            const pipeline = await this.pipelineService.getPipelineById(Number(id), req.user.id);
+            const pipeline = await this.pipelineService.getPipelineById(Number(id), req.user.companyId, req.user.id);
 
             if (!pipeline) {
                 return ResponseHandler.notFound(res, 'Pipeline not found');
             }
 
-            const updatedPipeline = await this.pipelineService.getPipelineById(Number(id), req.user.id);
-            return ResponseHandler.success(res, updatedPipeline, 'Pipeline fetched successfully');
+            return ResponseHandler.success(res, pipeline, 'Pipeline fetched successfully');
         } catch (error: any) {
             console.error('Error fetching pipeline:', error);
             return ResponseHandler.internalError(res, 'Failed to fetch pipeline');
@@ -90,7 +90,7 @@ export class PipelineController {
                 stagesData, deletedStagesIds
             } = req.body;
 
-            const pipeline = await this.pipelineService.updatePipeline(Number(id), req.user.id, {
+            const pipeline = await this.pipelineService.updatePipeline(Number(id), req.user.companyId, req.user.id, {
                 name,
                 description,
                 isDefault,
@@ -120,7 +120,7 @@ export class PipelineController {
 
             const { id } = req.params;
 
-            const result = await this.pipelineService.deletePipeline(Number(id), req.user.id);
+            const result = await this.pipelineService.deletePipeline(Number(id), req.user.companyId, req.user.id);
 
             return ResponseHandler.success(res, result, 'Pipeline deleted successfully');
         } catch (error: any) {
@@ -138,7 +138,7 @@ export class PipelineController {
 
             const { pipelineId, name, orderIndex, probability, rottenDays } = req.body;
 
-            const stage = await this.stageService.createStage(Number(pipelineId), req.user.id, {
+            const stage = await this.stageService.createStage(Number(pipelineId), req.user.companyId, req.user.id, {
                 name,
                 orderIndex,
                 probability,
@@ -160,7 +160,7 @@ export class PipelineController {
 
             const pipelineId = req.params.pipelineId || req.body.pipelineId;
 
-            const stages = await this.stageService.getStages(Number(pipelineId), req.user.id);
+            const stages = await this.stageService.getStages(Number(pipelineId), req.user.companyId, req.user.id);
 
             return ResponseHandler.success(res, { stages }, 'Stages fetched successfully');
         } catch (error: any) {
@@ -181,6 +181,7 @@ export class PipelineController {
             const stage = await this.stageService.updateStage(
                 Number(pipelineId),
                 Number(stageId),
+                req.user.companyId,
                 req.user.id,
                 { name, probability, rottenDays }
             );
@@ -209,7 +210,7 @@ export class PipelineController {
                 return ResponseHandler.validationError(res, { stageOrder: 'Must be an array of stage IDs' });
             }
 
-            const stages = await this.stageService.reorderStages(Number(pipelineId), req.user.id, stageOrder);
+            const stages = await this.stageService.reorderStages(Number(pipelineId), req.user.companyId, req.user.id, stageOrder);
 
             return ResponseHandler.success(res, { stages }, 'Stages reordered successfully');
         } catch (error: any) {
@@ -233,6 +234,7 @@ export class PipelineController {
             const result = await this.stageService.deleteStage(
                 Number(pipelineId),
                 Number(stageId),
+                req.user.companyId,
                 req.user.id,
                 moveDealsToStageId ? Number(moveDealsToStageId) : undefined
             );

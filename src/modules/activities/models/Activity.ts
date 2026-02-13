@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 export interface Activity extends Omit<BaseEntity, 'id'> {
     id: string; // UUID
+    companyId: number;
     title: string;
     description?: string;
     type: 'call' | 'meeting' | 'task' | 'deadline' | 'email' | 'lunch';
@@ -38,6 +39,7 @@ export class ActivityModel {
         const activity = await this.prisma.activity.create({
             data: {
                 id: uuidv4(),
+                companyId: data.companyId,
                 title: data.title,
                 description: data.description,
                 type: data.type,
@@ -56,16 +58,16 @@ export class ActivityModel {
         return this.formatActivity(activity);
     }
 
-    async findById(id: string): Promise<Activity | undefined> {
-        const activity = await this.prisma.activity.findUnique({
-            where: { id }
+    async findById(id: string, companyId: number): Promise<Activity | undefined> {
+        const activity = await this.prisma.activity.findFirst({
+            where: { id, companyId }
         });
         if (!activity) return undefined;
 
         return this.formatActivity(activity);
     }
 
-    async findAll(filters: {
+    async findAll(companyId: number, filters: {
         fromDate?: string;
         toDate?: string;
         status?: 'done' | 'pending' | 'all';
@@ -73,7 +75,7 @@ export class ActivityModel {
         limit?: number;
         offset?: number;
     }): Promise<{ activities: Activity[], total: number }> {
-        const where: any = {};
+        const where: any = { companyId };
 
         if (filters.fromDate) {
             where.startAt = { gte: new Date(filters.fromDate) };
@@ -109,8 +111,9 @@ export class ActivityModel {
         return { activities: result, total };
     }
 
-    async search(userId: number, query?: string, type?: string): Promise<Activity[]> {
+    async search(userId: number, companyId: number, query?: string, type?: string): Promise<Activity[]> {
         const where: any = {
+            companyId,
             OR: [
                 { title: { contains: query, mode: 'insensitive' } },
                 { description: { contains: query, mode: 'insensitive' } }
@@ -131,7 +134,7 @@ export class ActivityModel {
             .filter(a => a.createdBy === userId || (a.assignedUserIds as number[]).includes(userId));
     }
 
-    async update(id: string, data: Partial<Omit<Activity, 'id' | 'createdAt' | 'updatedAt'>>): Promise<Activity | null> {
+    async update(id: string, companyId: number, data: Partial<Omit<Activity, 'id' | 'createdAt' | 'updatedAt' | 'companyId'>>): Promise<Activity | null> {
         const updateData: any = { ...data };
 
         if (data.startAt) updateData.startAt = new Date(data.startAt);
@@ -139,17 +142,17 @@ export class ActivityModel {
         if (data.assignedUserIds) updateData.assignedUserIds = data.assignedUserIds as any;
 
         const activity = await this.prisma.activity.update({
-            where: { id },
+            where: { id, companyId },
             data: updateData
         });
 
         return this.formatActivity(activity);
     }
 
-    async delete(id: string): Promise<boolean> {
+    async delete(id: string, companyId: number): Promise<boolean> {
         try {
             await this.prisma.activity.delete({
-                where: { id }
+                where: { id, companyId }
             });
             return true;
         } catch (error) {
@@ -157,9 +160,10 @@ export class ActivityModel {
         }
     }
 
-    async findOverlapping(startAt: string, endAt: string, userIds: number[]): Promise<Activity[]> {
+    async findOverlapping(companyId: number, startAt: string, endAt: string, userIds: number[]): Promise<Activity[]> {
         const activities = await this.prisma.activity.findMany({
             where: {
+                companyId,
                 status: 'busy',
                 isDone: false,
                 startAt: { lt: new Date(endAt) },

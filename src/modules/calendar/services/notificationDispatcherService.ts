@@ -42,7 +42,7 @@ export class NotificationDispatcherService {
                 succeeded++;
             } catch (error: any) {
                 console.error(`Failed to dispatch notification ${notification.id}:`, error);
-                await this.notificationModel.markFailed(notification.id, error.message || 'Unknown error');
+                await this.notificationModel.markFailed(notification.id, notification.companyId, error.message || 'Unknown error');
                 failed++;
             }
         }
@@ -54,15 +54,15 @@ export class NotificationDispatcherService {
      * Dispatch a single notification via in-app and email
      */
     private async dispatchNotification(notification: EventNotification): Promise<void> {
-        const event = await this.eventModel.findById(notification.eventId);
+        const event = await this.eventModel.findById(notification.eventId, notification.companyId);
         if (!event) {
-            await this.notificationModel.markFailed(notification.id, 'Event not found');
+            await this.notificationModel.markFailed(notification.id, notification.companyId, 'Event not found');
             return;
         }
 
         const user = await this.userModel.findById(notification.userId);
         if (!user) {
-            await this.notificationModel.markFailed(notification.id, 'User not found');
+            await this.notificationModel.markFailed(notification.id, notification.companyId, 'User not found');
             return;
         }
 
@@ -98,7 +98,7 @@ export class NotificationDispatcherService {
 
             // Emit to user's room (uses underscore to match realTimeNotificationService)
             this.io.to(`user_${notification.userId}`).emit('notification', payload);
-            await this.notificationModel.markSent(notification.id, 'inApp');
+            await this.notificationModel.markSent(notification.id, notification.companyId, 'inApp');
         }
     }
 
@@ -173,7 +173,7 @@ Your CRM Calendar
             try {
                 // Use Shared SystemEmailHelper
                 await SystemEmailHelper.sendViaSystemSmtp(user.email, subject, textBody, htmlBody);
-                await this.notificationModel.markSent(notification.id, 'email');
+                await this.notificationModel.markSent(notification.id, notification.companyId, 'email');
             } catch (error: any) {
                 console.error(`Failed to send email for notification ${notification.id}:`, error);
                 // Don't fail the whole notification, just log the email failure

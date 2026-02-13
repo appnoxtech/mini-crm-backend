@@ -40,7 +40,7 @@ export class ActivityService {
         });
     }
 
-    async createActivity(userId: number, data: {
+    async createActivity(userId: number, companyId: number, data: {
         title: string;
         description?: string;
         type?: 'call' | 'meeting' | 'task' | 'deadline' | 'email' | 'lunch';
@@ -63,7 +63,7 @@ export class ActivityService {
         // Availability Check (only if status is busy)
         if (data.status === 'busy' || data.status === undefined) {
             const userIdsToCheck = [userId, ...(data.assignedUserIds || [])];
-            const conflicts = await this.model.findOverlapping(data.startAt, data.endAt, userIdsToCheck);
+            const conflicts = await this.model.findOverlapping(companyId, data.startAt, data.endAt, userIdsToCheck);
             if (conflicts.length > 0) {
                 const conflictingIds = conflicts.map(c => c.id).join(', ');
                 throw new Error(`Time slot overlap with activities: ${conflictingIds}`);
@@ -72,6 +72,7 @@ export class ActivityService {
 
         const activity = await this.model.create({
             ...data,
+            companyId,
             type: data.type || 'meeting',
             createdBy: userId,
             isDone: false,
@@ -84,27 +85,27 @@ export class ActivityService {
         return enriched[0];
     }
 
-    async getActivities(userId: number, filters: {
+    async getActivities(userId: number, companyId: number, filters: {
         fromDate?: string;
         toDate?: string;
         status?: 'done' | 'pending' | 'all';
         limit?: number;
         offset?: number;
     }) {
-        const result = await this.model.findAll({ ...filters, userId });
+        const result = await this.model.findAll(companyId, { ...filters, userId });
         return {
             ...result,
             activities: await this.enrichActivities(result.activities)
         };
     }
 
-    async searchActivities(userId: number, query?: string, type?: string) {
-        const activities = await this.model.search(userId, query, type);
+    async searchActivities(userId: number, companyId: number, query?: string, type?: string) {
+        const activities = await this.model.search(userId, companyId, query, type);
         return await this.enrichActivities(activities);
     }
 
-    async updateActivity(activityId: string, userId: number, updates: Partial<Activity>) {
-        const activity = await this.model.findById(activityId);
+    async updateActivity(activityId: string, userId: number, companyId: number, updates: Partial<Activity>) {
+        const activity = await this.model.findById(activityId, companyId);
         if (!activity) {
             throw new Error('Activity not found');
         }
@@ -127,7 +128,7 @@ export class ActivityService {
                 (updates.startAt || updates.endAt)) {
                 const userIdsToCheck = [activity.createdBy, ...(activity.assignedUserIds as number[])];
                 // Exclude current activity from self-overlap
-                const conflicts = await this.model.findOverlapping(newStart, newEnd, userIdsToCheck);
+                const conflicts = await this.model.findOverlapping(companyId, newStart, newEnd, userIdsToCheck);
                 const validConflicts = conflicts.filter(c => c.id !== activityId);
 
                 if (validConflicts.length > 0) {
@@ -136,7 +137,7 @@ export class ActivityService {
             }
         }
 
-        const updated = await this.model.update(activityId, updates);
+        const updated = await this.model.update(activityId, companyId, updates);
         if (updated) {
             const enriched = await this.enrichActivities([updated]);
             return enriched[0];
@@ -144,8 +145,8 @@ export class ActivityService {
         return null;
     }
 
-    async deleteActivity(activityId: string, userId: number) {
-        const activity = await this.model.findById(activityId);
+    async deleteActivity(activityId: string, userId: number, companyId: number) {
+        const activity = await this.model.findById(activityId, companyId);
         if (!activity) {
             throw new Error('Activity not found');
         }
@@ -154,22 +155,22 @@ export class ActivityService {
             throw new Error('Only the creator can delete the activity');
         }
 
-        return await this.model.delete(activityId);
+        return await this.model.delete(activityId, companyId);
     }
 
-    async markAsDone(activityId: string, userId: number) {
-        return await this.updateActivity(activityId, userId, { isDone: true });
+    async markAsDone(activityId: string, userId: number, companyId: number) {
+        return await this.updateActivity(activityId, userId, companyId, { isDone: true });
     }
 
-    async checkAvailability(startAt: string, endAt: string, userIds: number[]) {
-        const conflicts = await this.model.findOverlapping(startAt, endAt, userIds);
+    async checkAvailability(companyId: number, startAt: string, endAt: string, userIds: number[]) {
+        const conflicts = await this.model.findOverlapping(companyId, startAt, endAt, userIds);
         return {
             available: conflicts.length === 0,
             conflictingActivityIds: conflicts.map(c => c.id)
         };
     }
 
-    async getCalendarView(userId: number, date: string) {
+    async getCalendarView(userId: number, companyId: number, date: string) {
         // Get whole day (or generic range)
         const startOfDay = new Date(date);
         startOfDay.setUTCHours(0, 0, 0, 0);
@@ -177,7 +178,7 @@ export class ActivityService {
         const endOfDay = new Date(date);
         endOfDay.setUTCHours(23, 59, 59, 999);
 
-        const { activities } = await this.model.findAll({
+        const { activities } = await this.model.findAll(companyId, {
             userId,
             fromDate: startOfDay.toISOString(),
             toDate: endOfDay.toISOString()

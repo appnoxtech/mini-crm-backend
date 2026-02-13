@@ -30,14 +30,15 @@ export class SummarizationSchedulerService {
         this.isRunning = true;
 
         try {
-            const threadsToSummarize = await this.queueService.getThreadsNeedingSummary(BATCH_SIZE);
+            const threadsToSummarize = await this.queueService.getThreadsNeedingSummaryGlobal(BATCH_SIZE);
             if (threadsToSummarize.length === 0) return;
 
-            for (const threadId of threadsToSummarize) {
+            for (const thread of threadsToSummarize) {
                 try {
                     await this.queueService.addToQueue({
-                        threadId,
-                        subject: `Thread ${threadId}`
+                        threadId: thread.threadId,
+                        companyId: thread.companyId,
+                        subject: `Thread ${thread.threadId}`
                     });
                 } catch (error: any) {
                     if (error.message.includes('Redis queue is not available')) {
@@ -45,7 +46,7 @@ export class SummarizationSchedulerService {
                         return; // Exit early if Redis is not available
                     }
                     if (!error.message.includes('already exists')) {
-                        console.error(`Failed to queue thread ${threadId}:`, error.message);
+                        console.error(`Failed to queue thread ${thread.threadId}:`, error.message);
                     }
                 }
             }
@@ -57,15 +58,16 @@ export class SummarizationSchedulerService {
     }
 
     async triggerNow(): Promise<{ queued: number; skipped: number }> {
-        const threadsToSummarize = await this.queueService.getThreadsNeedingSummary(BATCH_SIZE);
+        const threadsToSummarize = await this.queueService.getThreadsNeedingSummaryGlobal(BATCH_SIZE);
         let queued = 0;
         let skipped = 0;
 
-        for (const threadId of threadsToSummarize) {
+        for (const thread of threadsToSummarize) {
             try {
                 await this.queueService.addToQueue({
-                    threadId,
-                    subject: `Thread ${threadId}`
+                    threadId: thread.threadId,
+                    companyId: thread.companyId,
+                    subject: `Thread ${thread.threadId}`
                 });
                 queued++;
             } catch (error: any) {

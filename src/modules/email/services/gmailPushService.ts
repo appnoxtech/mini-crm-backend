@@ -6,6 +6,7 @@ import { RealTimeNotificationService } from './realTimeNotificationService';
 interface GmailWatchInfo {
     accountId: string;
     userId: string;
+    companyId: number;
     email: string;
     historyId: string;
     expiration: Date;
@@ -97,6 +98,7 @@ export class GmailPushService {
             const watchInfo: GmailWatchInfo = {
                 accountId: account.id,
                 userId: account.userId,
+                companyId: account.companyId,
                 email: account.email,
                 historyId: response.data.historyId!,
                 expiration: new Date(parseInt(response.data.expiration!))
@@ -188,7 +190,7 @@ export class GmailPushService {
 
 
             // Get the email account from database
-            const account = await this.emailService.getEmailAccountById(watchInfo.accountId);
+            const account = await this.emailService.getEmailAccountById(watchInfo.accountId, watchInfo.companyId);
             if (!account) {
                 console.warn(`Account ${watchInfo.accountId} not found`);
                 return;
@@ -228,7 +230,7 @@ export class GmailPushService {
 
                 if (hoursUntilExpiry < 24) {
                     try {
-                        const account = await this.emailService?.getEmailAccountById(accountId);
+                        const account = await this.emailService?.getEmailAccountById(accountId, watchInfo.companyId);
                         if (account) {
                             await this.startWatching(account);
                         }

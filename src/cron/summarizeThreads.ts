@@ -8,18 +8,18 @@ export function startThreadSummaryJob() {
   const summarizeAll = async () => {
     console.log('🕑 Starting thread summarization...');
 
-    const threads = await emailModel.getThreadsNeedingSummary();
+    const threads = await emailModel.getThreadsNeedingSummaryGlobal();
     console.log(`Found ${threads.length} threads needing summary`);
 
-    for (const threadId of threads) {
+    for (const { threadId, companyId } of threads) {
       try {
-        const threadEmails = await emailModel.getEmailsForThread(threadId);
+        const threadEmails = await emailModel.getEmailsForThread(threadId, companyId);
         const threadText = threadEmails.map(e => `${e.from}: ${e.body}`).join('\n');
 
         // Directly call VLLM service
         const summary = await summarizeThreadWithVLLM(threadText);
 
-        await emailModel.saveThreadSummary(threadId, summary);
+        await emailModel.saveThreadSummary(threadId, companyId, summary);
         console.log(`✅ Thread ${threadId} summarized`);
       } catch (err: any) {
         console.error(`❌ Failed to summarize thread ${threadId}:`, err.message);

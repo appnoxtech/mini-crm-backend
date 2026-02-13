@@ -6,7 +6,7 @@ import { OAuthService } from "../services/oauthService";
 import { EmailQueueService } from "../services/emailQueueService";
 import { RealTimeNotificationService } from "../services/realTimeNotificationService";
 import { AuthenticatedRequest } from "../../../shared/types";
-import { EmailAccount } from "../models/types";
+import { EmailAccount, Email } from "../models/types";
 import { EmailModel } from "../models/emailModel";
 import { summarizeThreadWithVLLM } from "../../../shared/utils/summarizer";
 import { ResponseHandler } from "../../../shared/responses/responses";
@@ -88,12 +88,12 @@ export class EmailController {
   }
 
   // Manual trigger for summarizing a thread
-  async summarizeThread(req: Request, res: Response) {
+  async summarizeThread(req: AuthenticatedRequest, res: Response) {
     try {
       const threadId = req.params.threadId;
       const emailModel: EmailModel = this.emailService.getEmailModel();
 
-      const { emails } = await this.emailService.getAllEmails({ limit: 1000 });
+      const { emails } = await this.emailService.getAllEmails(req.user!.companyId, { limit: 1000 });
       // console.log(emails);
       const threadEmails = emails.filter((e) => e.threadId === threadId);
 
@@ -108,7 +108,7 @@ export class EmailController {
 
       const summary = await summarizeThreadWithVLLM(threadText);
 
-      await emailModel.saveThreadSummary(threadId!, summary);
+      await emailModel.saveThreadSummary(threadId!, req.user!.companyId, summary);
 
       return ResponseHandler.success(res, { threadId, summary }, "Successfully Summarizing a Thread");
     } catch (err: any) {
@@ -118,12 +118,12 @@ export class EmailController {
   }
 
   // Get summary for a thread
-  async getThreadSummary(req: Request, res: Response) {
+  async getThreadSummary(req: AuthenticatedRequest, res: Response) {
     try {
       const threadId = req.params.threadId;
       const emailModel: EmailModel = this.emailService.getEmailModel();
 
-      const summaryData = await emailModel.getThreadSummary(threadId!);
+      const summaryData = await emailModel.getThreadSummary(threadId!, req.user!.companyId);
 
       if (!summaryData) {
         return ResponseHandler.error(res, "No summary available", 404);
@@ -144,7 +144,7 @@ export class EmailController {
         return ResponseHandler.validationError(res, "Thread ID is required");
       }
 
-      const emails = this.emailService.getEmailModel().getEmailsForThread(threadId);
+      const emails = this.emailService.getEmailModel().getEmailsForThread(threadId, req.user!.companyId);
       return ResponseHandler.success(res, emails, "Thread emails fetched successfully");
     } catch (err: any) {
       console.error(err);
@@ -171,13 +171,13 @@ export class EmailController {
       // 1. Determine which email address to use as the base for account resolution
       const targetEmail = from ?? email ?? req.user.email;
       const accountId = `${userId}-${targetEmail}`;
-
+      console.log("accountId", accountId);
       // 2. Try to find the specific account for this user and email
-      emailAccount = await this.emailService.getEmailModel().getEmailAccountById(accountId);
-
+      emailAccount = await this.emailService.getEmailModel().getEmailAccountById(accountId, req.user.companyId);
+      console.log("emailAccount", emailAccount);
       // 3. Fallback: if no specific account found, use the user's first connected account
       if (!emailAccount) {
-        emailAccount = await this.emailService.getEmailAccountByUserId(userId);
+        emailAccount = await this.emailService.getEmailAccountByUserId(userId, req.user.companyId);
       }
 
       // 4. Handle SMTP Configuration (Direct update or override)
@@ -210,6 +210,7 @@ export class EmailController {
         const accountData: EmailAccount = {
           id: accountId,
           userId,
+          companyId: req.user!.companyId,
           email: targetEmail,
           provider: providerName,
           isActive: true,
@@ -220,10 +221,10 @@ export class EmailController {
         };
 
         // Check if this specific account exists in DB to decide between update and create
-        const dbAccount = await this.emailService.getEmailModel().getEmailAccountById(accountId);
+        const dbAccount = await this.emailService.getEmailModel().getEmailAccountById(accountId, req.user.companyId);
         if (dbAccount) {
           accountData.createdAt = dbAccount.createdAt;
-          await this.emailService.updateEmailAccount(accountId, accountData);
+          await this.emailService.updateEmailAccount(accountId, req.user.companyId, accountData);
         } else {
           await this.emailService.createEmailAccount(accountData);
         }
@@ -264,7 +265,7 @@ export class EmailController {
         attachments,
         dealId: dealId ? Number(dealId) : undefined,
         enableTracking: !!enableTracking,
-      });
+      }, req.user.companyId);
 
       return ResponseHandler.success(res, "Email sent successfully", messageId);
     } catch (error: any) {
@@ -319,7 +320,7 @@ export class EmailController {
 
         if (refreshResult) {
           // Update the account with new tokens
-          await this.emailService.updateEmailAccount(emailAccount.id, {
+          await this.emailService.updateEmailAccount(emailAccount.id, emailAccount.companyId, {
             accessToken: refreshResult.accessToken,
             refreshToken:
               refreshResult.refreshToken || emailAccount.refreshToken,
@@ -354,7 +355,8 @@ export class EmailController {
 
       // Get user's email account from database
       const emailAccount = await this.emailService.getEmailAccountByUserId(
-        req.user.id.toString()
+        req.user.id.toString(),
+        req.user.companyId
       );
       if (!emailAccount) {
 
@@ -407,7 +409,7 @@ export class EmailController {
 
       const { contactId } = (req as any).params;
 
-      const emails = await this.emailService.getEmailsForContact(contactId);
+      const emails = await this.emailService.getEmailsForContact(contactId, req.user.companyId);
       return ResponseHandler.success(res, emails, "Data Fetched Successfully");
 
     } catch (error: any) {
@@ -427,7 +429,7 @@ export class EmailController {
 
       const { dealId } = (req as any).params;
 
-      const emails = await this.emailService.getEmailsForDeal(dealId);
+      const emails = await this.emailService.getEmailsForDeal(dealId, req.user.companyId);
 
 
       return ResponseHandler.success(res, emails, "Data Fetched Successfully");
@@ -489,8 +491,12 @@ export class EmailController {
       }
 
       // Check if user has a connected Gmail account
+      const companyId = await this.emailService.getEmailModel().getCompanyIdForUser(userId);
+      if (!companyId) return ResponseHandler.notFound(res, "User company not found");
+
       const emailAccount = await this.emailService.getEmailAccountByUserId(
-        userId
+        userId,
+        companyId
       );
 
       const connected = !!(
@@ -515,8 +521,12 @@ export class EmailController {
       }
 
       // Check if user has a connected Outlook account
+      const companyId = await this.emailService.getEmailModel().getCompanyIdForUser(userId);
+      if (!companyId) return ResponseHandler.notFound(res, "User company not found");
+
       const emailAccount = await this.emailService.getEmailAccountByUserId(
-        userId
+        userId,
+        companyId
       );
       const connected = !!(
         emailAccount &&
@@ -549,15 +559,21 @@ export class EmailController {
 
 
 
+      // Fetch companyId since it's missing from OAuth result
+      const companyId = await this.emailService.getEmailModel().getCompanyIdForUser(oauthResult.userId);
+      if (!companyId) {
+        throw new Error('User company not found');
+      }
+
       // Check if user already has THIS SPECIFIC email account
-      const userAccounts = await this.emailService.getEmailAccounts(oauthResult.userId);
+      const userAccounts = await this.emailService.getEmailAccounts(oauthResult.userId, companyId);
       const existingAccount = userAccounts.find(acc => acc.email === oauthResult.email);
 
       if (existingAccount) {
         // Update existing account with new tokens (encrypt them before storing)
 
 
-        await this.emailService.updateEmailAccount(existingAccount.id, {
+        await this.emailService.updateEmailAccount(existingAccount.id, companyId, {
           accessToken: this.oauthService.encryptToken(oauthResult.accessToken),
           refreshToken: this.oauthService.encryptToken(
             oauthResult.refreshToken
@@ -568,9 +584,15 @@ export class EmailController {
 
       } else {
         // Create new email account from OAuth result
+        const companyId = await this.emailService.getEmailModel().getCompanyIdForUser(oauthResult.userId);
+
+        if (!companyId) {
+          throw new Error('User company not found');
+        }
 
         const emailAccount = this.oauthService.createEmailAccountFromOAuth(
           oauthResult.userId,
+          companyId,
           oauthResult.email,
           "gmail",
           oauthResult.accessToken,
@@ -613,14 +635,21 @@ export class EmailController {
         state
       );
 
+      // Fetch companyId since it's missing from OAuth result
+      const companyId = await this.emailService.getEmailModel().getCompanyIdForUser(oauthResult.userId);
+      if (!companyId) {
+        throw new Error('User company not found');
+      }
+
       // Check if user already has an email account
       const existingAccount = await this.emailService.getEmailAccountByUserId(
-        oauthResult.userId
+        oauthResult.userId,
+        companyId
       );
 
       if (existingAccount) {
         // Update existing account with new tokens (encrypt them before storing)
-        await this.emailService.updateEmailAccount(existingAccount.id, {
+        await this.emailService.updateEmailAccount(existingAccount.id, companyId, {
           accessToken: this.oauthService.encryptToken(oauthResult.accessToken),
           refreshToken: this.oauthService.encryptToken(
             oauthResult.refreshToken
@@ -629,8 +658,15 @@ export class EmailController {
         });
       } else {
         // Create new email account from OAuth result
+        const companyId = await this.emailService.getEmailModel().getCompanyIdForUser(oauthResult.userId);
+
+        if (!companyId) {
+          throw new Error('User company not found');
+        }
+
         const emailAccount = this.oauthService.createEmailAccountFromOAuth(
           oauthResult.userId,
+          companyId,
           oauthResult.email,
           "outlook",
           oauthResult.accessToken,
@@ -668,7 +704,8 @@ export class EmailController {
       }
 
       const accounts = await this.emailService.getEmailAccounts(
-        req.user.id.toString()
+        req.user.id.toString(),
+        req.user.companyId
       );
 
 
@@ -791,7 +828,7 @@ export class EmailController {
       const accountId = `${req.user.id}-${email}`;
       console.log("accountId", accountId);
 
-      const existingAccount = await this.emailService.getEmailModel().getEmailAccountById(accountId);
+      const existingAccount = await this.emailService.getEmailModel().getEmailAccountById(accountId, req.user.companyId);
 
 
       // Get provider-specific defaults from environment
@@ -801,6 +838,7 @@ export class EmailController {
       const account: EmailAccount = {
         id: accountId,
         userId: req.user.id.toString(),
+        companyId: req.user!.companyId,
         email,
         provider,
         isActive: true,
@@ -871,7 +909,7 @@ export class EmailController {
 
       if (existingAccount) {
         console.log(`Updating existing email account: ${accountId}`);
-        await this.emailService.updateEmailAccount(accountId, account);
+        await this.emailService.updateEmailAccount(accountId, req.user!.companyId, account);
 
         // For IMAP: Quick load 100 emails first, then sync rest in background
         if (provider === 'imap' || provider === 'custom') {
@@ -879,7 +917,7 @@ export class EmailController {
           this.emailService.quickInitialLoadIMAP(account).then(result => {
             console.log(`Quick loaded ${result.count} emails for ${account.email}`);
             // Then trigger full historical sync in background
-            this.emailService.triggerHistoricalSync(accountId);
+            this.emailService.triggerHistoricalSync(accountId, req.user!.companyId);
           }).catch(err => {
             console.error(`Quick load failed for ${accountId}:`, err);
           });
@@ -900,7 +938,7 @@ export class EmailController {
           this.emailService.quickInitialLoadIMAP(createdAccount).then(result => {
             console.log(`Quick loaded ${result.count} emails for ${createdAccount.email}`);
             // Then trigger full historical sync in background
-            this.emailService.triggerHistoricalSync(createdAccount.id);
+            this.emailService.triggerHistoricalSync(createdAccount.id, req.user!.companyId);
           }).catch(err => {
             console.error(`Quick load failed for ${createdAccount.id}:`, err);
           });
@@ -933,7 +971,7 @@ export class EmailController {
       const { accountId } = (req as any).params;
       const updates = req.body as any;
 
-      await this.emailService.updateEmailAccount(accountId, updates);
+      await this.emailService.updateEmailAccount(accountId, req.user.companyId, updates);
       return ResponseHandler.success(res, [], "Email account updated successfully");
     } catch (error: any) {
       console.error("Error updating email account:", error);
@@ -962,7 +1000,8 @@ export class EmailController {
 
       // Verify the account belongs to the user
       const accounts = await this.emailService.getEmailAccounts(
-        req.user.id.toString()
+        req.user.id.toString(),
+        req.user.companyId
       );
       const account = accounts.find((acc) => acc.id === accountId);
 
@@ -971,7 +1010,7 @@ export class EmailController {
       }
 
       // Soft delete by deactivating
-      await this.emailService.updateEmailAccount(accountId, {
+      await this.emailService.updateEmailAccount(accountId, req.user.companyId, {
         isActive: false,
       });
 
@@ -1001,7 +1040,8 @@ export class EmailController {
 
       // Get user's email account
       const accounts = await this.emailService.getEmailAccounts(
-        req.user.id.toString()
+        req.user.id.toString(),
+        req.user.companyId
       );
       const account = accounts.find((acc) => acc.id === accountId);
 
@@ -1014,6 +1054,7 @@ export class EmailController {
         this.queueService.queueEmailSync(
           accountId,
           req.user.id.toString(),
+          req.user.companyId,
           "high"
         );
 
@@ -1056,7 +1097,7 @@ export class EmailController {
 
       console.log(`Manual archive sync triggered for user ${req.user.id}`);
 
-      const result = await this.emailService.syncArchivedEmails(req.user.id.toString());
+      const result = await this.emailService.syncArchivedEmails(req.user.id.toString(), req.user.companyId);
 
       return ResponseHandler.success(res, result, "Archive sync completed");
     } catch (error: any) {
@@ -1139,7 +1180,7 @@ export class EmailController {
       // Resolve emailAddress to accountId if provided
       if (emailAddress && !effectiveAccountId) {
         try {
-          const accounts = await this.emailService.getEmailAccounts(req.user.id.toString());
+          const accounts = await this.emailService.getEmailAccounts(req.user.id.toString(), req.user.companyId);
           const matchingAccount = accounts.find(acc => acc.email.toLowerCase() === (emailAddress as string).toLowerCase());
 
           if (matchingAccount) {
@@ -1158,7 +1199,7 @@ export class EmailController {
       // Handle on-demand sync before fetching from database
       if (effectiveAccountId) {
         try {
-          const account = await this.emailService.getEmailAccountById(effectiveAccountId);
+          const account = await this.emailService.getEmailAccountById(effectiveAccountId, req.user.companyId);
           if (account && account.userId === req.user.id.toString()) {
             // Trigger sync if never synced or synced > 2 minutes ago
             const syncInterval = 2 * 60 * 1000; // 2 minutes
@@ -1179,7 +1220,7 @@ export class EmailController {
       } else {
         // If no specific accountId, trigger background sync for all user accounts
         try {
-          const accounts = await this.emailService.getEmailAccounts(req.user.id.toString());
+          const accounts = await this.emailService.getEmailAccounts(req.user.id.toString(), req.user.companyId);
           for (const account of accounts) {
             const syncInterval = 5 * 60 * 1000; // 5 mins for multi-account background sync
             const needsSync = !account.lastSyncAt || (new Date().getTime() - new Date(account.lastSyncAt).getTime() > syncInterval);
@@ -1205,7 +1246,7 @@ export class EmailController {
           accountId: effectiveAccountId,
         };
 
-        const draftResult = await this.draftService.listAllDrafts(req.user.id.toString(), draftOptions);
+        const draftResult = await this.draftService.listAllDrafts(req.user.id.toString(), req.user.companyId, draftOptions);
 
         // Map drafts to Email interface structure for compatibility
         const mappedDrafts = draftResult.drafts.map(draft => ({
@@ -1232,6 +1273,7 @@ export class EmailController {
           contactIds: draft.contactIds || [],
           dealIds: draft.dealIds || [],
           accountEntityIds: draft.accountEntityIds || [],
+          companyId: req.user!.companyId,
           // Other fields can be defaults/undefined
         }));
 
@@ -1240,6 +1282,7 @@ export class EmailController {
 
       const emailsResponse = await this.emailService.getEmailsForUser(
         req.user.id.toString(),
+        req.user.companyId,
         {
           limit: limit ? parseInt(limit as string) : 50,
           offset: offset ? parseInt(offset as string) : 0,
@@ -1250,11 +1293,14 @@ export class EmailController {
         }
       );
 
+      const emails: Email[] = emailsResponse.emails;
+
       // Special handling for 'trash' folder: Merge trashed drafts
       if ((folder as string) === 'trash') {
         try {
           const trashedDrafts = await this.draftService.getTrashedDrafts(
             req.user.id.toString(),
+            req.user.companyId,
             limit ? parseInt(limit as string) : 50,
             offset ? parseInt(offset as string) : 0
           );
@@ -1284,6 +1330,7 @@ export class EmailController {
               contactIds: draft.contactIds || [],
               dealIds: draft.dealIds || [],
               accountEntityIds: draft.accountEntityIds || [],
+              companyId: req.user!.companyId,
             }));
 
             emailsResponse.emails = [...emailsResponse.emails, ...mappedDrafts];
@@ -1350,7 +1397,8 @@ export class EmailController {
 
       const email = await this.emailService.getEmailById(
         emailId,
-        req.user.id.toString()
+        req.user.id.toString(),
+        req.user.companyId
       );
       if (!email) {
         return ResponseHandler.notFound(res, "Email not found");
@@ -1387,6 +1435,7 @@ export class EmailController {
       const success = await this.emailService.markEmailAsRead(
         emailId,
         req.user.id.toString(),
+        req.user.companyId,
         isRead
       );
       if (!success) {
@@ -1427,7 +1476,8 @@ export class EmailController {
 
       const success = await this.emailService.archiveEmail(
         emailId,
-        req.user.id.toString()
+        req.user.id.toString(),
+        req.user.companyId
       );
 
       if (!success) {
@@ -1454,7 +1504,8 @@ export class EmailController {
 
       const success = await this.emailService.unarchiveEmail(
         emailId,
-        req.user.id.toString()
+        req.user.id.toString(),
+        req.user.companyId
       );
 
       if (!success) {
@@ -1524,7 +1575,8 @@ export class EmailController {
 
       const success = await this.emailService.trashEmail(
         emailId,
-        req.user.id.toString()
+        req.user.id.toString(),
+        req.user.companyId
       );
 
       // Return success regardless of whether email was found (idempotent operation)
@@ -1552,7 +1604,8 @@ export class EmailController {
 
       const success = await this.emailService.restoreFromTrash(
         emailId,
-        req.user.id.toString()
+        req.user.id.toString(),
+        req.user.companyId
       );
 
       if (!success) {
@@ -1582,7 +1635,8 @@ export class EmailController {
 
       const success = await this.emailService.deleteEmailPermanently(
         emailId,
-        req.user.id.toString()
+        req.user.id.toString(),
+        req.user.companyId
       );
 
       if (!success) {
@@ -1606,7 +1660,7 @@ export class EmailController {
       }
 
       // Run in background
-      this.emailService.deleteAllTrash(req.user.id.toString())
+      this.emailService.deleteAllTrash(req.user.id.toString(), req.user.companyId)
         .then(result => {
           console.log(`[Background] Empty trash completed: ${result.deleted} deleted, ${result.failed} failed`);
         })
@@ -1629,7 +1683,7 @@ export class EmailController {
       }
 
       const results = await Promise.all(
-        emailIds.map(id => this.emailService.archiveEmail(id, req.user!.id.toString()))
+        emailIds.map(id => this.emailService.archiveEmail(id, req.user!.id.toString(), req.user!.companyId))
       );
 
       return ResponseHandler.success(res, { count: results.filter((r: boolean) => r).length }, "Emails Archived Successfully");
@@ -1647,7 +1701,7 @@ export class EmailController {
       }
 
       const results = await Promise.all(
-        emailIds.map(id => this.emailService.trashEmail(id, req.user!.id.toString()))
+        emailIds.map(id => this.emailService.trashEmail(id, req.user!.id.toString(), req.user!.companyId))
       );
 
       return ResponseHandler.success(res, { count: results.filter((r: boolean) => r).length }, "Emails Moved to Trash Successfully");
@@ -1665,7 +1719,7 @@ export class EmailController {
       }
 
       const results = await Promise.all(
-        emailIds.map(id => this.emailService.markEmailAsRead(id, req.user!.id.toString(), isRead))
+        emailIds.map(id => this.emailService.markEmailAsRead(id, req.user!.id.toString(), req.user!.companyId, isRead))
       );
 
       return ResponseHandler.success(res, { count: results.filter((r: boolean) => r).length }, `Emails marked as ${isRead ? 'read' : 'unread'}`);
@@ -1683,7 +1737,7 @@ export class EmailController {
       }
 
       const results = await Promise.all(
-        emailIds.map(id => this.emailService.restoreFromTrash(id, req.user!.id.toString()))
+        emailIds.map(id => this.emailService.restoreFromTrash(id, req.user!.id.toString(), req.user!.companyId))
       );
 
       return ResponseHandler.success(res, { count: results.filter((r: boolean) => r).length }, "Emails Restored Successfully");
@@ -1702,7 +1756,7 @@ export class EmailController {
 
       // Run in background
       Promise.all(
-        emailIds.map(id => this.emailService.deleteEmailPermanently(id, req.user!.id.toString()))
+        emailIds.map(id => this.emailService.deleteEmailPermanently(id, req.user!.id.toString(), req.user!.companyId))
       ).then(results => {
         const count = results.filter((r: boolean) => r).length;
         console.log(`[Background] Batch delete completed: ${count} deleted`);
@@ -1721,13 +1775,13 @@ export class EmailController {
   /**
    * Mark email as spam
    */
-  async markAsSpam(req: Request, res: Response) {
+  async markAsSpam(req: AuthenticatedRequest, res: Response) {
     try {
+      if (!req.user) return ResponseHandler.unauthorized(res, "User not authenticated");
       const { emailId } = req.params;
       if (!emailId) return ResponseHandler.error(res, "Email ID is required");
-      const userId = (req as any).user.id.toString();
 
-      await this.emailService.markEmailAsSpam(userId, emailId);
+      await this.emailService.markEmailAsSpam(emailId, req.user.id.toString(), req.user.companyId);
 
       return ResponseHandler.success(res, null, "Email marked as spam");
     } catch (error: any) {
@@ -1738,13 +1792,13 @@ export class EmailController {
   /**
    * Unmark email as spam
    */
-  async unmarkAsSpam(req: Request, res: Response) {
+  async unmarkAsSpam(req: AuthenticatedRequest, res: Response) {
     try {
+      if (!req.user) return ResponseHandler.unauthorized(res, "User not authenticated");
       const { emailId } = req.params;
       if (!emailId) return ResponseHandler.error(res, "Email ID is required");
-      const userId = (req as any).user.id.toString();
 
-      await this.emailService.unmarkEmailAsSpam(userId, emailId);
+      await this.emailService.unmarkEmailAsSpam(emailId, req.user.id.toString(), req.user.companyId);
 
       return ResponseHandler.success(res, null, "Email unmarked from spam (moved to INBOX)");
     } catch (error: any) {

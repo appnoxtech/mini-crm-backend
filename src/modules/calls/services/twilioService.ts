@@ -1,15 +1,15 @@
-import Twilio from 'twilio';
+import twilio = require('twilio');
 import AccessToken = require('twilio/lib/jwt/AccessToken');
 import { getTwilioConfig, getWebhookUrls, validateTwilioConfig } from '../config/twilioConfig';
 import { TwilioToken } from '../types';
-import crypto from 'crypto';
+import * as crypto from 'crypto';
 
 const VoiceGrant = AccessToken.VoiceGrant;
 
 /**
- * TwilioService
+ * twilioService
  * 
- * Handles all Twilio Voice API interactions including:
+ * Handles all twilio Voice API interactions including:
  * - Generating access tokens for browser calling
  * - Initiating outbound calls
  * - Generating TwiML responses
@@ -17,7 +17,7 @@ const VoiceGrant = AccessToken.VoiceGrant;
  * - Fetching recordings
  */
 export class TwilioService {
-    private client: Twilio.Twilio | null = null;
+    private client: twilio.Twilio | null = null;
     private _config: ReturnType<typeof getTwilioConfig> | null = null;
     private initialized = false;
 
@@ -36,36 +36,36 @@ export class TwilioService {
     }
 
     /**
-     * Initialize the Twilio client
+     * Initialize the twilio client
      */
     private initialize(): void {
         const validation = validateTwilioConfig();
 
         if (!validation.valid) {
-            console.warn('[TwilioService] Missing configuration:', validation.missing.join(', '));
-            console.warn('[TwilioService] Twilio features will be disabled');
+            console.warn('[twilioService] Missing configuration:', validation.missing.join(', '));
+            console.warn('[twilioService] twilio features will be disabled');
             return;
         }
 
         try {
             const config = this.getConfig();
-            this.client = Twilio(config.accountSid, config.authToken);
+            this.client = new twilio.Twilio(config.accountSid, config.authToken);
             this.initialized = true;
-            console.log('[TwilioService] Initialized successfully');
+            console.log('[twilioService] Initialized successfully');
         } catch (error) {
-            console.error('[TwilioService] Failed to initialize:', error);
+            console.error('[twilioService] Failed to initialize:', error);
         }
     }
 
     /**
-     * Check if Twilio is properly configured
+     * Check if twilio is properly configured
      */
     isConfigured(): boolean {
         return this.initialized && this.client !== null;
     }
 
     /**
-     * Generate an access token for the Twilio Voice SDK in the browser
+     * Generate an access token for the twilio Voice SDK in the browser
      * 
      * @param userId - User ID to use as identity
      * @param userEmail - User email for identity
@@ -73,7 +73,7 @@ export class TwilioService {
      */
     generateAccessToken(userId: number, userEmail: string, ttl: number = 3600): TwilioToken {
         if (!this.isConfigured()) {
-            throw new Error('Twilio is not configured');
+            throw new Error('twilio is not configured');
         }
 
         const identity = `user-${userId}-${userEmail.split('@')[0]}`;
@@ -104,18 +104,18 @@ export class TwilioService {
     }
 
     /**
-     * Initiate an outbound call via Twilio
+     * Initiate an outbound call via twilio
      * 
      * @param toNumber - Phone number to call
      * @param callId - Internal call ID for tracking
      * @param userId - User ID initiating the call
      */
-    async initiateCall(toNumber: string, callId: number, userId: number): Promise<{
+    async initiateCall(toNumber: string, callId: number, userId: number, companyId: number): Promise<{
         callSid: string;
         status: string;
     }> {
         if (!this.client) {
-            throw new Error('Twilio client not initialized');
+            throw new Error('twilio client not initialized');
         }
 
         const webhookUrls = getWebhookUrls();
@@ -123,7 +123,7 @@ export class TwilioService {
         const config = this.getConfig();
         try {
             const call = await this.client.calls.create({
-                url: `${webhookUrls.voice}?callId=${callId}&userId=${userId}&direction=outbound`,
+                url: `${webhookUrls.voice}?callId=${callId}&userId=${userId}&companyId=${companyId}&direction=outbound`,
                 to: this.formatPhoneNumber(toNumber),
                 from: config.outgoingCallerId,
                 statusCallback: webhookUrls.voiceStatus,
@@ -135,14 +135,14 @@ export class TwilioService {
                 recordingChannels: config.recordingChannels
             });
 
-            console.log(`[TwilioService] Call initiated: ${call.sid}`);
+            console.log(`[twilioService] Call initiated: ${call.sid}`);
 
             return {
                 callSid: call.sid,
                 status: call.status
             };
         } catch (error: any) {
-            console.error('[TwilioService] Failed to initiate call:', error);
+            console.error('[twilioService] Failed to initiate call:', error);
             throw new Error(error.message || 'Failed to initiate call');
         }
     }
@@ -152,7 +152,7 @@ export class TwilioService {
      */
     generateOutboundTwiML(toNumber: string, callId: number): string {
         const webhookUrls = getWebhookUrls();
-        const VoiceResponse = Twilio.twiml.VoiceResponse;
+        const VoiceResponse = twilio.twiml.VoiceResponse;
         const response = new VoiceResponse();
 
         const config = this.getConfig();
@@ -177,7 +177,7 @@ export class TwilioService {
      */
     generateIncomingTwiML(identity: string, callId: number, callerInfo?: { name?: string }): string {
         const webhookUrls = getWebhookUrls();
-        const VoiceResponse = Twilio.twiml.VoiceResponse;
+        const VoiceResponse = twilio.twiml.VoiceResponse;
         const response = new VoiceResponse();
 
         // Optional greeting
@@ -195,7 +195,7 @@ export class TwilioService {
             timeout: 25
         });
 
-        // Connect to the Twilio Client identity
+        // Connect to the twilio Client identity
         dial.client({}, identity);
 
         return response.toString();
@@ -206,7 +206,7 @@ export class TwilioService {
      */
     generateVoicemailTwiML(message: string = 'Please leave a message after the beep.'): string {
         const webhookUrls = getWebhookUrls();
-        const VoiceResponse = Twilio.twiml.VoiceResponse;
+        const VoiceResponse = twilio.twiml.VoiceResponse;
         const response = new VoiceResponse();
 
         response.say({ voice: 'alice' }, message);
@@ -228,7 +228,7 @@ export class TwilioService {
      * Generate TwiML to reject a call
      */
     generateRejectTwiML(reason: 'busy' | 'rejected' = 'busy'): string {
-        const VoiceResponse = Twilio.twiml.VoiceResponse;
+        const VoiceResponse = twilio.twiml.VoiceResponse;
         const response = new VoiceResponse();
         response.reject({ reason });
         return response.toString();
@@ -239,30 +239,30 @@ export class TwilioService {
      */
     async endCall(callSid: string): Promise<void> {
         if (!this.client) {
-            throw new Error('Twilio client not initialized');
+            throw new Error('twilio client not initialized');
         }
 
         try {
             await this.client.calls(callSid).update({ status: 'completed' });
-            console.log(`[TwilioService] Call ended: ${callSid}`);
+            console.log(`[twilioService] Call ended: ${callSid}`);
         } catch (error: any) {
-            console.error('[TwilioService] Failed to end call:', error);
+            console.error('[twilioService] Failed to end call:', error);
             throw new Error(error.message || 'Failed to end call');
         }
     }
 
     /**
-     * Get call details from Twilio
+     * Get call details from twilio
      */
     async getCallDetails(callSid: string): Promise<any | null> {
         if (!this.client) {
-            throw new Error('Twilio client not initialized');
+            throw new Error('twilio client not initialized');
         }
 
         try {
             return await this.client.calls(callSid).fetch();
         } catch (error: any) {
-            console.error('[TwilioService] Failed to get call details:', error);
+            console.error('[twilioService] Failed to get call details:', error);
             return null;
         }
     }
@@ -276,14 +276,14 @@ export class TwilioService {
         status: string;
     } | null> {
         if (!this.client) {
-            throw new Error('Twilio client not initialized');
+            throw new Error('twilio client not initialized');
         }
 
         try {
             const recording = await this.client.recordings(recordingSid).fetch();
             const config = this.getConfig();
 
-            // Twilio recordings can be downloaded as .wav or .mp3
+            // twilio recordings can be downloaded as .wav or .mp3
             const url = `https://api.twilio.com/2010-04-01/Accounts/${config.accountSid}/Recordings/${recordingSid}.mp3`;
 
             return {
@@ -292,32 +292,32 @@ export class TwilioService {
                 status: recording.status
             };
         } catch (error: any) {
-            console.error('[TwilioService] Failed to get recording:', error);
+            console.error('[twilioService] Failed to get recording:', error);
             return null;
         }
     }
 
     /**
-     * Delete a recording from Twilio
+     * Delete a recording from twilio
      */
     async deleteRecording(recordingSid: string): Promise<boolean> {
         if (!this.client) {
-            throw new Error('Twilio client not initialized');
+            throw new Error('twilio client not initialized');
         }
 
         try {
             await this.client.recordings(recordingSid).remove();
             return true;
         } catch (error: any) {
-            console.error('[TwilioService] Failed to delete recording:', error);
+            console.error('[twilioService] Failed to delete recording:', error);
             return false;
         }
     }
 
     /**
-     * Validate Twilio webhook signature
+     * Validate twilio webhook signature
      * 
-     * IMPORTANT: Always validate webhooks to ensure they're from Twilio
+     * IMPORTANT: Always validate webhooks to ensure they're from twilio
      */
     validateWebhookSignature(
         signature: string,
@@ -326,25 +326,25 @@ export class TwilioService {
     ): boolean {
         const config = this.getConfig();
         if (!config.authToken) {
-            console.warn('[TwilioService] Cannot validate webhook - auth token not configured');
+            console.warn('[twilioService] Cannot validate webhook - auth token not configured');
             return false;
         }
 
         try {
-            return Twilio.validateRequest(
+            return twilio.validateRequest(
                 config.authToken,
                 signature,
                 url,
                 params
             );
         } catch (error) {
-            console.error('[TwilioService] Webhook validation error:', error);
+            console.error('[twilioService] Webhook validation error:', error);
             return false;
         }
     }
 
     /**
-     * Map Twilio call status to our internal status
+     * Map twilio call status to our internal status
      */
     mapTwilioStatus(twilioStatus: string): string {
         const statusMap: Record<string, string> = {
@@ -389,10 +389,10 @@ export class TwilioService {
      */
     async sendDTMF(callSid: string, digits: string): Promise<void> {
         if (!this.client) {
-            throw new Error('Twilio client not initialized');
+            throw new Error('twilio client not initialized');
         }
 
-        const VoiceResponse = Twilio.twiml.VoiceResponse;
+        const VoiceResponse = twilio.twiml.VoiceResponse;
         const response = new VoiceResponse();
         response.play({ digits });
 
@@ -401,7 +401,7 @@ export class TwilioService {
                 twiml: response.toString()
             });
         } catch (error: any) {
-            console.error('[TwilioService] Failed to send DTMF:', error);
+            console.error('[twilioService] Failed to send DTMF:', error);
             throw new Error(error.message || 'Failed to send DTMF tones');
         }
     }
@@ -415,7 +415,7 @@ export class TwilioService {
         muted: boolean
     ): Promise<void> {
         if (!this.client) {
-            throw new Error('Twilio client not initialized');
+            throw new Error('twilio client not initialized');
         }
 
         try {
@@ -424,7 +424,7 @@ export class TwilioService {
                 .participants(participantSid)
                 .update({ muted });
         } catch (error: any) {
-            console.error('[TwilioService] Failed to update participant mute:', error);
+            console.error('[twilioService] Failed to update participant mute:', error);
             throw new Error(error.message || 'Failed to update mute status');
         }
     }
@@ -438,7 +438,7 @@ export class TwilioService {
         hold: boolean
     ): Promise<void> {
         if (!this.client) {
-            throw new Error('Twilio client not initialized');
+            throw new Error('twilio client not initialized');
         }
 
         try {
@@ -447,7 +447,7 @@ export class TwilioService {
                 .participants(participantSid)
                 .update({ hold });
         } catch (error: any) {
-            console.error('[TwilioService] Failed to update participant hold:', error);
+            console.error('[twilioService] Failed to update participant hold:', error);
             throw new Error(error.message || 'Failed to update hold status');
         }
     }

@@ -1,5 +1,5 @@
 import Groq from "groq-sdk";
-import dotenv from 'dotenv';
+import * as dotenv from 'dotenv';
 
 dotenv.config();
 

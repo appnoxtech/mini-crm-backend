@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 export interface DealActivity extends BaseEntity {
     dealId: number;
     userId: number;
+    companyId: number;
     activityType: string;
     subject?: string;
     label?: string;
@@ -60,6 +61,7 @@ export class DealActivityModel {
             data: {
                 dealId: data.dealId,
                 userId: data.userId,
+                companyId: data.companyId,
                 activityType: data.activityType,
                 subject: data.subject || null,
                 label: data.label || null,
@@ -84,7 +86,7 @@ export class DealActivityModel {
 
         // Update deal's lastActivityAt
         await prisma.deal.update({
-            where: { id: data.dealId },
+            where: { id: data.dealId, companyId: data.companyId },
             data: { lastActivityAt: new Date() }
         });
 
@@ -94,6 +96,7 @@ export class DealActivityModel {
     private formatActivity(result: any): DealActivity {
         return {
             id: result.id,
+            companyId: result.companyId,
             dealId: result.dealId,
             userId: result.userId,
             activityType: result.activityType,
@@ -120,20 +123,20 @@ export class DealActivityModel {
         };
     }
 
-    async findById(id: number): Promise<DealActivity | null> {
-        const result = await prisma.dealActivity.findUnique({
-            where: { id }
+    async findById(id: number, companyId: number): Promise<DealActivity | null> {
+        const result = await prisma.dealActivity.findFirst({
+            where: { id, companyId }
         });
         if (!result) return null;
         return this.formatActivity(result);
     }
 
-    async findByDealId(dealId: number, filters: {
+    async findByDealId(dealId: number, companyId: number, filters: {
         activityType?: string;
         isDone?: boolean;
         limit?: number;
     } = {}): Promise<DealActivity[]> {
-        const where: any = { dealId };
+        const where: any = { dealId, companyId };
 
         if (filters.activityType) {
             where.activityType = filters.activityType;
@@ -152,33 +155,35 @@ export class DealActivityModel {
         return results.map((r: any) => this.formatActivity(r));
     }
 
-    async createNoteActivity(userId: number, dealId: number, note: string): Promise<DealActivity> {
+    async createNoteActivity(userId: number, dealId: number, companyId: number, note: string): Promise<DealActivity> {
         return this.create({
             userId,
             dealId,
+            companyId,
             activityType: 'note',
             note,
             isDone: false
         });
     }
 
-    async createFileActivity(userId: number, dealId: number, files: any[]): Promise<DealActivity> {
+    async createFileActivity(userId: number, dealId: number, companyId: number, files: any[]): Promise<DealActivity> {
         return this.create({
             userId,
             dealId,
+            companyId,
             activityType: 'file',
             files,
             isDone: false
         });
     }
 
-    async findByUserId(userId: number, filters: {
+    async findByUserId(userId: number, companyId: number, filters: {
         activityType?: string;
         isDone?: boolean;
         upcoming?: boolean;
         limit?: number;
     } = {}): Promise<DealActivity[]> {
-        const where: any = { userId };
+        const where: any = { userId, companyId };
 
         if (filters.activityType) {
             where.activityType = filters.activityType;
@@ -205,9 +210,10 @@ export class DealActivityModel {
 
     async update(
         id: number,
+        companyId: number,
         data: Partial<Omit<DealActivity, 'id' | 'dealId' | 'userId' | 'createdAt' | 'updatedAt'>>
     ): Promise<DealActivity | null> {
-        const activity = await this.findById(id);
+        const activity = await this.findById(id, companyId);
         if (!activity) return null;
 
         const updateData: any = {
@@ -234,23 +240,23 @@ export class DealActivityModel {
         };
 
         const updated = await prisma.dealActivity.update({
-            where: { id },
+            where: { id, companyId },
             data: updateData
         });
 
         // Update deal's lastActivityAt
         await prisma.deal.update({
-            where: { id: activity.dealId },
+            where: { id: activity.dealId, companyId },
             data: { lastActivityAt: new Date() }
         });
 
         return this.formatActivity(updated);
     }
 
-    async markAsComplete(id: number): Promise<DealActivity | null> {
+    async markAsComplete(id: number, companyId: number): Promise<DealActivity | null> {
         const now = new Date();
         const updated = await prisma.dealActivity.update({
-            where: { id },
+            where: { id, companyId },
             data: {
                 isDone: true,
                 completedAt: now,
@@ -260,7 +266,7 @@ export class DealActivityModel {
 
         if (updated) {
             await prisma.deal.update({
-                where: { id: updated.dealId },
+                where: { id: updated.dealId, companyId },
                 data: { lastActivityAt: now }
             });
         }
@@ -268,10 +274,10 @@ export class DealActivityModel {
         return this.formatActivity(updated);
     }
 
-    async delete(id: number): Promise<boolean> {
+    async delete(id: number, companyId: number): Promise<boolean> {
         try {
             await prisma.dealActivity.delete({
-                where: { id }
+                where: { id, companyId }
             });
             return true;
         } catch (error) {
@@ -279,11 +285,11 @@ export class DealActivityModel {
         }
     }
 
-    async addActivityNote(userId: number, activityId: number, note: string): Promise<DealActivity | null> {
-        return this.update(activityId, { note });
+    async addActivityNote(userId: number, activityId: number, companyId: number, note: string): Promise<DealActivity | null> {
+        return this.update(activityId, companyId, { note });
     }
 
-    async getUpcomingActivities(userId: number, days: number = 7): Promise<DealActivity[]> {
+    async getUpcomingActivities(userId: number, companyId: number, days: number = 7): Promise<DealActivity[]> {
         const today = new Date();
         const futureDate = new Date();
         futureDate.setDate(today.getDate() + days);
@@ -291,6 +297,7 @@ export class DealActivityModel {
         const results = await prisma.dealActivity.findMany({
             where: {
                 userId,
+                companyId,
                 isDone: false,
                 startDate: {
                     gte: today.toISOString().split('T')[0],

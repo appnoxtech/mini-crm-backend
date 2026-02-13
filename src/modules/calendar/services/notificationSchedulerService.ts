@@ -14,7 +14,7 @@ export class NotificationSchedulerService {
      */
     async scheduleForEvent(event: CalendarEvent, reminders: EventReminder[]): Promise<void> {
         // Get all users who should receive notifications
-        const userIds = [event.userId, ...(await this.shareModel.getSharedUserIds(event.id))];
+        const userIds = [event.userId, ...(await this.shareModel.getSharedUserIds(event.id, event.companyId))];
 
         for (const userId of userIds) {
             await this.scheduleForUser(event, reminders, userId);
@@ -35,6 +35,7 @@ export class NotificationSchedulerService {
                 // Idempotent - will not create duplicate due to UNIQUE constraint
                 await this.notificationModel.create({
                     eventId: event.id,
+                    companyId: event.companyId,
                     reminderId: reminder.id,
                     userId,
                     scheduledAt: scheduledAt.toISOString()
@@ -48,7 +49,7 @@ export class NotificationSchedulerService {
      */
     async rescheduleForEvent(event: CalendarEvent, reminders: EventReminder[]): Promise<void> {
         // Delete all pending notifications for this event
-        await this.notificationModel.deleteByEventId(event.id);
+        await this.notificationModel.deleteByEventId(event.id, event.companyId);
 
         // Reschedule
         await this.scheduleForEvent(event, reminders);
@@ -66,8 +67,8 @@ export class NotificationSchedulerService {
     /**
      * Remove notifications for a specific reminder (when deleting reminder)
      */
-    async removeForReminder(reminderId: number): Promise<void> {
-        await this.notificationModel.deleteByReminderId(reminderId);
+    async removeForReminder(reminderId: number, companyId: number): Promise<void> {
+        await this.notificationModel.deleteByReminderId(reminderId, companyId);
     }
 
     /**

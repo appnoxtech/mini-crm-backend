@@ -40,6 +40,7 @@ export function startEmailSyncJob(
                     const account: any = {
                         id: accountRow.id,
                         userId: accountRow.userId.toString(),
+                        companyId: accountRow.companyId, // ⚠️ CRITICAL: Must include companyId!
                         email: accountRow.email,
                         provider: accountRow.provider,
                         accessToken: accountRow.accessToken || undefined,
@@ -48,6 +49,7 @@ export function startEmailSyncJob(
                         smtpConfig: accountRow.smtpConfig ? JSON.parse(accountRow.smtpConfig as string) : undefined,
                         isActive: accountRow.isActive,
                         lastSyncAt: accountRow.lastSyncAt || undefined,
+                        lastHistoryId: accountRow.lastHistoryId || undefined,
                         createdAt: accountRow.createdAt,
                         updatedAt: accountRow.updatedAt,
                     };

@@ -109,11 +109,11 @@ export class DealProcessor {
     /**
      * Check for duplicates by title
      */
-    async checkDuplicate(data: DealImportData): Promise<{ isDuplicate: boolean; existingId?: number; field?: string; value?: string }> {
+    async checkDuplicate(data: DealImportData, companyId: number): Promise<{ isDuplicate: boolean; existingId?: number; field?: string; value?: string }> {
         try {
             if (!data.title?.trim()) return { isDuplicate: false };
 
-            const existing = await this.dealModel.findExistingByTitle(data.title.trim());
+            const existing = await this.dealModel.findExistingByTitle(data.title.trim(), companyId);
             if (existing) {
                 return {
                     isDuplicate: true,
@@ -136,18 +136,19 @@ export class DealProcessor {
     async process(
         data: DealImportData,
         userId: number,
+        companyId: number,
         duplicateHandling: DuplicateHandling
     ): Promise<ProcessResult> {
         try {
             // Check for duplicates
-            const duplicateCheck = await this.checkDuplicate(data);
+            const duplicateCheck = await this.checkDuplicate(data, companyId);
 
             if (duplicateCheck.isDuplicate) {
                 switch (duplicateHandling) {
                     case 'skip':
                         return { status: 'skipped' };
                     case 'update':
-                        return this.updateExistingDeal(duplicateCheck.existingId!, data, userId);
+                        return this.updateExistingDeal(duplicateCheck.existingId!, data, userId, companyId);
                     case 'error':
                         throw new Error(`Duplicate deal title found: ${duplicateCheck.value}`);
                     case 'create':
@@ -160,14 +161,15 @@ export class DealProcessor {
             const { pipelineId, stageId } = await this.resolvePipelineAndStage(
                 data.pipelineName,
                 data.stageName,
-                userId
+                userId,
+                companyId
             );
 
             // Resolve person if provided
             let personId: number | undefined;
             if (data.personName?.trim()) {
                 try {
-                    personId = await this.resolvePerson(data.personName.trim());
+                    personId = await this.resolvePerson(data.personName.trim(), companyId);
                 } catch (error) {
                     console.error('Error resolving person:', error);
                     // Continue without person
@@ -178,7 +180,7 @@ export class DealProcessor {
             let organizationId: number | undefined;
             if (data.organizationName?.trim()) {
                 try {
-                    organizationId = await this.resolveOrganization(data.organizationName.trim());
+                    organizationId = await this.resolveOrganization(data.organizationName.trim(), companyId);
                 } catch (error) {
                     console.error('Error resolving organization:', error);
                     // Continue without organization
@@ -201,6 +203,7 @@ export class DealProcessor {
                 stageId,
                 personId,
                 organizationId,
+                companyId,
                 description: data.description?.trim(),
                 expectedCloseDate,
                 actualCloseDate,
@@ -224,29 +227,31 @@ export class DealProcessor {
     private async updateExistingDeal(
         dealId: number,
         data: DealImportData,
-        userId: number
+        userId: number,
+        companyId: number
     ): Promise<ProcessResult> {
         const { pipelineId, stageId } = await this.resolvePipelineAndStage(
             data.pipelineName,
             data.stageName,
-            userId
+            userId,
+            companyId
         );
 
         let personId: number | undefined;
         if (data.personName?.trim()) {
-            personId = await this.resolvePerson(data.personName.trim());
+            personId = await this.resolvePerson(data.personName.trim(), companyId);
         }
 
         let organizationId: number | undefined;
         if (data.organizationName?.trim()) {
-            organizationId = await this.resolveOrganization(data.organizationName.trim());
+            organizationId = await this.resolveOrganization(data.organizationName.trim(), companyId);
         }
 
         const status = this.parseStatus(data.status);
         const expectedCloseDate = data.expectedCloseDate ? this.parseDate(data.expectedCloseDate) : undefined;
         const actualCloseDate = this.parseActualCloseDate(data, status);
 
-        await this.dealModel.update(dealId, userId, {
+        await this.dealModel.update(dealId, companyId, userId, {
             title: data.title.trim(),
             value: data.value ? Number(data.value) : 0,
             currency: data.currency?.trim() || 'USD',
@@ -272,13 +277,14 @@ export class DealProcessor {
     private async resolvePipelineAndStage(
         pipelineName: string | undefined,
         stageName: string | undefined,
-        userId: number
+        userId: number,
+        companyId: number
     ): Promise<{ pipelineId: number; stageId: number }> {
         // Get or create pipeline
         let pipelineId: number;
 
         if (pipelineName?.trim()) {
-            const existing = await this.pipelineModel.searchByPipelineName(pipelineName.trim());
+            const existing = await this.pipelineModel.searchByPipelineName(pipelineName.trim(), companyId);
             const exactMatch = existing.find(p => p.name.toLowerCase() === pipelineName.trim().toLowerCase());
 
             if (exactMatch) {
@@ -286,6 +292,7 @@ export class DealProcessor {
             } else {
                 // Create new pipeline
                 const pipeline = await this.pipelineModel.create({
+                    companyId,
                     name: pipelineName.trim(),
                     userId,
                     isDefault: false,
@@ -298,7 +305,7 @@ export class DealProcessor {
             }
         } else {
             // Use default pipeline
-            const pipelines = await this.pipelineModel.findAccessiblePipelines(userId);
+            const pipelines = await this.pipelineModel.findAccessiblePipelines(userId, companyId);
             const defaultPipeline = pipelines.find(p => p.isDefault);
 
             if (defaultPipeline) {
@@ -308,6 +315,7 @@ export class DealProcessor {
             } else {
                 // Create default pipeline
                 const pipeline = await this.pipelineModel.create({
+                    companyId,
                     name: 'Default Pipeline',
                     userId,
                     isDefault: true,
@@ -322,7 +330,7 @@ export class DealProcessor {
 
         // Get or create stage
         let stageId: number;
-        const stages = await this.stageModel.findByPipelineId(pipelineId);
+        const stages = await this.stageModel.findByPipelineId(pipelineId, companyId);
 
         if (stageName?.trim()) {
             const exactMatch = stages.find(s => s.name.toLowerCase() === stageName.trim().toLowerCase());
@@ -332,6 +340,7 @@ export class DealProcessor {
             } else {
                 // Create new stage
                 const stage = await this.stageModel.create({
+                    companyId,
                     pipelineId,
                     name: stageName.trim(),
                     orderIndex: stages.length,
@@ -345,6 +354,7 @@ export class DealProcessor {
                 stageId = stages[0]!.id;
             } else {
                 const stage = await this.stageModel.create({
+                    companyId,
                     pipelineId,
                     name: 'New',
                     orderIndex: 0,
@@ -360,14 +370,14 @@ export class DealProcessor {
     /**
      * Resolve person by name (create if doesn't exist)
      */
-    private async resolvePerson(name: string): Promise<number> {
+    private async resolvePerson(name: string, companyId: number): Promise<number> {
         // Try to find existing person
         const nameParts = name.split(/\s+/);
         const firstName = nameParts[0] || name;
         const lastName = nameParts.slice(1).join(' ') || '';
 
         // Search by name
-        const existing = await this.personModel.searchByPersonName(name);
+        const existing = await this.personModel.searchByPersonName(name, companyId);
         if (existing.length > 0) {
             return existing[0]!.id;
         }
@@ -376,6 +386,7 @@ export class DealProcessor {
         const person = await this.personModel.create({
             firstName,
             lastName,
+            companyId,
             emails: [],
             phones: [],
         });
@@ -385,8 +396,8 @@ export class DealProcessor {
     /**
      * Resolve organization by name (create if doesn't exist)
      */
-    private async resolveOrganization(name: string): Promise<number> {
-        const existing = await this.orgModel.searchByOrgName(name);
+    private async resolveOrganization(name: string, companyId: number): Promise<number> {
+        const existing = await this.orgModel.searchByOrgName(name, companyId);
         const exactMatch = existing.find(org => org.name.toLowerCase() === name.toLowerCase());
 
         if (exactMatch) {
@@ -394,7 +405,7 @@ export class DealProcessor {
         }
 
         // Create new organization
-        const org = await this.orgModel.create({ name });
+        const org = await this.orgModel.create({ name, companyId });
         return org.id;
     }
 
@@ -549,7 +560,7 @@ export class DealProcessor {
     /**
      * Delete deal (for rollback)
      */
-    async delete(id: number): Promise<boolean> {
-        return this.dealModel.hardDelete(id);
+    async delete(id: number, companyId: number): Promise<boolean> {
+        return this.dealModel.hardDelete(id, companyId);
     }
 }

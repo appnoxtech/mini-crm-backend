@@ -100,14 +100,14 @@ export class PersonProcessor {
     /**
      * Check for duplicates
      */
-    async checkDuplicate(data: PersonImportData): Promise<{ isDuplicate: boolean; existingId?: number; field?: string; value?: string }> {
+    async checkDuplicate(data: PersonImportData, companyId: number): Promise<{ isDuplicate: boolean; existingId?: number; field?: string; value?: string }> {
         try {
             const emails = this.parseEmails(data);
             const emailStrings = emails.map(e => e.email);
 
             // Check email duplicates
             if (emailStrings.length > 0) {
-                const existingEmail = await this.personModel.findExistingEmail(emailStrings);
+                const existingEmail = await this.personModel.findExistingEmail(emailStrings, companyId);
                 if (existingEmail) {
                     return {
                         isDuplicate: true,
@@ -122,7 +122,7 @@ export class PersonProcessor {
             const phones = this.parsePhones(data);
             const phoneStrings = phones.map(p => p.number);
             if (phoneStrings.length > 0) {
-                const existingPhone = await this.personModel.findExistingPhone(phoneStrings);
+                const existingPhone = await this.personModel.findExistingPhone(phoneStrings, companyId);
                 if (existingPhone) {
                     return {
                         isDuplicate: true,
@@ -146,6 +146,7 @@ export class PersonProcessor {
     async process(
         data: PersonImportData,
         userId: number,
+        companyId: number,
         duplicateHandling: DuplicateHandling
     ): Promise<ProcessResult> {
         try {
@@ -156,14 +157,14 @@ export class PersonProcessor {
             const { firstName, lastName } = this.parseNameFields(data);
 
             // Check for duplicates
-            const duplicateCheck = await this.checkDuplicate(data);
+            const duplicateCheck = await this.checkDuplicate(data, companyId);
 
             if (duplicateCheck.isDuplicate) {
                 switch (duplicateHandling) {
                     case 'skip':
                         return { status: 'skipped' };
                     case 'update':
-                        return this.updateExistingPerson(duplicateCheck.existingId!, data, emails, phones, firstName, lastName);
+                        return this.updateExistingPerson(duplicateCheck.existingId!, companyId, data, emails, phones, firstName, lastName);
                     case 'error':
                         throw new Error(`Duplicate ${duplicateCheck.field} found: ${duplicateCheck.value}`);
                     case 'create':
@@ -176,7 +177,7 @@ export class PersonProcessor {
             let organizationId: number | undefined;
             if (data.organizationName?.trim()) {
                 try {
-                    organizationId = await this.resolveOrganization(data.organizationName.trim());
+                    organizationId = await this.resolveOrganization(data.organizationName.trim(), companyId);
                 } catch (error) {
                     console.error('Error resolving organization:', error);
                     // Continue without organization
@@ -189,6 +190,7 @@ export class PersonProcessor {
                 lastName: lastName?.trim() || '',
                 emails,
                 phones,
+                companyId,
                 organizationId,
             });
 
@@ -350,8 +352,8 @@ export class PersonProcessor {
     /**
      * Resolve organization by name (create if doesn't exist)
      */
-    private async resolveOrganization(name: string): Promise<number> {
-        const existing = await this.orgModel.searchByOrgName(name);
+    private async resolveOrganization(name: string, companyId: number): Promise<number> {
+        const existing = await this.orgModel.searchByOrgName(name, companyId);
 
         // Find exact match (case-insensitive)
         const exactMatch = existing.find(org => org.name.toLowerCase() === name.toLowerCase());
@@ -360,7 +362,7 @@ export class PersonProcessor {
         }
 
         // Create new organization
-        const org = await this.orgModel.create({ name });
+        const org = await this.orgModel.create({ name, companyId });
         return org.id;
     }
 
@@ -369,6 +371,7 @@ export class PersonProcessor {
      */
     private async updateExistingPerson(
         personId: number,
+        companyId: number,
         data: PersonImportData,
         emails: PersonEmail[],
         phones: PersonPhone[],
@@ -377,10 +380,10 @@ export class PersonProcessor {
     ): Promise<ProcessResult> {
         let organizationId: number | undefined;
         if (data.organizationName?.trim()) {
-            organizationId = await this.resolveOrganization(data.organizationName.trim());
+            organizationId = await this.resolveOrganization(data.organizationName.trim(), companyId);
         }
 
-        await this.personModel.update(personId, {
+        await this.personModel.update(personId, companyId, {
             firstName: firstName.trim(),
             lastName: lastName?.trim() || '',
             emails,
@@ -468,7 +471,7 @@ export class PersonProcessor {
     /**
      * Delete person
      */
-    async delete(id: number): Promise<boolean> {
-        return this.personModel.hardDelete(id);
+    async delete(id: number, companyId: number): Promise<boolean> {
+        return this.personModel.hardDelete(id, companyId);
     }
 }

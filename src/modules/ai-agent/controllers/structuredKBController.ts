@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { AuthenticatedRequest } from "../../../shared/types";
 import { StructuredKBModel } from "../models/StructuredKBModel";
 import { StructuredKBService } from "../services/structuredKBService";
 
@@ -7,7 +8,7 @@ let structuredKBService: StructuredKBService | null = null;
 
 export const initStructuredKBController = async () => {
     structuredKBModel = new StructuredKBModel();
-    await structuredKBModel.initialize();
+    // Removed explicit global initialization as companyId is required per request
     structuredKBService = new StructuredKBService(structuredKBModel);
 };
 
@@ -15,13 +16,16 @@ export const initStructuredKBController = async () => {
  * GET /ai/kb
  * Get the full structured knowledge base
  */
-export const getStructuredKB = async (req: Request, res: Response) => {
+export const getStructuredKB = async (req: AuthenticatedRequest, res: Response) => {
     try {
         if (!structuredKBService) {
             return res.status(500).json({ error: "Structured KB service not initialized" });
         }
 
-        const kb = await structuredKBService.getFullKB();
+        if (!req.user) {
+            return res.status(401).json({ error: "User not authenticated" });
+        }
+        const kb = await structuredKBService.getFullKB(req.user.companyId);
         if (!kb) {
             return res.status(404).json({ error: "Knowledge base not found" });
         }
@@ -37,7 +41,7 @@ export const getStructuredKB = async (req: Request, res: Response) => {
  * PATCH /ai/kb/:category
  * Update a specific category (1-9)
  */
-export const updateKBCategory = async (req: Request, res: Response) => {
+export const updateKBCategory = async (req: AuthenticatedRequest, res: Response) => {
     try {
         if (!structuredKBService) {
             return res.status(500).json({ error: "Structured KB service not initialized" });
@@ -53,13 +57,17 @@ export const updateKBCategory = async (req: Request, res: Response) => {
             return res.status(400).json({ error: "No data provided for update" });
         }
 
-        const success = await structuredKBService.updateCategory(categoryNumber, data);
+        if (!req.user) {
+            return res.status(401).json({ error: "User not authenticated" });
+        }
+
+        const success = await structuredKBService.updateCategory(categoryNumber, data, req.user.companyId);
         if (!success) {
             return res.status(500).json({ error: "Failed to update category" });
         }
 
         // Return updated KB
-        const updatedKB = await structuredKBService.getFullKB();
+        const updatedKB = await structuredKBService.getFullKB(req.user.companyId);
         res.json({
             success: true,
             message: `Category ${categoryNumber} updated successfully`,
@@ -75,13 +83,17 @@ export const updateKBCategory = async (req: Request, res: Response) => {
  * GET /ai/kb/completion
  * Get KB completion status
  */
-export const getKBCompletion = async (req: Request, res: Response) => {
+export const getKBCompletion = async (req: AuthenticatedRequest, res: Response) => {
     try {
         if (!structuredKBService) {
             return res.status(500).json({ error: "Structured KB service not initialized" });
         }
 
-        const status = await structuredKBService.getCompletionStatus();
+        if (!req.user) {
+            return res.status(401).json({ error: "User not authenticated" });
+        }
+
+        const status = await structuredKBService.getCompletionStatus(req.user.companyId);
         res.json(status);
     } catch (error) {
         console.error("Error fetching KB completion:", error);
@@ -93,7 +105,7 @@ export const getKBCompletion = async (req: Request, res: Response) => {
  * GET /ai/kb/category/:category
  * Get a specific category
  */
-export const getKBCategory = async (req: Request, res: Response) => {
+export const getKBCategory = async (req: AuthenticatedRequest, res: Response) => {
     try {
         if (!structuredKBService) {
             return res.status(500).json({ error: "Structured KB service not initialized" });
@@ -104,7 +116,11 @@ export const getKBCategory = async (req: Request, res: Response) => {
             return res.status(400).json({ error: "Invalid category number. Must be 1-9." });
         }
 
-        const kb = await structuredKBService.getFullKB();
+        if (!req.user) {
+            return res.status(401).json({ error: "User not authenticated" });
+        }
+
+        const kb = await structuredKBService.getFullKB(req.user.companyId);
         if (!kb) {
             return res.status(404).json({ error: "Knowledge base not found" });
         }

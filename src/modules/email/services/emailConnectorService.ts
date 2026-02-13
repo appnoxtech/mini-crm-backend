@@ -960,7 +960,7 @@ export class EmailConnectorService {
 
             const emailModel = new EmailModel();
 
-            await emailModel.updateEmailAccount(account.id, {
+            await emailModel.updateEmailAccount(account.id, account.companyId, {
               accessToken: refreshResult.accessToken,
               refreshToken: refreshResult.refreshToken || account.refreshToken,
               updatedAt: new Date()
@@ -1139,7 +1139,7 @@ export class EmailConnectorService {
 
             const emailModel = new EmailModel();
 
-            await emailModel.updateEmailAccount(account.id, {
+            await emailModel.updateEmailAccount(account.id, account.companyId, {
               accessToken: refreshResult.accessToken,
               refreshToken: refreshResult.refreshToken || account.refreshToken,
               updatedAt: new Date()

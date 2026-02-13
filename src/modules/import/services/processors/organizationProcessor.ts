@@ -101,10 +101,10 @@ export class OrganizationProcessor {
     /**
      * Check for duplicates by name
      */
-    async checkDuplicate(data: OrganizationImportData): Promise<{ isDuplicate: boolean; existingId?: number }> {
+    async checkDuplicate(data: OrganizationImportData, companyId: number): Promise<{ isDuplicate: boolean; existingId?: number }> {
         if (!data.name?.trim()) return { isDuplicate: false };
 
-        const existing = await this.orgModel.searchByOrgName(data.name.trim());
+        const existing = await this.orgModel.searchByOrgName(data.name.trim(), companyId);
         const exactMatch = existing.find(org => org.name.toLowerCase() === data.name.trim().toLowerCase());
 
         if (exactMatch) {
@@ -123,17 +123,18 @@ export class OrganizationProcessor {
     async process(
         data: OrganizationImportData,
         userId: number,
+        companyId: number,
         duplicateHandling: DuplicateHandling
     ): Promise<ProcessResult> {
         // Check for duplicates
-        const duplicateCheck = await this.checkDuplicate(data);
+        const duplicateCheck = await this.checkDuplicate(data, companyId);
 
         if (duplicateCheck.isDuplicate) {
             switch (duplicateHandling) {
                 case 'skip':
                     return { status: 'skipped' };
                 case 'update':
-                    return this.updateExistingOrganization(duplicateCheck.existingId!, data);
+                    return this.updateExistingOrganization(duplicateCheck.existingId!, companyId, data);
                 case 'error':
                     throw new Error(`Duplicate organization name found: ${data.name}`);
                 case 'create':
@@ -143,7 +144,7 @@ export class OrganizationProcessor {
         }
 
         // Prepare organization data
-        const orgData = this.prepareOrganizationData(data);
+        const orgData = this.prepareOrganizationData(data, companyId);
 
         // Create new organization
         const org = await this.orgModel.create(orgData);
@@ -154,13 +155,14 @@ export class OrganizationProcessor {
     /**
      * Prepare organization data from import data
      */
-    private prepareOrganizationData(data: OrganizationImportData): any {
+    private prepareOrganizationData(data: OrganizationImportData, companyId: number): any {
         const emails = this.parseEmails(data);
         const phones = this.parsePhones(data);
         const address = this.parseAddress(data);
 
         return {
             name: data.name.trim(),
+            companyId,
             description: data.description?.trim() || undefined,
             industry: data.industry?.trim() || undefined,
             website: data.website?.trim() || undefined,
@@ -178,10 +180,11 @@ export class OrganizationProcessor {
      */
     private async updateExistingOrganization(
         orgId: number,
+        companyId: number,
         data: OrganizationImportData
     ): Promise<ProcessResult> {
-        const updateData = this.prepareOrganizationData(data);
-        await this.orgModel.update(orgId, updateData);
+        const updateData = this.prepareOrganizationData(data, companyId);
+        await this.orgModel.update(orgId, companyId, updateData);
         return { status: 'updated', id: orgId };
     }
 
@@ -334,7 +337,7 @@ export class OrganizationProcessor {
     /**
      * Delete organization
      */
-    async delete(id: number): Promise<boolean> {
-        return this.orgModel.hardDelete(id);
+    async delete(id: number, companyId: number): Promise<boolean> {
+        return this.orgModel.hardDelete(id, companyId);
     }
 }
